@@ -1,0 +1,17 @@
+import { notFound } from 'next/navigation';
+import { getHQContext,HQShell } from '@/lib/hq-page';
+
+export default async function Page({params}:{params:Promise<{id:string}>}){
+ const {id}=await params; const {supabase,role,displayName,permissions}=await getHQContext('customers.view_metadata');
+ const {data,error}=await supabase.rpc('staff_customer_360',{p_customer_id:id});
+ if(error) throw new Error(`Customer 360 failed: ${error.message}`);
+ if(!data) notFound();
+ const customer:any=data;
+ return <HQShell displayName={displayName} role={role} permissions={permissions}><div className="stack">
+  <section className="card hq-hero-card"><div><span className="eyebrow">CUSTOMER 360</span><h1>{customer.display_name||'Unnamed customer'}</h1><p>{customer.email||'No email available'}</p></div><div className="hq-mission"><small>ACCOUNT STATUS</small><strong>{customer.subscription_status||'INACTIVE'}</strong></div></section>
+  <div className="grid grid-3 metric-grid"><div className="card metric"><span className="muted">Plan</span><strong>{customer.plan||'FREE'}</strong><small>{customer.renewal_at?`Renews ${new Date(customer.renewal_at).toLocaleDateString()}`:'No renewal date'}</small></div><div className="card metric"><span className="muted">Last activity</span><strong>{customer.last_activity_at?new Date(customer.last_activity_at).toLocaleDateString():'—'}</strong><small>{customer.last_activity_at?new Date(customer.last_activity_at).toLocaleTimeString():'No activity recorded'}</small></div><div className="card metric"><span className="muted">Platform usage</span><strong>{customer.analysis_count??0}</strong><small>{customer.strategy_count??0} strategies · {customer.account_count??0} accounts</small></div></div>
+  <div className="grid grid-2"><section className="card"><span className="eyebrow">CONTACT</span><h2>Reach the customer</h2><div className="stack compact"><p><strong>Email</strong><br/>{customer.email||'Not provided'}</p><p><strong>WhatsApp</strong><br/>{customer.phone||'Not provided'}</p><p><strong>Discord</strong><br/>{customer.discord_handle||'Not provided'}</p><div className="staff-actions">{customer.email&&<a className="button-link primary" href={`mailto:${customer.email}`}>Email</a>}{customer.phone&&<a className="button-link secondary" href={`https://wa.me/${String(customer.phone).replace(/\D/g,'')}`} target="_blank">WhatsApp</a>}</div></div></section>
+  <section className="card"><span className="eyebrow">SUBSCRIPTION</span><h2>Commercial context</h2><p><strong>Status:</strong> {customer.subscription_status||'INACTIVE'}</p><p><strong>Trial ends:</strong> {customer.trial_ends_at?new Date(customer.trial_ends_at).toLocaleString():'Not on trial'}</p><p><strong>Renewal:</strong> {customer.renewal_at?new Date(customer.renewal_at).toLocaleString():'Not scheduled'}</p><p><strong>Customer since:</strong> {customer.created_at?new Date(customer.created_at).toLocaleDateString():'Unknown'}</p></section></div>
+  <section className="card"><div className="section-title"><div><span className="eyebrow">CUSTOMER HISTORY</span><h2>Operational timeline</h2></div></div><div className="data-table">{(customer.timeline??[]).length===0?<p className="muted">No notes, follow-ups or support events yet.</p>:(customer.timeline??[]).map((item:any,index:number)=><div className="data-row" key={`${item.type}-${index}`}><span><strong>{item.title}</strong><small>{item.detail}</small></span><span>{new Date(item.created_at).toLocaleString()}</span></div>)}</div></section>
+ </div></HQShell>
+}
