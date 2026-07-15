@@ -1,0 +1,8 @@
+'use client';
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+export default function FeedbackWidget({userId}:{userId:string}){
+ const [open,setOpen]=useState(false),[type,setType]=useState<'ISSUE'|'FEEDBACK'|'FEATURE'>('FEEDBACK'),[message,setMessage]=useState(''),[ease,setEase]=useState(8),[status,setStatus]=useState('');
+ async function send(){if(!message.trim())return setStatus('Write a message first.');const {error}=await createClient().from('beta_feedback').insert({user_id:userId,feedback_type:type,page_path:window.location.pathname,browser:navigator.userAgent,message:message.trim(),ease_score:ease});if(error)return setStatus(error.message);setStatus('Thank you — feedback sent.');setMessage('');}
+ return <><button className="feedback-fab" onClick={()=>setOpen(true)}>Feedback</button>{open&&<div className="modal-backdrop"><div className="card modal-card"><div className="modal-head"><h2>Help improve Trade Police</h2><button onClick={()=>setOpen(false)}>×</button></div><label>Type<select value={type} onChange={e=>setType(e.target.value as any)}><option value="ISSUE">Report issue</option><option value="FEEDBACK">Send feedback</option><option value="FEATURE">Suggest feature</option></select></label><label>Message<textarea value={message} onChange={e=>setMessage(e.target.value)}/></label><label>Ease of use: {ease}/10<input type="range" min="1" max="10" value={ease} onChange={e=>setEase(Number(e.target.value))}/></label>{status&&<p className="muted">{status}</p>}<div className="button-row"><button onClick={()=>setOpen(false)}>Close</button><button className="primary" onClick={send}>Send</button></div></div></div>}</>
+}
