@@ -74,13 +74,13 @@ export default function Dashboard(p: Props) {
       <div className="grid grid-2 dashboard-footer-grid">
         <div className="card release-notes-card">
           <span className="eyebrow">WHAT'S NEW</span>
-          <h2>Portal separation and HQ controls</h2>
+          <h2>Better strategy intelligence</h2>
           <ul>
-            <li>Customer workspace no longer exposes Trade Police HQ.</li>
-            <li>HQ uses a dedicated portal and role-specific workspaces.</li>
-            <li>Owners can control staff permissions individually.</li>
+            <li>Strategy switching now updates validation rules and allowed instruments.</li>
+            <li>Feedback is now tracked so beta issues can be resolved faster.</li>
+            <li>Mobile strategy creation and performance analytics are easier to use.</li>
           </ul>
-          <small className="muted">v1.0 Founders Edition</small>
+          <small className="muted">Beta release</small>
         </div>
 
         <div className="card disclaimer">

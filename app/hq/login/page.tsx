@@ -1,3 +1,28 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-export default async function Page({searchParams}:{searchParams:Promise<{error?:string}>}){const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(user){const {data:route}=await supabase.rpc('staff_workspace_route');if(route)redirect('/hq')}const params=await searchParams;return <main className="auth-page hq-login-page"><section className="auth-card"><span className="brand-mark">TP</span><span className="eyebrow">PRIVATE COMPANY PORTAL</span><h1>Trade Police HQ</h1><p>Staff members use their own Trade Police credentials. Access is granted only after the Owner assigns a company role.</p>{params.error&&<p className="error">This account does not have access to Trade Police HQ.</p>}<a className="button-link primary" href="/login?next=/hq">Continue to secure sign in</a><small>Customer trading tools are available in the separate Trade Police Client portal.</small></section></main>}
+import HQLoginForm from '@/components/hq/HQLoginForm';
+
+export default async function Page() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    const { data: route } = await supabase.rpc('staff_workspace_route');
+    if (route) redirect(String(route));
+    await supabase.auth.signOut();
+  }
+
+  return (
+    <main className="auth-page hq-login-page">
+      <section className="auth-card portal-auth-card">
+        <span className="brand-mark">TP</span>
+        <span className="eyebrow">TRADE POLICE HEADQUARTERS</span>
+        <h1>Employee sign in</h1>
+        <p>Headquarters is reserved for Trade Police employees. Your email determines your assigned workspace and permissions.</p>
+        <HQLoginForm />
+        <small>There is no public employee registration. Access is issued by the Owner.</small>
+        <Link className="portal-switch" href="/client/login">Customer? Open client portal</Link>
+      </section>
+    </main>
+  );
+}

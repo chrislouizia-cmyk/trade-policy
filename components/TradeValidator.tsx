@@ -46,7 +46,7 @@ export default function TradeValidator({userId}:{userId:string}) {
 
   useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
   useEffect(()=>{
-    const handler=()=>{ void loadStrategy(); };
+    const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
     window.addEventListener('trade-police:strategy-changed',handler);
     return()=>window.removeEventListener('trade-police:strategy-changed',handler);
   },[]);
@@ -118,7 +118,7 @@ export default function TradeValidator({userId}:{userId:string}) {
     setError(''); if(!images.h4||!images.h1||!images.m30){setError('Upload H4, H1, and M30 screenshots.');return;}
     setAnalyzing(true); setAnalysis(null);
     const instrument=(document.querySelector('[name=instrument]') as HTMLSelectElement)?.value;
-    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instrument,h4Image:images.h4,h1Image:images.h1,m30Image:images.m30,strategyProfile:strategy})});
+    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instrument,h4Image:images.h4,h1Image:images.h1,m30Image:images.m30})});
     const data=await res.json(); setAnalyzing(false);
     if(!res.ok){ setError(data.error||'Could not analyze charts.'); if(data.demo) setAnalysis(data.demo); return; }
     setAnalysis(data); const next:Record<string,boolean>={}; evidenceKeys.forEach(k=>next[k]=data.evidence[k].value); setAutoChecks(next);

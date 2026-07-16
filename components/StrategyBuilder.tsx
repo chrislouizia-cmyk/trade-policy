@@ -321,7 +321,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
-        <div className="card builder-progress"><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
+        <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">
           <div className="section-title"><div><p className="muted">PROFILE</p><h2>{profile.id ? 'Edit strategy' : 'Create strategy'}</h2></div>{profile.isDefault && <span className="badge authorized">ACTIVE</span>}</div>
           <div className="grid grid-2">

@@ -56,7 +56,7 @@ export default function LiveMarketPanel({
       const response = await fetch('/api/market/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instrument, strategyProfile: strategy }),
+        body: JSON.stringify({ instrument }),
       });
       const result = await response.json();
 
