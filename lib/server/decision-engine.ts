@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { EvidenceKey, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
 import type { DailyTradeContext } from '@/lib/server/daily-trade-context';
+import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
@@ -17,7 +18,7 @@ const labels: Record<EvidenceKey, string> = {
   retestConfirmed: 'Retest / rejection confirmed',
 };
 
-function stopLimitInPrice(profile: StrategyProfile, input: TradeInput): number {
+function stopValueInPrice(profile: StrategyProfile, input: TradeInput, value: number): number {
   const configured = profile.stopLimitSettings?.find(
     (limit) => limit.instrument === input.instrument,
   );
@@ -29,19 +30,19 @@ function stopLimitInPrice(profile: StrategyProfile, input: TradeInput): number {
   switch (configured.method) {
     case 'PIPS': {
       const pipSize = input.instrument.endsWith('JPY') ? 0.01 : 0.0001;
-      return configured.maximumValue * pipSize;
+      return value * pipSize;
     }
     case 'POINTS': {
       const pointSize =
         input.instrument.startsWith('XAU') || input.instrument.startsWith('XAG')
           ? 0.01
           : 1;
-      return configured.maximumValue * pointSize;
+      return value * pointSize;
     }
     case 'TICKS':
-      return configured.maximumValue * 0.25;
+      return value * 0.25;
     case 'PERCENT':
-      return Math.abs(input.entry) * (configured.maximumValue / 100);
+      return Math.abs(input.entry) * (value / 100);
     case 'ATR':
     case 'STRUCTURAL':
       return Number.POSITIVE_INFINITY;
@@ -66,7 +67,11 @@ export function validateTradeWithStrategy(
   profile: StrategyProfile,
   dailyContext?: DailyTradeContext,
 ): TradeResult {
-  const instrumentStopLimit = stopLimitInPrice(profile, input);
+  const policy=normalizeStrategyPolicy(profile);
+  const configuredStop = profile.stopLimitSettings?.find((limit) => limit.instrument === input.instrument);
+  const instrumentStopLimit = stopValueInPrice(profile, input, configuredStop?.maximumValue ?? Number.POSITIVE_INFINITY);
+  const instrumentStopMinimum = configuredStop?.minimumValue ? stopValueInPrice(profile, input, configuredStop.minimumValue) : 0;
+  const instrumentStopPreferred = configuredStop?.preferredValue ? stopValueInPrice(profile, input, configuredStop.preferredValue) : null;
   const riskDistance = Math.abs(input.entry - input.stopLoss);
   const rewardDistance = Math.abs(input.takeProfit - input.entry);
   const rr = riskDistance > 0 ? rewardDistance / riskDistance : 0;
@@ -75,28 +80,28 @@ export function validateTradeWithStrategy(
 
   const contextItems = [
     {
-      label: `RR at least 1:${profile.minimumRR}`,
-      earned: rr >= profile.minimumRR ? 7 : 0,
+      label: `RR at least 1:${policy.minimumRR}`,
+      earned: rr >= policy.minimumRR ? 7 : 0,
       possible: 7,
     },
     {
-      label: 'Stop within strategy limit',
-      earned: riskDistance <= instrumentStopLimit ? 4 : 0,
+      label: 'Stop inside configured operating range',
+      earned: riskDistance <= instrumentStopLimit && riskDistance >= instrumentStopMinimum ? 4 : 0,
       possible: 4,
     },
     {
-      label: `Risk at or below ${profile.maximumRiskPercent}%`,
-      earned: input.riskPercent <= profile.maximumRiskPercent ? 4 : 0,
+      label: `Risk at or below ${policy.maximumRisk}%`,
+      earned: input.riskPercent <= policy.maximumRisk ? 4 : 0,
       possible: 4,
     },
     {
       label: 'Allowed session',
-      earned: profile.allowedSessions.includes(input.session) ? 3 : 0,
+      earned: policy.allowedSessions.includes(input.session) ? 3 : 0,
       possible: 3,
     },
     {
       label: 'News rule respected',
-      earned: !profile.avoidHighImpactNews || !input.highImpactNews ? 2 : 0,
+      earned: !policy.avoidHighImpactNews || !input.highImpactNews ? 2 : 0,
       possible: 2,
     },
   ];
@@ -123,39 +128,43 @@ export function validateTradeWithStrategy(
   const observations: string[] = [];
   let overrideAllowed = true;
 
-  if (!profile.instruments.includes(input.instrument)) {
+  if (!policy.instruments.includes(input.instrument)) {
     vetoes.push('Instrument is not enabled in this strategy.');
   }
   if (
-    profile.requireTrendAlignment &&
+    policy.requireTrendAlignment &&
     (!input.h4TrendAligned || !input.h1TrendAligned)
   ) {
     vetoes.push('Required timeframe alignment is missing.');
   }
-  profile.requiredEvidence.forEach((key) => {
+  policy.requiredConfirmations.forEach((key) => {
     if (!input[key]) vetoes.push(`${labels[key]} is mandatory.`);
   });
-  if (rr < profile.minimumRR) {
-    vetoes.push(`RR is ${round(rr)}; strategy minimum is ${profile.minimumRR}.`);
+  if (rr < policy.minimumRR) {
+    vetoes.push(`RR is ${round(rr)}; strategy minimum is ${policy.minimumRR}.`);
   }
-  if (input.riskPercent > profile.maximumRiskPercent) {
-    vetoes.push(`Risk exceeds ${profile.maximumRiskPercent}%.`);
+  if (input.riskPercent > policy.maximumRisk) {
+    vetoes.push(`Risk exceeds ${policy.maximumRisk}%.`);
   }
-  if (!profile.allowedSessions.includes(input.session)) {
+  if (!policy.allowedSessions.includes(input.session)) {
     vetoes.push('Session is not allowed by this strategy.');
   }
   if (riskDistance > instrumentStopLimit) {
-    vetoes.push('Stop distance exceeds this strategy limit.');
+    vetoes.push('Stop distance exceeds this strategy maximum.');
   }
-  if (profile.avoidHighImpactNews && input.highImpactNews) {
+  if (instrumentStopMinimum > 0 && riskDistance < instrumentStopMinimum) {
+    vetoes.push('Stop distance is narrower than the minimum configured for this instrument and trading style.');
+  }
+  if (instrumentStopPreferred && riskDistance !== instrumentStopPreferred) {
+    observations.push(`Preferred stop distance for this instrument is approximately ${round(instrumentStopPreferred, 5)} in price terms.`);
+  }
+  if (policy.avoidHighImpactNews && input.highImpactNews) {
     vetoes.push('High-impact news conflict detected.');
   }
   if (
-    profile.rejectUnlistedSetups &&
-    input.setupType &&
-    !(profile.preferredSetups ?? []).includes(input.setupType)
+    (!input.setupType || input.setupType==='Unclear' || policy.forbiddenSetups.includes(input.setupType) || Boolean(policy.allowedSetups&&!policy.allowedSetups.includes(input.setupType)))
   ) {
-    vetoes.push('Setup type is not enabled in this strategy.');
+    vetoes.push(input.setupType?'Setup type is not enabled in this strategy.':'Setup classification is required before authorization.');
   }
   if (!input.orderBlock && !input.fairValueGap) {
     observations.push('No valid OB or FVG identified.');
@@ -173,9 +182,15 @@ export function validateTradeWithStrategy(
           ? 'B'
           : 'C';
 
+  const confidenceMissing=input.setupConfidence==null;
+  const confidenceBelow=!confidenceMissing&&input.setupConfidence!<policy.confidenceThreshold;
+  if(confidenceMissing)vetoes.push('Live strategy confidence is required before authorization.');
+  if(confidenceBelow)observations.push(`Confidence ${input.setupConfidence}% is below the required ${policy.confidenceThreshold}% threshold.`);
   const baseVerdict =
     vetoes.length > 0
       ? 'REJECTED'
+      : confidenceBelow
+        ? 'WAIT'
       : score >= profile.authorizationScore
         ? 'AUTHORIZED'
         : score >= profile.waitScore
@@ -184,10 +199,10 @@ export function validateTradeWithStrategy(
 
   let greenDayExceptionApplied = false;
   let dailyMessage = '';
-  const strategyLimit = Math.max(1, Number(profile.maximumTradesPerDay ?? 1));
+  const strategyLimit = Math.max(1, Number(policy.tradeLimits.strategy));
   const instrumentLimit = Math.max(
     1,
-    Number(profile.instrumentTradeLimits?.[input.instrument] ?? strategyLimit),
+    Number(policy.tradeLimits.byInstrument[input.instrument] ?? strategyLimit),
   );
   const strategyTradesToday = dailyContext?.strategyTradesToday ?? input.tradesToday;
   const instrumentTradesToday = dailyContext?.instrumentTradesToday ?? 0;

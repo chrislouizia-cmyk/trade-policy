@@ -45,18 +45,13 @@ export default function RiskSettings({
     <div className="stack">
       <div className="grid grid-3">
         {field('maximumRiskPercent', 'Risk per trade %', 0.05, 0.05)}
-        {field('maximumDailyRiskPercent', 'Maximum daily risk %', 0.1, 0)}
-        {field('maximumWeeklyRiskPercent', 'Maximum weekly risk %', 0.1, 0)}
-        {field('maximumDailyLossPercent', 'Maximum daily loss %', 0.1, 0)}
-        {field('maximumTotalExposurePercent', 'Maximum total exposure %', 0.1, 0)}
-        {field('maximumCurrencyExposurePercent', 'Maximum exposure per currency %', 0.1, 0)}
         {field('maximumTradesPerDay', 'Maximum total trades per day', 1, 1)}
         {field('maximumConsecutiveLosses', 'Maximum consecutive losses', 1, 1)}
         {field('minimumRR', 'Minimum RR', 0.1, 0.1)}
-        {field('preferredRR', 'Preferred RR', 0.1, 0.1)}
         {field('authorizationScore', 'AUTHORIZED score', 1, 1)}
         {field('waitScore', 'WAIT score', 1, 1)}
       </div>
+      <p className="muted">Exposure percentages, weekly limits, and preferred RR are coming later and are not editable in the beta.</p>
 
       <div className="card nested-card">
         <h3>Daily trades by instrument</h3>

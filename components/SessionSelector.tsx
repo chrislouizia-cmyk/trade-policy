@@ -75,8 +75,9 @@ export default function SessionSelector({ sessions, onChange, userTimezone, onUs
           const active = sessions.some((item) => item.sessionCode === preset.sessionCode);
           return <button type="button" className={`chip ${active ? 'selected' : ''}`} key={preset.sessionCode} onClick={() => togglePreset(preset)}>{preset.name}</button>;
         })}
-        <button type="button" className="chip" onClick={addCustom}>+ Custom</button>
+        <button type="button" className="chip" disabled title="Coming later">+ Custom — Coming later</button>
       </div>
+      <p className="muted">Beta enforcement uses the selected session codes. Detailed hours, weekdays, and outside-session controls are coming later.</p>
 
       {sessions.map((session, index) => {
         const localStart = localTimeFor(session.startTime, session.timezone, userTimezone);
@@ -86,12 +87,12 @@ export default function SessionSelector({ sessions, onChange, userTimezone, onUs
             <div className="session-card-head"><div><strong>{session.name}</strong><small>{session.timezone}</small></div><button type="button" onClick={() => onChange(sessions.filter((_, itemIndex) => itemIndex !== index))}>Remove</button></div>
             <div className="session-time-summary"><span>Market time <strong>{session.startTime}–{session.endTime}</strong></span><span>Your time <strong>{localStart}–{localEnd}</strong></span></div>
             <div className="session-row compact-session-row">
-              <label>Name<input value={session.name} onChange={(event) => update(index, { name: event.target.value })} /></label>
-              <label>Market timezone<select value={session.timezone} onChange={(event) => update(index, { timezone: event.target.value })}>{Array.from(new Set([session.timezone, ...COMMON_TIMEZONES])).map((zone) => <option key={zone}>{zone}</option>)}</select></label>
-              <label>Start<input type="time" value={session.startTime} onChange={(event) => update(index, { startTime: event.target.value })} /></label>
-              <label>End<input type="time" value={session.endTime} onChange={(event) => update(index, { endTime: event.target.value })} /></label>
+              <label>Name<input disabled value={session.name} /></label>
+              <label>Market timezone<select disabled value={session.timezone}>{Array.from(new Set([session.timezone, ...COMMON_TIMEZONES])).map((zone) => <option key={zone}>{zone}</option>)}</select></label>
+              <label>Start<input disabled type="time" value={session.startTime} /></label>
+              <label>End<input disabled type="time" value={session.endTime} /></label>
             </div>
-            <div className="button-row compact-row"><label className="check-row"><input type="checkbox" checked={session.allowOpenOutside} onChange={(event) => update(index, { allowOpenOutside: event.target.checked })} /><span>Allow entries outside</span></label><label className="check-row"><input type="checkbox" checked={session.allowHoldOutside} onChange={(event) => update(index, { allowHoldOutside: event.target.checked })} /><span>Allow holding outside</span></label></div>
+            <div className="button-row compact-row"><label className="check-row"><input disabled type="checkbox" checked={session.allowOpenOutside} /><span>Allow entries outside — Coming later</span></label><label className="check-row"><input disabled type="checkbox" checked={session.allowHoldOutside} /><span>Allow holding outside — Coming later</span></label></div>
           </div>
         );
       })}

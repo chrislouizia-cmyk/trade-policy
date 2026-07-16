@@ -15,9 +15,11 @@ const scanStages = [
 export default function LiveMarketPanel({
   strategy,
   onApply,
+  onLoadingChange,
 }: {
   strategy: StrategyProfile;
   onApply: (analysis: ChartAnalysis) => void;
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const [instrument, setInstrument] = useState<Instrument>(
     strategy.instruments[0] || 'XAUUSD',
@@ -48,6 +50,7 @@ export default function LiveMarketPanel({
 
   async function scan() {
     setLoading(true);
+    onLoadingChange?.(true);
     setStageIndex(0);
     setError('');
     setAnalysis(null);
@@ -71,6 +74,7 @@ export default function LiveMarketPanel({
       setError('Market analysis is temporarily unavailable. Please try again shortly.');
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
   }
 
@@ -80,10 +84,7 @@ export default function LiveMarketPanel({
         <div>
           <p className="brand">LIVE DATA MODE</p>
           <h2>Analyze configured timeframes automatically</h2>
-          <p className="muted">
-            No screenshots required. Trade Police reads {strategy.trendTimeframe}, {' '}
-            {strategy.confirmationTimeframe}, and {strategy.entryTimeframe}.
-          </p>
+          <p className="muted">Trade Police reads {strategy.trendTimeframe}, {' '}{strategy.confirmationTimeframe}, and {strategy.entryTimeframe} from live market data.</p>
         </div>
         <div>
           <label>

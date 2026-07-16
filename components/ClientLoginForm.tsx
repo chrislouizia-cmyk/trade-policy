@@ -24,7 +24,7 @@ export default function ClientLoginForm({ next }: { next: string }) {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/complete-profile`,
           data: { account_type: 'customer' },
         },
       });
@@ -48,7 +48,8 @@ export default function ClientLoginForm({ next }: { next: string }) {
       return;
     }
 
-    window.location.assign(next);
+    const { data: profile } = await supabase.from('profiles').select('profile_completed').maybeSingle();
+    window.location.assign(profile?.profile_completed ? next : '/complete-profile');
   }
 
   return (

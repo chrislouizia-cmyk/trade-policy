@@ -13,6 +13,11 @@ export default function ActiveStrategySwitcher() {
   const router = useRouter();
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const refresh=()=>{void load()};
+    window.addEventListener('trade-police:strategy-changed',refresh);
+    return()=>window.removeEventListener('trade-police:strategy-changed',refresh);
+  }, []);
 
   async function load() {
     const supabase=createClient();

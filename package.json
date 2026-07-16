@@ -1,6 +1,6 @@
 {
   "name": "trade-police",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.21",
   "private": true,
   "scripts": {
     "dev": "next dev",

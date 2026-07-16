@@ -1,5 +1,6 @@
 import './trade-police.css';
 import type { Metadata } from 'next';
+import AppFooter from '@/components/AppFooter';
 
 export const metadata: Metadata = {
   title: 'Trade Police',
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><div className="app-document-content">{children}</div><AppFooter /></body></html>;
 }

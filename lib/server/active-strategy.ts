@@ -1,9 +1,23 @@
 import 'server-only';
 
-import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
+import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
 
 type SupabaseServerClient = any;
+
+export class NoActiveStrategyError extends Error {
+  constructor() {
+    super('No active strategy is configured. Complete strategy onboarding before analyzing a trade.');
+    this.name = 'NoActiveStrategyError';
+  }
+}
+
+export class StrategyNotFoundError extends Error {
+  constructor() {
+    super('The strategy stored on this trade could not be found.');
+    this.name = 'StrategyNotFoundError';
+  }
+}
 
 const evidenceKeys: EvidenceKey[] = [
   'h4TrendAligned',
@@ -21,16 +35,38 @@ export async function loadActiveStrategy(
   supabase: SupabaseServerClient,
   userId: string,
 ): Promise<StrategyProfile> {
-  const { data: profile, error: profileError } = await supabase
+  return loadStrategy(supabase, userId);
+}
+
+export async function loadStrategyById(
+  supabase: SupabaseServerClient,
+  userId: string,
+  strategyId: string,
+): Promise<StrategyProfile> {
+  return loadStrategy(supabase, userId, strategyId);
+}
+
+async function loadStrategy(
+  supabase: SupabaseServerClient,
+  userId: string,
+  strategyId?: string,
+): Promise<StrategyProfile> {
+  let profileQuery = supabase
     .from('strategy_profiles')
     .select('*')
-    .eq('user_id', userId)
-    .eq('is_default', true)
-    .eq('is_archived', false)
-    .maybeSingle();
+    .eq('user_id', userId);
+
+  profileQuery = strategyId
+    ? profileQuery.eq('id', strategyId)
+    : profileQuery.eq('is_default', true).eq('is_archived', false);
+
+  const { data: profile, error: profileError } = await profileQuery.maybeSingle();
 
   if (profileError) throw profileError;
-  if (!profile) return DEFAULT_STRATEGY_PROFILE;
+  if (!profile) {
+    if (strategyId) throw new StrategyNotFoundError();
+    throw new NoActiveStrategyError();
+  }
 
   const [instrumentResult, sessionResult, ruleResult, stopResult] = await Promise.all([
     supabase
@@ -90,11 +126,13 @@ export async function loadActiveStrategy(
   const stopLimitSettings: StopLimit[] = (stopResult.data ?? []).map((row: any) => ({
     instrument: row.instrument,
     method: row.method,
+    minimumValue: Number(row.minimum_value ?? 0),
+    preferredValue: Number(row.preferred_value ?? row.maximum_value),
     maximumValue: Number(row.maximum_value),
     atrMultiplier: row.atr_multiplier == null ? undefined : Number(row.atr_multiplier),
   }));
 
-  const evidenceWeights = { ...DEFAULT_STRATEGY_PROFILE.evidenceWeights };
+  const evidenceWeights:Record<string,number> = {};
   const requiredEvidence: EvidenceKey[] = [];
 
   for (const rule of rules) {
@@ -103,25 +141,25 @@ export async function loadActiveStrategy(
     evidenceWeights[key] = rule.weight;
     if (rule.mandatory) requiredEvidence.push(key);
   }
+  if(!rules.length)Object.assign(evidenceWeights,profile.evidence_weights??{});
 
   const allowedSessions = sessions.length
     ? sessions.map((session) => session.sessionCode)
-    : profile.allowed_sessions ?? DEFAULT_STRATEGY_PROFILE.allowedSessions;
+    : profile.allowed_sessions ?? [];
 
-  return {
-    ...DEFAULT_STRATEGY_PROFILE,
+  const strategy:StrategyProfile = {
     id: profile.id,
     name: profile.name,
     description: profile.description ?? '',
     isDefault: Boolean(profile.is_default),
     isArchived: Boolean(profile.is_archived),
-    marketTypes: profile.market_types ?? ['FOREX'],
-    instruments: instruments.length ? instruments : profile.instruments ?? DEFAULT_STRATEGY_PROFILE.instruments,
-    macroTimeframe: profile.macro_timeframe ?? DEFAULT_STRATEGY_PROFILE.macroTimeframe,
+    marketTypes: profile.market_types ?? [],
+    instruments: instruments.length ? instruments : profile.instruments ?? [],
+    macroTimeframe: profile.macro_timeframe ?? undefined,
     trendTimeframe: profile.trend_timeframe,
     confirmationTimeframe: profile.confirmation_timeframe,
     entryTimeframe: profile.entry_timeframe,
-    triggerTimeframe: profile.trigger_timeframe ?? DEFAULT_STRATEGY_PROFILE.triggerTimeframe,
+    triggerTimeframe: profile.trigger_timeframe ?? undefined,
     minimumRR: Number(profile.minimum_rr),
     preferredRR: Number(profile.preferred_rr ?? profile.minimum_rr),
     maximumRiskPercent: Number(profile.maximum_risk_percent),
@@ -160,5 +198,12 @@ export async function loadActiveStrategy(
     trailingConfig: profile.trailing_config ?? {},
     exitConfig: profile.exit_config ?? {},
     monitorConfig: profile.monitor_config ?? {},
+    tradingStyle: profile.trading_style ?? 'day-trading',
+    minimumHoldingMinutes: Number(profile.minimum_holding_minutes ?? 15),
+    strategyMethodologies: profile.strategy_methodologies ?? [],
+    personalRules: profile.personal_rules ?? [],
+    aiBehavior: profile.ai_behavior ?? undefined,
   };
+  normalizeStrategyPolicy(strategy);
+  return strategy;
 }

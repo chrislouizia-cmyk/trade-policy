@@ -28,6 +28,16 @@ export default function ResetPasswordPage() {
         return;
       }
 
+      const code = queryParams.get('code');
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) {
+          if (mounted) { setMessage(exchangeError.message); setReady(false); setChecking(false); }
+          return;
+        }
+        window.history.replaceState({}, document.title, '/reset-password');
+      }
+
       // Support legacy/implicit recovery links that contain tokens in the URL hash.
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const accessToken = hash.get('access_token');

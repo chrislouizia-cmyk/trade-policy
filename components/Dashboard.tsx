@@ -18,11 +18,11 @@ export default function Dashboard(p: Props) {
       <section className="dashboard-hero card command-center-hero">
         <div className="dashboard-hero-copy">
           <span className="eyebrow">TRADE POLICE COMMAND CENTER</span>
-          <h1>Analyze the market.</h1>
-          <p>Validate the setup against your active account, strategy and rules before execution.</p>
-          <small>Protect the process. Every trade must earn permission.</small>
+          <h1>Institutional trading discipline.</h1>
+          <p>Review the market, validate the setup, and keep the process consistent before any order is sent.</p>
+          <small>Every trade remains under review until the evidence is clear.</small>
         </div>
-        <a className="button-link primary dashboard-primary-action" href="/validate">Analyze market</a>
+        <a className="button-link primary dashboard-primary-action" href="/validate">Open validator</a>
       </section>
 
       <OnboardingChecklist
@@ -31,7 +31,7 @@ export default function Dashboard(p: Props) {
         hasTrade={p.hasTrade}
       />
 
-      <div className="grid grid-3 metric-grid compact-dashboard-grid">
+      <div className="grid grid-4 metric-grid compact-dashboard-grid">
         <Card
           label="Active account"
           value={p.account ? p.account.name : 'Not configured'}
@@ -50,45 +50,45 @@ export default function Dashboard(p: Props) {
         <Card
           label="Today"
           value={`${p.todayPnl >= 0 ? '+' : ''}$${p.todayPnl.toFixed(2)}`}
-          sub={`${p.wins} wins · ${p.losses} losses`}
+          sub={`${p.wins} wins · ${p.losses} losses · ${p.discipline}% discipline`}
         />
-        <Card label="Discipline score" value={`${p.discipline}%`} sub="Following Trade Police verdicts" />
-        <Card label="Performance" value="View analytics" sub="Review behavior and results" href="/analytics" />
       </div>
 
       <div className="card quick-actions">
         <div className="section-title">
           <div>
             <span className="eyebrow">NEXT MOVE</span>
-            <h2>Quick actions</h2>
+            <h2>Workspace actions</h2>
           </div>
         </div>
         <div className="button-row">
           <a className="button-link primary" href="/validate">Analyze market</a>
-          <a className="button-link secondary" href="/active-trade">Open trades</a>
-          <a className="button-link secondary" href="/profile">Switch strategy</a>
-          <a className="button-link secondary" href="/analytics">View performance</a>
+          <a className="button-link secondary" href="/active-trade">Review open trades</a>
+          <a className="button-link secondary" href="/profile">Adjust strategy</a>
+          <a className="button-link secondary" href="/analytics">Review analytics</a>
         </div>
       </div>
 
-      <div className="grid grid-2 dashboard-footer-grid">
-        <div className="card release-notes-card">
-          <span className="eyebrow">WHAT'S NEW</span>
-          <h2>Better strategy intelligence</h2>
-          <ul>
-            <li>Strategy switching now updates validation rules and allowed instruments.</li>
-            <li>Feedback is now tracked so beta issues can be resolved faster.</li>
-            <li>Mobile strategy creation and performance analytics are easier to use.</li>
-          </ul>
-          <small className="muted">Beta release</small>
+      <div className="card workspace-summary">
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">CURRENT VIEW</span>
+            <h2>Signal discipline</h2>
+          </div>
         </div>
-
-        <div className="card disclaimer">
-          <strong>Beta disclaimer</strong>
-          <p className="muted">
-            Trade Police is a decision-support and discipline tool, not financial advice.
-            You remain responsible for every trade and loss.
-          </p>
+        <div className="dashboard-footnotes">
+          <div>
+            <strong>Consistency over volume</strong>
+            <p className="muted">The dashboard now keeps the focus on the active account, the strategy in control, and the next decision that needs attention.</p>
+          </div>
+          <div>
+            <strong>Operational notes</strong>
+            <ul>
+              <li>Strategy switching updates the rules and instruments immediately.</li>
+              <li>Feedback is tracked so beta issues can be resolved faster.</li>
+              <li>Mobile strategy and analytics views remain available without crowding the workspace.</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

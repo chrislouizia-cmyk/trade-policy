@@ -57,9 +57,35 @@ export type StrategyRule = {
 export type StopLimit = {
   instrument: string;
   method: StopMethod;
+  minimumValue?: number;
+  preferredValue?: number;
   maximumValue: number;
   atrMultiplier?: number;
 };
+
+export type TradingStyle = 'scalping' | 'day-trading' | 'swing' | 'position';
+export type AIBehaviorProfile = {
+  tone: 'direct' | 'educational' | 'analytical' | 'mentor';
+  strictness: 'conservative' | 'balanced' | 'opportunistic';
+  confidenceThreshold: number;
+  explainDecisions: boolean;
+  suggestAlternatives: boolean;
+  useDisplayName: boolean;
+};
+
+export type AICommentary = {
+  headline: string;
+  message: string;
+  nextAction: string;
+  passed: string[];
+  missing: string[];
+  violated: string[];
+  tone: AIBehaviorProfile['tone'];
+  spokenText: string;
+};
+
+export type StrategyMethodology = { category: string; rules: string[] };
+export type PersonalTradingRule = { key: string; enabled: boolean; value?: string | number | boolean | string[] };
 
 export type StrategyProfile = {
   id?: string;
@@ -112,6 +138,11 @@ export type StrategyProfile = {
   trailingConfig?: Record<string, unknown>;
   exitConfig?: Record<string, unknown>;
   monitorConfig?: Record<string, unknown>;
+  tradingStyle?: TradingStyle;
+  minimumHoldingMinutes?: number;
+  strategyMethodologies?: StrategyMethodology[];
+  personalRules?: PersonalTradingRule[];
+  aiBehavior?: AIBehaviorProfile;
 };
 
 export const DEFAULT_STRATEGY_PROFILE: StrategyProfile = {
@@ -207,6 +238,7 @@ export type TradeInput = {
   fairValueGap: boolean;
   retestConfirmed: boolean;
   setupType?: SetupType;
+  setupConfidence?: number;
   strategyProfile?: StrategyProfile;
 };
 
@@ -267,6 +299,7 @@ export type ChartAnalysis = {
   candidates: EntryCandidate[];
   warnings: string[];
   summary: string;
+  aiCommentary?: AICommentary;
 };
 export type TradeOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' | 'PARTIAL';
 export type PostTradeAnalysis = {

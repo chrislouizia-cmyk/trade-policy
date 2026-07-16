@@ -30,6 +30,7 @@ const schema = z.object({
   fairValueGap: z.boolean(),
   retestConfirmed: z.boolean(),
   setupType: z.string().trim().max(120).optional(),
+  setupConfidence: z.number().min(0).max(100).optional(),
 });
 
 export async function POST(request: Request) {
