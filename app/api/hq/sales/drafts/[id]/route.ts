@@ -1,0 +1,3 @@
+import {NextResponse} from 'next/server';import {save} from '../route';import {createClient} from '@/lib/supabase/server';
+export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){return save(request,(await params).id)}
+export async function DELETE(_:Request,{params}:{params:Promise<{id:string}>}){const {id}=await params,supabase=await createClient(),{data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:'Authentication required.'},{status:401});const {data,error}=await supabase.rpc('staff_sales_archive_draft',{p_id:id});if(error)return NextResponse.json({error:error.message},{status:403});return NextResponse.json({draft:data})}

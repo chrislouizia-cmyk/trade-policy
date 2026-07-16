@@ -1,0 +1,58 @@
+-- Trade Police V21 — actionable Operations Center, incident lifecycle and health history.
+
+alter table public.system_incidents add column if not exists category text not null default 'INTERNAL_APPLICATION';
+alter table public.system_incidents add column if not exists status text not null default 'OPEN';
+alter table public.system_incidents add column if not exists first_detected_at timestamptz not null default now();
+alter table public.system_incidents add column if not exists last_detected_at timestamptz not null default now();
+alter table public.system_incidents add column if not exists occurrence_count integer not null default 1;
+alter table public.system_incidents add column if not exists assigned_to uuid references auth.users(id) on delete set null;
+alter table public.system_incidents add column if not exists resolution_summary text;
+alter table public.system_incidents add column if not exists dedupe_key text;
+
+create table if not exists public.incident_updates(id bigint generated always as identity primary key,incident_id bigint not null references public.system_incidents(id) on delete cascade,status text not null,note text,created_by uuid not null references auth.users(id) on delete restrict,created_at timestamptz not null default now());
+create table if not exists public.service_health_history(id bigint generated always as identity primary key,service text not null,status text not null,latency_ms integer,message text,checked_at timestamptz not null default now());
+alter table public.incident_updates enable row level security;alter table public.service_health_history enable row level security;
+revoke all on public.incident_updates,public.service_health_history from anon,authenticated;
+create index if not exists system_incidents_status_severity_idx on public.system_incidents(status,severity,last_detected_at desc);
+create unique index if not exists system_incidents_open_dedupe_idx on public.system_incidents(dedupe_key) where resolved_at is null and dedupe_key is not null;
+create index if not exists incident_updates_incident_idx on public.incident_updates(incident_id,created_at desc);
+create index if not exists service_health_history_service_checked_idx on public.service_health_history(service,checked_at desc);
+
+-- Thresholds: incident after 3 consecutive unavailable probes; degraded after
+-- 3 consecutive degraded probes. Repeated usage failure groups become actions
+-- at 5 occurrences/15 minutes globally or 3/30 minutes for one customer.
+create or replace function public.staff_record_service_health(p_service text,p_status text,p_latency_ms integer,p_message text)
+returns void language plpgsql security definer set search_path=public as $$ declare failures integer; v_key text:=lower(p_service)||':health'; begin
+ if not public.has_staff_permission('system.health') then raise exception 'System health permission denied'; end if;
+ insert into public.service_health_history(service,status,latency_ms,message) values(lower(p_service),lower(p_status),p_latency_ms,left(p_message,500));
+ if lower(p_service)='email' and lower(p_status) in ('not_configured','not_monitored') then return; end if;
+ select count(*) into failures from (select status from public.service_health_history where service=lower(p_service) order by checked_at desc limit 3)x where status in ('unavailable','degraded');
+ if failures=3 then insert into public.system_incidents(public_code,internal_code,provider,severity,message,category,status,first_detected_at,last_detected_at,occurrence_count,dedupe_key) values('SERVICE_HEALTH','CONSECUTIVE_HEALTH_FAILURE',p_service,case when lower(p_status)='unavailable' then 'HIGH' else 'WARNING' end,left(p_message,500),'PROVIDER','OPEN',now(),now(),1,v_key) on conflict(dedupe_key) where resolved_at is null and dedupe_key is not null do update set last_detected_at=now(),occurrence_count=system_incidents.occurrence_count+1,severity=excluded.severity,message=excluded.message; end if;
+end;$$;
+
+create or replace function public.staff_operations_overview()
+returns jsonb language plpgsql security definer set search_path=public as $$ declare result jsonb; begin
+ if not public.has_staff_permission('system.health') then raise exception 'System health permission denied'; end if;
+ select jsonb_build_object(
+ 'openIncidents',(select count(*) from public.system_incidents where resolved_at is null),'criticalIncidents',(select count(*) from public.system_incidents where resolved_at is null and severity='CRITICAL'),'majorIncidents',(select count(*) from public.system_incidents where resolved_at is null and severity='HIGH'),
+ 'failedActionsToday',(select count(*) from public.usage_events where not success and created_at>=date_trunc('day',now())),'analysesToday',(select count(*) from public.usage_events where event_type in ('MARKET_ANALYSIS','CHART_ANALYSIS') and created_at>=date_trunc('day',now())),
+ 'authorizationsToday',(select count(*) from public.usage_events where event_type in ('TRADE_AUTHORIZATION','VALIDATION') and created_at>=date_trunc('day',now())),
+ 'blockedToday',(select count(*) from public.usage_events where event_type in ('TRADE_AUTHORIZATION','VALIDATION') and upper(coalesce(metadata->>'outcome','')) in ('BLOCKED','REJECTED') and created_at>=date_trunc('day',now())),
+ 'activeTrades',(select count(*) from public.active_trades where upper(status)='OPEN'),'strategiesCreatedToday',(select count(*) from public.strategy_profiles where created_at>=date_trunc('day',now())),
+ 'customersNeedingAttention',(select count(*) from public.profiles p where not exists(select 1 from public.strategy_profiles s where s.user_id=p.id and s.is_default and not coalesce(s.is_archived,false)) or not exists(select 1 from public.trading_accounts a where a.user_id=p.id and not coalesce(a.is_archived,false))),
+ 'topInstruments',(select coalesce(jsonb_agg(x),'[]'::jsonb) from (select instrument name,count(*) count from public.usage_events where instrument is not null and created_at>=now()-interval '30 days' group by instrument order by count(*) desc limit 8)x),
+ 'featureUsage',(select coalesce(jsonb_agg(x),'[]'::jsonb) from (select event_type name,count(*) count from public.usage_events where created_at>=now()-interval '30 days' group by event_type order by count(*) desc limit 10)x),
+ 'topCustomers',(select coalesce(jsonb_agg(x),'[]'::jsonb) from (select p.id,p.display_name,p.email,count(*) count from public.usage_events u join public.profiles p on p.id=u.user_id where u.created_at>=now()-interval '30 days' group by p.id,p.display_name,p.email order by count(*) desc limit 8)x),
+ 'customers',(select coalesce(jsonb_agg(x),'[]'::jsonb) from (select p.id,p.display_name,p.email,case when not exists(select 1 from public.strategy_profiles s where s.user_id=p.id and s.is_default and not coalesce(s.is_archived,false)) then 'No active strategy' else 'No trading account' end issue,(select max(created_at) from public.usage_events where user_id=p.id) last_activity_at from public.profiles p where not exists(select 1 from public.strategy_profiles s where s.user_id=p.id and s.is_default and not coalesce(s.is_archived,false)) or not exists(select 1 from public.trading_accounts a where a.user_id=p.id and not coalesce(a.is_archived,false)) order by last_activity_at desc nulls last limit 8)x),
+ 'failures',(select coalesce(jsonb_agg(x),'[]'::jsonb) from (select coalesce(endpoint,event_type) failure_type,count(*) count,count(distinct user_id) affected_users,min(created_at) first_seen,max(created_at) last_seen from public.usage_events where not success and created_at>=now()-interval '24 hours' group by coalesce(endpoint,event_type) having count(*)>=5 order by count(*) desc limit 8)x)
+ ) into result;return result;end;$$;
+
+create or replace function public.staff_incident_action(p_incident_id bigint,p_status text,p_note text default null)
+returns void language plpgsql security definer set search_path=public as $$ declare s text:=upper(p_status); begin if not public.has_staff_permission('system.health') then raise exception 'Incident management permission denied'; end if;if s not in ('OPEN','ACKNOWLEDGED','INVESTIGATING','MONITORING','RESOLVED','IGNORED') then raise exception 'Invalid incident status'; end if;update public.system_incidents set status=s,resolved_at=case when s in ('RESOLVED','IGNORED') then now() else null end,resolution_summary=case when s='RESOLVED' then nullif(trim(p_note),'') else resolution_summary end where id=p_incident_id;if not found then raise exception 'Incident not found';end if;insert into public.incident_updates(incident_id,status,note,created_by)values(p_incident_id,s,nullif(trim(p_note),''),auth.uid());end;$$;
+
+create or replace function public.staff_operations_queue(p_query text default '',p_page integer default 1,p_page_size integer default 25,p_severity text default 'ALL',p_status text default 'ALL',p_category text default 'ALL',p_sort text default 'LAST_DETECTED',p_direction text default 'DESC') returns jsonb language plpgsql security definer set search_path=public as $$ declare result jsonb;begin if not public.has_staff_permission('system.health') then raise exception 'System health permission denied';end if;with f as(select i.*,count(*) over() total_count from public.system_incidents i where (nullif(trim(p_query),'') is null or concat_ws(' ',i.public_code,i.internal_code,i.provider,i.endpoint,i.message,i.category) ilike '%'||trim(p_query)||'%') and (upper(p_severity)='ALL' or i.severity=upper(p_severity)) and (upper(p_status)='ALL' or i.status=upper(p_status)) and (upper(p_category)='ALL' or i.category=upper(p_category)) order by case when upper(p_sort)='SEVERITY' and upper(p_direction)='ASC' then array_position(array['INFO','WARNING','HIGH','CRITICAL'],i.severity) end asc,case when upper(p_sort)='SEVERITY' and upper(p_direction)='DESC' then array_position(array['INFO','WARNING','HIGH','CRITICAL'],i.severity) end desc,case when upper(p_direction)='ASC' then i.last_detected_at end asc,case when upper(p_direction)='DESC' then i.last_detected_at end desc limit greatest(1,least(p_page_size,100)) offset (greatest(p_page,1)-1)*greatest(1,least(p_page_size,100)))select jsonb_build_object('rows',coalesce(jsonb_agg(to_jsonb(f)-'total_count'),'[]'::jsonb),'total',coalesce(max(total_count),0),'page',greatest(p_page,1),'pageSize',greatest(1,least(p_page_size,100)))into result from f;return result;end;$$;
+create or replace function public.staff_operations_report() returns jsonb language plpgsql security definer set search_path=public as $$begin if not public.has_staff_permission('system.health') then raise exception 'System health permission denied';end if;return jsonb_build_object('incidents',coalesce((select jsonb_agg(to_jsonb(i) order by last_detected_at desc) from (select * from public.system_incidents order by last_detected_at desc limit 50000)i),'[]'::jsonb),'serviceHealth',coalesce((select jsonb_agg(to_jsonb(h) order by checked_at desc) from (select * from public.service_health_history order by checked_at desc limit 5000)h),'[]'::jsonb),'overview',public.staff_operations_overview());end;$$;
+
+revoke all on function public.staff_record_service_health(text,text,integer,text),public.staff_operations_overview(),public.staff_incident_action(bigint,text,text),public.staff_operations_queue(text,integer,integer,text,text,text,text,text),public.staff_operations_report() from public;
+grant execute on function public.staff_record_service_health(text,text,integer,text),public.staff_operations_overview(),public.staff_incident_action(bigint,text,text),public.staff_operations_queue(text,integer,integer,text,text,text,text,text),public.staff_operations_report() to authenticated;
+notify pgrst,'reload schema';

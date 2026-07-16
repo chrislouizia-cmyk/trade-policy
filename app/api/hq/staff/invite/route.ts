@@ -11,6 +11,8 @@ const InviteSchema = z.object({
   displayName: z.string().trim().min(2).max(120),
   role: z.enum(['HEAD_OF_SALES','COMPLIANCE_OFFICER','SUPPORT','TECHNICIAN','SECURITY_ADMIN']),
   title: z.string().trim().max(120).optional().default(''),
+  department: z.string().trim().max(120).optional().default(''),
+  managerUserId: z.string().uuid().or(z.literal('')).optional().default(''),
 });
 
 export async function POST(request: Request) {
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid invitation.' }, { status: 400 });
     }
 
-    const { email, displayName, role: staffRole, title } = parsed.data;
+    const { email, displayName, role: staffRole, title, department, managerUserId } = parsed.data;
     const admin = createAdminClient();
     const origin = new URL(request.url).origin;
     const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
@@ -55,6 +57,8 @@ export async function POST(request: Request) {
       display_title: title || staffRole.replaceAll('_', ' '),
       invited_by: user.id,
       mfa_required: true,
+      department: department || null,
+      manager_user_id: managerUserId || null,
     }, { onConflict: 'user_id' });
     if (staffError) return NextResponse.json({ error: staffError.message }, { status: 400 });
 
@@ -76,10 +80,36 @@ export async function POST(request: Request) {
       invited_by: user.id,
       status: 'INVITED',
       invited_at: new Date().toISOString(),
+      expires_at: new Date(Date.now()+7*24*60*60*1000).toISOString(),
+      department: department || null,
+      manager_user_id: managerUserId || null,
     }, { onConflict: 'email' });
+
+    await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invite.user.id,action:'INVITE_STAFF',resource_type:'STAFF_INVITATION',resource_id:invite.user.id,access_scope:staffRole,success:true,metadata:{email}});
 
     return NextResponse.json({ ok: true, message: `Invitation sent to ${email}.` });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unexpected invitation error.' }, { status: 500 });
   }
+}
+
+const ActionSchema=z.object({invitationId:z.string().uuid(),action:z.enum(['resend','cancel'])});
+export async function PATCH(request:Request){
+ try{
+  const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:'Authentication required.'},{status:401});
+  const {data:allowed}=await supabase.rpc('has_staff_permission',{p_permission:'staff.manage'});if(!allowed)return NextResponse.json({error:'Staff management permission denied.'},{status:403});
+  const parsed=ActionSchema.safeParse(await request.json());if(!parsed.success)return NextResponse.json({error:'Invalid invitation action.'},{status:400});
+  const admin=createAdminClient();const {data:invitation,error}=await admin.from('staff_invitations').select('id,user_id,email,display_name,status').eq('id',parsed.data.invitationId).single();if(error||!invitation)return NextResponse.json({error:'Invitation not found.'},{status:404});
+  if(parsed.data.action==='cancel'){
+   const {error:updateError}=await admin.from('staff_invitations').update({status:'CANCELLED',updated_at:new Date().toISOString()}).eq('id',invitation.id);if(updateError)return NextResponse.json({error:updateError.message},{status:400});
+   await admin.from('staff_roles').update({is_active:false,updated_at:new Date().toISOString()}).eq('user_id',invitation.user_id);
+   await admin.from('organization_members').update({status:'REMOVED'}).eq('user_id',invitation.user_id);
+   await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invitation.user_id,action:'CANCEL_STAFF_INVITATION',resource_type:'STAFF_INVITATION',resource_id:invitation.id,success:true,metadata:{email:invitation.email}});
+   return NextResponse.json({ok:true,message:`Invitation for ${invitation.email} cancelled.`});
+  }
+  const origin=new URL(request.url).origin;const {error:resendError}=await admin.auth.admin.inviteUserByEmail(invitation.email,{redirectTo:`${origin}/auth/callback?next=/hq`,data:{account_type:'staff',display_name:invitation.display_name}});if(resendError)return NextResponse.json({error:resendError.message},{status:400});
+  await admin.from('staff_invitations').update({status:'INVITED',invited_at:new Date().toISOString(),expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),updated_at:new Date().toISOString()}).eq('id',invitation.id);
+  await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invitation.user_id,action:'RESEND_STAFF_INVITATION',resource_type:'STAFF_INVITATION',resource_id:invitation.id,success:true,metadata:{email:invitation.email}});
+  return NextResponse.json({ok:true,message:`Invitation resent to ${invitation.email}.`});
+ }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Invitation action failed.'},{status:500})}
 }
