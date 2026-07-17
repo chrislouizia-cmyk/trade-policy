@@ -15,7 +15,8 @@ test('different instruments are independently calculated from their own candles'
   const results=[buildLiveAnalysis('XAUUSD',s,series(candles(1,15)),'fixture'),buildLiveAnalysis('EURUSD',s,series(candles(-1,-15)),'fixture'),buildLiveAnalysis('GBPUSD',s,series(candles(0)),'fixture')];
   assert.deepEqual(results.map(x=>x.instrument),['XAUUSD','EURUSD','GBPUSD']);
   assert.deepEqual(results.map(x=>x.suggestedDirection),['BUY','SELL',null]);
-  assert.equal(results.every(x=>x.components.mandatoryScore+x.components.optionalScore+x.components.alignmentScore+x.components.contradictionPenalty===x.liveAnalysisConfidence),true);
+  assert.equal(results.filter(x=>x.status==='VALID_ANALYSIS').every(x=>x.components.mandatoryScore+x.components.optionalScore+x.components.alignmentScore+x.components.contradictionPenalty===x.liveAnalysisConfidence),true);
+  assert.equal(results[2].status,'NO_RELEVANT_EVIDENCE');assert.equal(results[2].liveAnalysisConfidence,null);
 });
 
 test('identical candles score differently for different strategy DNA',()=>{
@@ -37,10 +38,33 @@ test('a confirming new candle changes the explainable result and timestamp',asyn
 
 test('provider failure and insufficient candles never become a valid percentage',()=>{
   assert.throws(()=>buildLiveAnalysis('XAUUSD',strategy(),series([]),'fixture'),(error)=>error instanceof MarketAnalysisError&&error.status==='DATA_UNAVAILABLE');
-  assert.throws(()=>buildLiveAnalysis('XAUUSD',strategy(),series(candles(1).slice(0,10)),'fixture'),(error)=>error instanceof MarketAnalysisError&&error.status==='INSUFFICIENT_CANDLES');
+  assert.throws(()=>buildLiveAnalysis('XAUUSD',strategy(),series(candles(1).slice(0,10)),'fixture'),(error)=>error instanceof MarketAnalysisError&&error.status==='INSUFFICIENT_DATA');
 });
 
 test('live confidence is separate from the strategy threshold',()=>{
   const result=buildLiveAnalysis('XAUUSD',strategy(),series(candles(0)),'fixture');
   assert.equal(result.strategyConfidenceThreshold,75);assert.notEqual(result.liveAnalysisConfidence,result.strategyConfidenceThreshold);
+});
+
+test('controlled breakout, rejection, continuation, consolidation, and no-setup fixtures remain strategy-specific',()=>{
+  const breakoutData=series(candles(1,15));
+  const rejectionCandles=candles(.4);rejectionCandles[39]={...rejectionCandles[39],open:116,close:111,high:135,low:110.5,volume:2500};
+  const rejectionData=series(rejectionCandles);
+  const flatData=series(candles(0).map(candle=>({...candle,open:100,high:100,low:100,close:100})));
+  const breakout=strategy({rules:[{ruleKey:'bosConfirmed',label:'Breakout',enabled:true,mandatory:true,weight:70,minimumConfidence:60,timeframeRole:'CONFIRMATION'},{ruleKey:'displacement',label:'Displacement',enabled:true,mandatory:false,weight:30,minimumConfidence:60,timeframeRole:'ENTRY'}]});
+  const rejection=strategy({rules:[{ruleKey:'rejectionCandle',label:'Rejection',enabled:true,mandatory:true,weight:70,minimumConfidence:60,timeframeRole:'TRIGGER'},{ruleKey:'liquiditySweep',label:'Sweep',enabled:true,mandatory:false,weight:30,minimumConfidence:60,timeframeRole:'ENTRY'}]});
+  const continuation=strategy({rules:[{ruleKey:'h4TrendAligned',label:'Trend',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'TREND'},{ruleKey:'h1TrendAligned',label:'Alignment',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'CONFIRMATION'}]});
+  assert.equal(buildLiveAnalysis('XAUUSD',breakout,breakoutData,'fixture').evidence.bosConfirmed.value,true);
+  assert.notEqual(buildLiveAnalysis('XAUUSD',breakout,breakoutData,'fixture').liveAnalysisConfidence,buildLiveAnalysis('XAUUSD',rejection,breakoutData,'fixture').liveAnalysisConfidence);
+  assert.equal(buildLiveAnalysis('XAUUSD',rejection,rejectionData,'fixture').evidence.rejectionCandle.value,true);
+  assert.notEqual(buildLiveAnalysis('XAUUSD',rejection,rejectionData,'fixture').liveAnalysisConfidence,buildLiveAnalysis('XAUUSD',breakout,rejectionData,'fixture').liveAnalysisConfidence);
+  assert.equal(buildLiveAnalysis('XAUUSD',continuation,breakoutData,'fixture').status,'VALID_ANALYSIS');
+  assert.equal(buildLiveAnalysis('XAUUSD',continuation,flatData,'fixture').status,'NO_RELEVANT_EVIDENCE');
+  assert.equal(buildLiveAnalysis('XAUUSD',rejection,flatData,'fixture').status,'NO_RELEVANT_EVIDENCE');
+});
+
+test('unreachable enabled evidence produces STRATEGY_UNSUPPORTED without a numeric score',()=>{
+  const unsupported=strategy({rules:[{ruleKey:'orderBlock',label:'Order block',enabled:true,mandatory:true,weight:100,minimumConfidence:60,timeframeRole:'CONFIRMATION'}]});
+  const result=buildLiveAnalysis('XAUUSD',unsupported,series(candles(1,15)),'fixture');
+  assert.equal(result.status,'STRATEGY_UNSUPPORTED');assert.equal(result.liveAnalysisConfidence,null);assert.deepEqual(result.breakdown.unsupported,['orderBlock']);
 });

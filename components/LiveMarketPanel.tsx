@@ -117,10 +117,8 @@ export default function LiveMarketPanel({
       {error && <p className="error">{error}</p>}
       {analysis && (
         <div className="analysis-strip">
-          <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No relevant setup':analysis.setupType}</strong>
-          <span>Live setup confidence {analysis.liveAnalysisConfidence}%</span>
-          <span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span>
-          <span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets strategy threshold':'Below strategy threshold'}</span>
+          <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.status==='INSUFFICIENT_DATA'?'Insufficient market data':analysis.status==='ANALYSIS_FAILED'?'Analysis unavailable':analysis.setupType}</strong>
+          {analysis.status==='VALID_ANALYSIS'&&<><span>Live setup confidence {analysis.liveAnalysisConfidence}%</span><span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span><span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets strategy threshold':'Below strategy threshold'}</span></>}
           <span>Last analyzed: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
           <span>{analysis.instrument} · {analysis.timeframe}</span>
           <span>Market data: {analysis.provider} · latest candle {analysis.latestCandleTimestamp}</span>

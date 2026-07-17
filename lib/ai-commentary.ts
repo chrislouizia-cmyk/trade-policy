@@ -32,11 +32,11 @@ export function buildAICommentary(
   const requiredFromRules = enabled.filter((rule) => rule.mandatory).map((rule) => rule.ruleKey as EvidenceKey);
   requiredFromRules.forEach((key) => required.add(key));
 
-  const passed = [...required].filter((key) => analysis.evidence[key]?.value).map((key) => EVIDENCE_LABELS[key]);
-  const missing = [...required].filter((key) => !analysis.evidence[key]?.value).map((key) => EVIDENCE_LABELS[key]);
+  const passed = [...required].filter((key) => analysis.evidence[key]?.value).map((key) => EVIDENCE_LABELS[key]).filter(Boolean);
+  const missing = [...required].filter((key) => !analysis.evidence[key]?.value).map((key) => EVIDENCE_LABELS[key]??key).filter(Boolean);
   const violated = [...analysis.warnings];
   const threshold = ai.confidenceThreshold ?? strategy.waitScore;
-  const confidenceLow = analysis.liveAnalysisConfidence < threshold;
+  const confidenceLow = analysis.liveAnalysisConfidence != null && analysis.liveAnalysisConfidence < threshold;
   if (confidenceLow) violated.unshift(`Confidence ${analysis.liveAnalysisConfidence}% is below your ${threshold}% threshold.`);
 
   const hasReadyCandidate = analysis.candidates.some((candidate) => candidate.status === 'READY');
@@ -62,7 +62,9 @@ export function buildAICommentary(
   }
 
   if (!ai.explainDecisions) {
-    message = hasReadyCandidate && !confidenceLow
+    message = analysis.liveAnalysisConfidence==null
+      ? `${name}${analysis.instrument} has no numeric setup score because ${analysis.summary.toLowerCase()}`
+      : hasReadyCandidate && !confidenceLow
       ? `${name}${analysis.instrument} is carrying enough evidence to review at ${analysis.liveAnalysisConfidence}% confidence.`
       : `${name}${analysis.instrument} is still incomplete at ${analysis.liveAnalysisConfidence}% confidence.`;
   }

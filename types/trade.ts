@@ -288,7 +288,8 @@ export type EntryCandidate = {
   rationale: string;
 };
 export type ChartAnalysis = {
-  status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_CANDLES'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
+  status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
+  analysisStatus: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   instrument: Instrument;
   timeframe: string;
   strategyId: string | null;
@@ -300,7 +301,7 @@ export type ChartAnalysis = {
   h1Bias: 'BULLISH' | 'BEARISH' | 'RANGE' | 'UNCLEAR';
   suggestedDirection: Direction | null;
   setupType: SetupType;
-  liveAnalysisConfidence: number;
+  liveAnalysisConfidence: number | null;
   strategyConfidenceThreshold: number;
   evidence: Record<EvidenceKey, EvidenceAssessment>;
   candidates: EntryCandidate[];

@@ -28,7 +28,7 @@ function getAiDockStatus({ analyzing, analysis, result, threshold }: { analyzing
   if (!analysis) return { label: 'WATCHING MARKET', detail: 'Ready for live analysis.', variant: 'neutral' as const };
   if (result?.verdict === 'AUTHORIZED') return { label: 'READY', detail: 'The validation engine approved the setup.', variant: 'positive' as const };
   if (result?.verdict === 'REJECTED') return { label: 'BLOCKED', detail: 'A policy condition failed.', variant: 'warning' as const };
-  if (result?.verdict === 'WAIT' || analysis.liveAnalysisConfidence < threshold) return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' as const };
+  if (result?.verdict === 'WAIT' || analysis.liveAnalysisConfidence == null || analysis.liveAnalysisConfidence < threshold) return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' as const };
   if (analysis.candidates.some((candidate) => candidate.status === 'READY')) return { label: 'READY', detail: 'The setup is ready for review.', variant: 'positive' as const };
   return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' as const };
 }
@@ -294,9 +294,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const inspectorHighlights = confidenceBreakdown.slice(0,4);
   const copilotCopy=useMemo(()=>getCopilotCopy({analyzing,analysis,result,strategy,displayName}),[analyzing,analysis,result,strategy,displayName]);
   const primaryMissingCondition = missingRules[0] ? missingRules[0] : (analysis ? 'a clearer market structure' : 'the next market read');
-  const confidenceValue = analysis ? `${analysis.liveAnalysisConfidence}%` : '—';
-  const confidenceFill = analysis ? `${Math.max(8, Math.min(100, analysis.liveAnalysisConfidence))}%` : '0%';
-  const confidenceInterpretation = !analysis?'Awaiting analysis':analysis.liveAnalysisConfidence>=threshold?'Meets your threshold':analysis.liveAnalysisConfidence>=threshold-10?'Near your threshold':'Below your threshold';
+  const hasConfidence=analysis?.status==='VALID_ANALYSIS'&&analysis.liveAnalysisConfidence!=null;
+  const confidenceValue = hasConfidence ? `${analysis.liveAnalysisConfidence}%` : '—';
+  const confidenceFill = hasConfidence ? `${Math.max(8, Math.min(100, analysis.liveAnalysisConfidence!))}%` : '0%';
+  const confidenceInterpretation = !analysis?'Awaiting analysis':analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected for this strategy':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules are not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Update this legacy strategy before live analysis':hasConfidence&&analysis.liveAnalysisConfidence!>=threshold?'Meets your threshold':hasConfidence&&analysis.liveAnalysisConfidence!>=threshold-10?'Near your threshold':'Analysis unavailable';
   const nextActionValue = !analysis?'Run the live market read.':analyzing?'Hold while the market is checked.':result?.verdict==='REJECTED'?'Review the policy settings.':result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY')?'Review the trade details.':'Wait for confirmation.';
   const respectedCount=result?.scoreItems.filter(item=>item.earned>=item.possible).length??0;
   const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
@@ -318,7 +319,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         </section>
         <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Confidence {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence"><small>H4 {analysis.h4Bias}</small><small>H1 {analysis.h1Bias}</small><small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
         {error&&<p className="error">{error}</p>}
-        {analysis&&<div className="analysis-strip"><strong>{analysis.setupType}</strong><span>Live setup confidence {analysis.liveAnalysisConfidence}%</span><span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span><span>H4 {analysis.h4Bias}</span><span>H1 {analysis.h1Bias}</span></div>}
+        {analysis&&<div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Live setup confidence {analysis.liveAnalysisConfidence}%</span><span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span></>}<span>H4 {analysis.h4Bias}</span><span>H1 {analysis.h1Bias}</span></div>}
         <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
           <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
           <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
@@ -358,13 +359,13 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
             <div className="copilot-body">
               <div className="copilot-stats-grid">
-                <CopilotField label="Confidence" value={confidenceValue} detail={confidenceInterpretation} tone={analysis && analysis.liveAnalysisConfidence >= threshold ? 'positive' : 'warning'} className={`copilot-confidence ${analysis ? '' : 'idle'}`}>
-                  {analysis&&<div className="copilot-confidence-bar">
+                <CopilotField label="Confidence" value={confidenceValue} detail={confidenceInterpretation} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} className={`copilot-confidence ${analysis ? '' : 'idle'}`}>
+                  {hasConfidence&&<div className="copilot-confidence-bar">
                     <span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{ width: confidenceFill }} />
                   </div>}
                   <div className="copilot-confidence-foot">
-                    <span>{analysis?'Threshold':'Awaiting analysis'}</span>
-                    <span>{threshold}%</span>
+                    <span>{hasConfidence?'Threshold':'No setup score'}</span>
+                    <span>{hasConfidence?`${threshold}%`:'—'}</span>
                   </div>
                 </CopilotField>
 
@@ -389,7 +390,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <header className="reasoning-modal-header"><div><p className="brand" id="trade-reasoning-title">TRADE REASONING</p><p className="reasoning-panel-copy">Why the engine reached this conclusion.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Trade Reasoning" onClick={()=>setShowReasoning(false)}>×</button></header>
       <div className="reasoning-modal-body"><div className="trade-reasoning-grid">
         <ReasoningSection label="Decision" value={decisionLabel} tone={result?.verdict === 'AUTHORIZED' ? 'positive' : result?.verdict === 'REJECTED' || result?.verdict === 'WAIT' ? 'warning' : 'neutral'} support={decisionCopy} />
-        <ReasoningSection label="Confidence" value={analysis?`${analysis.liveAnalysisConfidence}%`:'—'} tone={analysis && analysis.liveAnalysisConfidence >= threshold ? 'positive' : 'warning'} support={analysis ? `Threshold ${threshold}%` : 'Awaiting market analysis.'}>{analysis&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
+        <ReasoningSection label="Confidence" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Threshold ${threshold}%` : confidenceInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
         <ReasoningSection label="Missing confirmation" value={missingRules.length ? `${missingRules.length} pending` : 'Clear'} tone={missingRules.length ? 'warning' : 'positive'} support={missingRules.length ? undefined : 'No missing confirmation.'}>{missingRules.length?<div className="reasoning-list">{missingRules.map((item,index)=><span className="reasoning-pill" key={`missing-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
         <ReasoningSection label="Evidence" value={inspectorHighlights[0]?.label ? 'Recent signals' : 'No evidence yet'} tone={inspectorHighlights.length ? 'neutral' : 'info'} support={inspectorHighlights.length ? 'The latest read is carrying the following signals.' : 'No evidence yet.'}>{inspectorHighlights.length?<div className="reasoning-list">{inspectorHighlights.map((item,index)=><div className="reasoning-row" key={`evidence-${index}-${item.key??'unknown'}`}><div><strong>{item.label}</strong><small>{item.reason}</small></div><span>{item.passed?'✓':'•'} {item.confidence}%</span></div>)}</div>:null}</ReasoningSection>
         <ReasoningSection label="Satisfied rules" value={satisfiedRules.length ? `${satisfiedRules.length} met` : 'None yet'} tone={satisfiedRules.length ? 'positive' : 'neutral'} support={satisfiedRules.length ? undefined : 'No rules have been satisfied yet.'}>{satisfiedRules.length?<div className="reasoning-list">{satisfiedRules.map((item,index)=><span className="reasoning-pill positive" key={`satisfied-${index}-${item??'unknown'}`}>✓ {item}</span>)}</div>:null}</ReasoningSection>

@@ -181,6 +181,8 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     if (!profile.name.trim()) return setMessage('Strategy name is required.');
     if (profile.instruments.length === 0) return setMessage('Select at least one instrument.');
     if (profile.waitScore >= profile.authorizationScore) return setMessage('WAIT score must be lower than AUTHORIZED score.');
+    const unsupportedLiveRules=rules.filter(rule=>rule.enabled&&['orderBlock','sessionRequirement','newsFilter','correlationFilter','spreadFilter'].includes(rule.ruleKey));
+    if(unsupportedLiveRules.length)return setMessage(`Disable rules not available in live analysis: ${unsupportedLiveRules.map(rule=>rule.label).join(', ')}.`);
 
     setSaving(true);
     setMessage('');
