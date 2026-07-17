@@ -36,8 +36,8 @@ export function buildAICommentary(
   const missing = [...required].filter((key) => !analysis.evidence[key]?.value).map((key) => EVIDENCE_LABELS[key]);
   const violated = [...analysis.warnings];
   const threshold = ai.confidenceThreshold ?? strategy.waitScore;
-  const confidenceLow = analysis.setupConfidence < threshold;
-  if (confidenceLow) violated.unshift(`Confidence ${analysis.setupConfidence}% is below your ${threshold}% threshold.`);
+  const confidenceLow = analysis.liveAnalysisConfidence < threshold;
+  if (confidenceLow) violated.unshift(`Confidence ${analysis.liveAnalysisConfidence}% is below your ${threshold}% threshold.`);
 
   const hasReadyCandidate = analysis.candidates.some((candidate) => candidate.status === 'READY');
   const direction = analysis.suggestedDirection ? `${analysis.suggestedDirection.toLowerCase()} bias` : 'no clear directional bias';
@@ -63,8 +63,8 @@ export function buildAICommentary(
 
   if (!ai.explainDecisions) {
     message = hasReadyCandidate && !confidenceLow
-      ? `${name}${analysis.instrument} is carrying enough evidence to review at ${analysis.setupConfidence}% confidence.`
-      : `${name}${analysis.instrument} is still incomplete at ${analysis.setupConfidence}% confidence.`;
+      ? `${name}${analysis.instrument} is carrying enough evidence to review at ${analysis.liveAnalysisConfidence}% confidence.`
+      : `${name}${analysis.instrument} is still incomplete at ${analysis.liveAnalysisConfidence}% confidence.`;
   }
   if (!ai.suggestAlternatives && !hasReadyCandidate) nextAction = 'Do not enter until the active strategy validates the setup.';
 

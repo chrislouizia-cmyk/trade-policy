@@ -29,6 +29,8 @@ export default function LiveMarketPanel({
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<any>(null);
 
+  useEffect(()=>{setAnalysis(null);setError('');},[instrument,strategy.id]);
+
   useEffect(() => {
     if (!strategy.instruments.includes(instrument)) {
       setInstrument((strategy.instruments[0] || 'XAUUSD') as Instrument);
@@ -97,7 +99,7 @@ export default function LiveMarketPanel({
             </select>
           </label>
           <button className="primary" onClick={scan} disabled={loading}>
-            {loading ? scanStages[stageIndex] : 'Analyze live market'}
+            {loading ? scanStages[stageIndex] : analysis ? 'Refresh analysis' : 'Analyze live market'}
           </button>
         </div>
       </div>
@@ -115,10 +117,13 @@ export default function LiveMarketPanel({
       {error && <p className="error">{error}</p>}
       {analysis && (
         <div className="analysis-strip">
-          <strong>{analysis.setupType}</strong>
-          <span>Confidence {analysis.setupConfidence}%</span>
-          <span>{analysis.suggestedDirection || 'NO BIAS'}</span>
-          <span>Market data connected</span>
+          <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No relevant setup':analysis.setupType}</strong>
+          <span>Live setup confidence {analysis.liveAnalysisConfidence}%</span>
+          <span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span>
+          <span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets strategy threshold':'Below strategy threshold'}</span>
+          <span>Last analyzed: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
+          <span>{analysis.instrument} · {analysis.timeframe}</span>
+          <span>Market data: {analysis.provider} · latest candle {analysis.latestCandleTimestamp}</span>
         </div>
       )}
     </section>

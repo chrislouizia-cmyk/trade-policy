@@ -43,7 +43,7 @@ export async function POST(request:Request){
     const newsUnknown=typeof newsValue!=='boolean';
     if(!session)return failure('The original trade session is missing.','MISSING_TRADE_SESSION',422);
     const evidence=Object.fromEntries((Object.entries(analysis.evidence) as [EvidenceKey,{value:boolean}][]).map(([key,value])=>[key,value.value]));
-    const validationInput={instrument:trade.instrument,direction:trade.direction,entry:entry!,stopLoss:stopLoss!,takeProfit:takeProfit!,accountBalance:finite(trade.balance_at_entry)??1,riskPercent:riskPercent!,tradesToday:0,session,highImpactNews:Boolean(newsValue),...evidence,setupType:analysis.setupType,setupConfidence:analysis.setupConfidence} as TradeInput;
+    const validationInput={instrument:trade.instrument,direction:trade.direction,entry:entry!,stopLoss:stopLoss!,takeProfit:takeProfit!,accountBalance:finite(trade.balance_at_entry)??1,riskPercent:riskPercent!,tradesToday:0,session,highImpactNews:Boolean(newsValue),...evidence,setupType:analysis.setupType,setupConfidence:analysis.liveAnalysisConfidence} as TradeInput;
     const dailyContext=await loadDailyTradeContext({supabase,userId:user.id,strategy,instrument:trade.instrument,accountId:trade.account_id,timezone:'UTC'});
     const validation=validateTradeWithStrategy(validationInput,strategy,dailyContext);
     const riskDistance=Math.abs(entry!-stopLoss!);const currentR=riskDistance?((trade.direction==='BUY'?currentPrice-entry!:entry!-currentPrice)/riskDistance):0;
@@ -56,7 +56,7 @@ export async function POST(request:Request){
     const reasons=[...validation.vetoes,...validation.observations,...analysis.warnings];
     if(newsUnknown)reasons.unshift('Original news-state snapshot unavailable. News protection could not be verified for this legacy trade.');
     if(!reasons.length)reasons.push('The current market structure remains compatible with the stored trade strategy.');
-    const guidance={status,confidence:analysis.setupConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:analysis.waitingFor,validationVerdict:validation.verdict};
+    const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict};
     const {error:eventError}=await supabase.from('active_trade_events').insert({user_id:user.id,trade_id:trade.id,event_type:'REANALYSIS',verdict:status,current_price:currentPrice,current_r:currentR,analysis:guidance});if(eventError)throw eventError;
     const {error:updateError}=await supabase.from('active_trades').update({current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
     return NextResponse.json({guidance},{headers:{'Cache-Control':'no-store'}});

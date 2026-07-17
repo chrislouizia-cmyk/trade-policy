@@ -288,13 +288,20 @@ export type EntryCandidate = {
   rationale: string;
 };
 export type ChartAnalysis = {
+  status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_CANDLES'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   instrument: Instrument;
+  timeframe: string;
+  strategyId: string | null;
+  provider: string;
+  calculatedAt: string;
+  latestCandleTimestamp: string;
   detectedTimeframes: string[];
   h4Bias: 'BULLISH' | 'BEARISH' | 'RANGE' | 'UNCLEAR';
   h1Bias: 'BULLISH' | 'BEARISH' | 'RANGE' | 'UNCLEAR';
   suggestedDirection: Direction | null;
   setupType: SetupType;
-  setupConfidence: number;
+  liveAnalysisConfidence: number;
+  strategyConfidenceThreshold: number;
   evidence: Record<EvidenceKey, EvidenceAssessment>;
   candidates: EntryCandidate[];
   warnings: string[];

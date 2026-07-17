@@ -29,15 +29,17 @@ async function request(params: Record<string, string>) {
 }
 
 export async function fetchSeries(symbol: string, timeframe: string, outputsize = 120): Promise<Candle[]> {
+  if (!intervalMap[timeframe]) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
   const json = await request({
     endpoint: 'time_series', symbol: providerSymbol(symbol),
-    interval: intervalMap[timeframe] || timeframe.toLowerCase(),
+    interval: intervalMap[timeframe],
     outputsize: String(outputsize), order: 'ASC',
   });
   if (!Array.isArray(json.values)) throw new Error(`No market data returned for ${symbol} ${timeframe}.`);
   return json.values.map((item: any) => ({
     datetime: item.datetime, open: Number(item.open), high: Number(item.high),
     low: Number(item.low), close: Number(item.close),
+    volume: item.volume == null ? undefined : Number(item.volume),
   }));
 }
 
