@@ -10,6 +10,8 @@ import StopLimitBuilder from '@/components/StopLimitBuilder';
 import StrategyPersonalization from '@/components/StrategyPersonalization';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
+import { normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -31,8 +33,9 @@ function cloneDefault(): StrategyProfile {
 }
 
 function profileFromRow(row: any): StrategyProfile {
-  return {
+  return normalizeStrategyProfile({
     id: row.id,
+    engineVersion:Number(row.engine_version??(row.macro_timeframe&&row.trigger_timeframe?2:1)),
     name: row.name,
     description: row.description ?? '',
     isDefault: row.is_default,
@@ -83,8 +86,8 @@ function profileFromRow(row: any): StrategyProfile {
     minimumHoldingMinutes: Number(row.minimum_holding_minutes ?? 15),
     strategyMethodologies: row.strategy_methodologies ?? [],
     personalRules: row.personal_rules ?? [],
-    aiBehavior: row.ai_behavior ?? cloneDefault().aiBehavior,
-  };
+    aiBehavior: {...cloneDefault().aiBehavior,...(row.ai_behavior??{})},
+  });
 }
 
 export default function StrategyBuilder({ userId }: { userId: string }) {
@@ -160,7 +163,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
 
     if (instrumentRows?.length) setProfile((current) => ({ ...current, instruments: instrumentRows.map((row: any) => row.symbol) }));
     setSessions(sessionRows?.length ? sessionRows.map((row: any) => ({ id: row.id, sessionCode: row.session_code, name: row.name, timezone: row.timezone, startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), days: row.days, allowOpenOutside: row.allow_open_outside, allowHoldOutside: row.allow_hold_outside, isCustom: row.is_custom })) : PRESET_SESSIONS.filter((item) => target.allowedSessions.includes(item.sessionCode)));
-    setRules(ruleRows?.length ? ruleRows.map((row: any) => ({ ruleKey: row.rule_key, label: row.label, enabled: row.enabled, mandatory: row.mandatory, weight: Number(row.weight), minimumConfidence: row.minimum_confidence, timeframeRole: row.timeframe_role })) : DEFAULT_RULES.map((rule) => ({ ...rule, mandatory: target.requiredEvidence.includes(rule.ruleKey as EvidenceKey), weight: target.evidenceWeights[rule.ruleKey as EvidenceKey] ?? rule.weight })));
+    setRules(ruleRows?.length ? ruleRows.map((row: any) => ({ ruleKey: row.rule_key, label: row.label, enabled: row.enabled, mandatory: row.mandatory, weight: Number(row.weight), minimumConfidence: row.minimum_confidence, timeframeRole: row.timeframe_role, evaluationMode:row.evaluation_mode??'AUTOMATIC' })) : DEFAULT_RULES.map((rule) => ({ ...rule, mandatory: target.requiredEvidence.includes(rule.ruleKey as EvidenceKey), weight: target.evidenceWeights[rule.ruleKey as EvidenceKey] ?? rule.weight })));
     setStopLimits(stopRows?.length ? stopRows.map((row: any) => ({ instrument: row.instrument, method: row.method, minimumValue: Number(row.minimum_value ?? 0), preferredValue: Number(row.preferred_value ?? row.maximum_value), maximumValue: Number(row.maximum_value), atrMultiplier: row.atr_multiplier === null ? undefined : Number(row.atr_multiplier) })) : target.instruments.map((symbol) => ({ instrument: symbol, method: 'PIPS', minimumValue: 10, preferredValue: 18, maximumValue: 25 })));
     setMessage('');
   }
@@ -181,7 +184,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     if (!profile.name.trim()) return setMessage('Strategy name is required.');
     if (profile.instruments.length === 0) return setMessage('Select at least one instrument.');
     if (profile.waitScore >= profile.authorizationScore) return setMessage('WAIT score must be lower than AUTHORIZED score.');
-    const unsupportedLiveRules=rules.filter(rule=>rule.enabled&&['orderBlock','sessionRequirement','newsFilter','correlationFilter','spreadFilter'].includes(rule.ruleKey));
+    const unsupportedLiveRules=rules.filter(rule=>rule.enabled&&(rule.evaluationMode??'AUTOMATIC')==='AUTOMATIC'&&['orderBlock','sessionRequirement','newsFilter','correlationFilter','spreadFilter'].includes(rule.ruleKey));
     if(unsupportedLiveRules.length)return setMessage(`Disable rules not available in live analysis: ${unsupportedLiveRules.map(rule=>rule.label).join(', ')}.`);
 
     setSaving(true);
@@ -196,7 +199,9 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     const legacyStopLimits = { ...profile.stopLimits };
     stopLimits.forEach((limit) => { legacyStopLimits[limit.instrument] = limit.maximumValue; });
 
+    const normalized=normalizeStrategyProfile(profile);
     const row = {
+      engine_version:2,
       name: profile.name.trim(),
       description: profile.description ?? '',
       is_default: Boolean(profile.isDefault),
@@ -247,17 +252,17 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       minimum_holding_minutes: profile.minimumHoldingMinutes ?? 0,
       strategy_methodologies: profile.strategyMethodologies ?? [],
       personal_rules: profile.personalRules ?? [],
-      ai_behavior: profile.aiBehavior ?? {},
+      ai_behavior: normalized.aiBehavior,
     };
     const response=await fetch('/api/strategies/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       strategyId:profile.id??null,activate:Boolean(profile.isDefault),profile:row,
       instruments:profile.instruments.map((symbol,index)=>({symbol,market_type:symbol.startsWith('XAU')||symbol.startsWith('XAG')?'METALS':'FOREX',provider_symbol:null,sort_order:index,enabled:true})),
       sessions:sessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})),
-      rules:rules.map((rule,index)=>({rule_key:rule.ruleKey,label:rule.label,enabled:rule.enabled,mandatory:rule.mandatory,weight:rule.weight,minimum_confidence:rule.minimumConfidence,timeframe_role:rule.timeframeRole,sort_order:index})),
+      rules:rules.map((rule,index)=>({rule_key:rule.ruleKey,label:rule.label,enabled:rule.enabled,mandatory:rule.mandatory,weight:rule.weight,minimum_confidence:rule.minimumConfidence,timeframe_role:rule.timeframeRole,evaluation_mode:rule.evaluationMode??'AUTOMATIC',sort_order:index})),
       stopLimits:stopLimits.filter(limit=>limit.maximumValue>0).map(limit=>({instrument:limit.instrument,method:limit.method,minimum_value:limit.minimumValue??0,preferred_value:limit.preferredValue??limit.maximumValue,maximum_value:limit.maximumValue,atr_multiplier:limit.atrMultiplier??null})),
     })});
     const result=await response.json();
-    if(!response.ok)throw new Error(result.error||'Could not save strategy.');
+    if(!response.ok)throw new Error(apiErrorMessage(result,'Could not save strategy.'));
     if(!result.strategyId||result.saved!==true)throw new Error('Strategy was not returned after saving.');
     await loadAll(result.strategyId);
     setMessage('Saved');
@@ -324,8 +329,8 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
         <div className="card builder-section step-markets"><h2>Markets & instruments</h2><p className="muted">Phase 1 includes the Forex and metals catalog. Futures and dynamic stock search are prepared for the next phase.</p><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
 
         <div className="card builder-section step-timeframes"><h2>Timeframe stack</h2><div className="grid grid-3">
-          {([['trendTimeframe','Trend'],['confirmationTimeframe','Confirmation'],['entryTimeframe','Entry']] as [keyof StrategyProfile,string][]).map(([key,label]) => <label key={String(key)}>{label}<select value={String(profile[key] ?? '')} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}>{TIMEFRAMES.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>)}
-        </div><p className="muted">Macro and trigger timeframes are coming later.</p></div>
+          {([['macroTimeframe','Macro'],['trendTimeframe','Trend'],['confirmationTimeframe','Confirmation'],['entryTimeframe','Entry'],['triggerTimeframe','Trigger']] as [keyof StrategyProfile,string][]).map(([key,label]) => <label key={String(key)}>{label}<select value={String(profile[key] ?? '')} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}>{TIMEFRAMES.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>)}
+        </div><p className="muted">All five configured layers are persisted and used by live analysis.</p></div>
 
         <div className="card builder-section step-schedule"><h2>Trading sessions</h2><p className="muted">Session hours stay attached to their market timezone and are automatically shown in your timezone, including daylight-saving changes.</p><SessionSelector sessions={sessions} onChange={setSessions} userTimezone={userTimezone} onUserTimezoneChange={updateUserTimezone} /></div>
 

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
-import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
+import { normalizeStrategyPolicy, normalizeStrategyProfile } from '@/lib/strategy-policy';
 
 type SupabaseServerClient = any;
 
@@ -121,6 +121,7 @@ async function loadStrategy(
     weight: Number(row.weight),
     minimumConfidence: Number(row.minimum_confidence),
     timeframeRole: row.timeframe_role,
+    evaluationMode:row.evaluation_mode??'AUTOMATIC',
   }));
 
   const stopLimitSettings: StopLimit[] = (stopResult.data ?? []).map((row: any) => ({
@@ -149,6 +150,7 @@ async function loadStrategy(
 
   const strategy:StrategyProfile = {
     id: profile.id,
+    engineVersion:Number(profile.engine_version??(profile.macro_timeframe&&profile.trigger_timeframe?2:1)),
     name: profile.name,
     description: profile.description ?? '',
     isDefault: Boolean(profile.is_default),
@@ -204,6 +206,7 @@ async function loadStrategy(
     personalRules: profile.personal_rules ?? [],
     aiBehavior: profile.ai_behavior ?? undefined,
   };
-  normalizeStrategyPolicy(strategy);
-  return strategy;
+  const normalized=normalizeStrategyProfile(strategy);
+  normalizeStrategyPolicy(normalized);
+  return normalized;
 }

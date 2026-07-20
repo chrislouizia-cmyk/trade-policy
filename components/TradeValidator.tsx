@@ -3,11 +3,15 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
+import DecisionHero from '@/components/decision/DecisionHero';
+import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
 import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
+import {apiErrorMessage} from '@/lib/api-error';
 
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
-  ['h4TrendAligned','H4 trend aligned'], ['h1TrendAligned','H1 aligned with H4'],
+  ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
   ['chochConfirmed','ChoCH confirmed'], ['bosConfirmed','BoS confirmed'],
   ['orderBlock','Valid order block'], ['fairValueGap','Valid FVG'],
@@ -22,31 +26,6 @@ type SavedSetup = {
   entry:number|null; stopLoss:number|null; takeProfit:number|null; rr:number|null; resultR?:number|null;
   status?:'OPEN'|'CLOSED'; outcome?:TradeOutcome; confidence?:number|null; closedAt?:string|null; postAnalysis?:PostTradeAnalysis;
 };
-
-function getAiDockStatus({ analyzing, analysis, result, threshold }: { analyzing: boolean; analysis: ChartAnalysis | null; result: TradeResult | null; threshold: number }) {
-  if (analyzing) return { label: 'ANALYZING', detail: 'Reading configured timeframes.', variant: 'info' as const };
-  if (!analysis) return { label: 'WATCHING MARKET', detail: 'Ready for live analysis.', variant: 'neutral' as const };
-  if (result?.verdict === 'AUTHORIZED') return { label: 'READY', detail: 'The validation engine approved the setup.', variant: 'positive' as const };
-  if (result?.verdict === 'REJECTED') return { label: 'BLOCKED', detail: 'A policy condition failed.', variant: 'warning' as const };
-  if (result?.verdict === 'WAIT' || analysis.liveAnalysisConfidence == null || analysis.liveAnalysisConfidence < threshold) return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' as const };
-  if (analysis.candidates.some((candidate) => candidate.status === 'READY')) return { label: 'READY', detail: 'The setup is ready for review.', variant: 'positive' as const };
-  return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' as const };
-}
-
-function StatusPill({ label, variant }: { label: string; variant: 'positive'|'warning'|'neutral'|'info' }) {
-  return <div className={`status-pill ${variant}`}><span className={`status-dot ${variant}`}></span>{label}</div>;
-}
-
-function CopilotField({ label, value, detail, tone = 'neutral', className = '', children }: { label: string; value: string; detail?: string; tone?: 'positive'|'warning'|'neutral'|'info'; className?: string; children?: ReactNode }) {
-  return <div className={`copilot-stat-card ${className}`}>
-    <div className="copilot-field-label-row">
-      <span className="copilot-field-label">{label}</span>
-      <strong className={`copilot-field-value ${tone}`}>{value}</strong>
-    </div>
-    {detail ? <p className="copilot-field-copy">{detail}</p> : null}
-    {children ? <div className="copilot-field-body">{children}</div> : null}
-  </div>;
-}
 
 function ReasoningCard({ title, value, description, tone = 'neutral', children }: { title: string; value: string; description?: string; tone?: 'positive'|'warning'|'neutral'|'info'; children?: ReactNode }) {
   return <section className="reasoning-section" aria-label={title}>
@@ -63,31 +42,6 @@ function ReasoningSection({ label, value, tone = 'neutral', support, children }:
   return <ReasoningCard title={label} value={value} description={support} tone={tone}>{children}</ReasoningCard>;
 }
 
-function getCopilotCopy({analyzing,analysis,result,strategy,displayName}:{analyzing:boolean;analysis:ChartAnalysis|null;result:TradeResult|null;strategy:StrategyProfile;displayName:string}) {
-  const tone=strategy.aiBehavior?.tone??'analytical';
-  const name=strategy.aiBehavior?.useDisplayName&&displayName?`${displayName}, `:'';
-  if(analyzing)return {primary:`Reading ${strategy.trendTimeframe}, ${strategy.confirmationTimeframe} and ${strategy.entryTimeframe}.`,secondary:'I’m checking your strategy conditions now.'};
-  if(!analysis)return {primary:'Ready when you are.',secondary:'Run the live market read when you want me to check the setup.'};
-  if(result?.verdict==='REJECTED'){
-    if(tone==='direct')return {primary:'This trade breaks your policy.',secondary:'Fix the stop or risk settings before continuing.'};
-    if(tone==='educational')return {primary:'This trade is blocked because a policy condition failed.',secondary:'Review the stop and risk limits before continuing.'};
-    if(tone==='mentor')return {primary:`${name}this trade is outside your plan.`,secondary:'Bring the setup back inside your risk rules.'};
-    return {primary:'This trade conflicts with your active policy.',secondary:'The stop or risk settings need attention.'};
-  }
-  const ready=result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY');
-  if(ready){
-    if(tone==='direct')return {primary:'The setup satisfies your strategy.',secondary:'Review the trade details before authorization.'};
-    if(tone==='educational')return {primary:'The required setup conditions are now satisfied.',secondary:'Check the entry, stop and target before authorization.'};
-    if(tone==='mentor')return {primary:`${name}the setup is inside your plan.`,secondary:'Review the trade details before requesting authorization.'};
-    return {primary:'The setup now satisfies your strategy.',secondary:'Review the trade details before requesting authorization.'};
-  }
-  const direction=analysis.suggestedDirection?.toLowerCase();
-  const bias=direction?`${analysis.instrument} is leaning ${direction}`:`${analysis.instrument} has no clear direction`;
-  if(tone==='direct')return {primary:`${bias}, but the entry is not ready.`,secondary:'Wait for structure confirmation.'};
-  if(tone==='educational')return {primary:`${bias}, but the entry still lacks confirmation.`,secondary:'Market structure needs to confirm before the setup is ready.'};
-  if(tone==='mentor')return {primary:`${name}${bias.toLowerCase()}, but I don’t trust the entry yet.`,secondary:'Let market structure confirm before you act.'};
-  return {primary:`${bias}, but the entry is not confirmed yet.`,secondary:'I’m waiting for market structure confirmation.'};
-}
 
 export default function TradeValidator({userId,displayName,initialStrategy}:{userId:string;displayName:string;initialStrategy:StrategyProfile}) {
   const [result,setResult]=useState<TradeResult|null>(null);
@@ -97,6 +51,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [savingTrade,setSavingTrade]=useState(false);
   const [error,setError]=useState('');
   const [autoChecks,setAutoChecks]=useState<Record<string,boolean>>({});
+  const [manualEvidence,setManualEvidence]=useState<Record<string,boolean>>({});
   const [history,setHistory]=useState<SavedSetup[]>([]);
   const [reviewAcknowledged,setReviewAcknowledged]=useState(false);
   const [showReasoning,setShowReasoning]=useState(false);
@@ -120,7 +75,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     try{
       const response=await fetch('/api/strategies/active',{cache:'no-store'});
       const data=await response.json();
-      if(!response.ok)throw new Error(data.error||'Could not load the active strategy.');
+      if(!response.ok)throw new Error(apiErrorMessage(data,'Could not load the active strategy.'));
       if (!data.strategy) throw new Error('No active strategy was returned.');
       setStrategy(data.strategy);
     }catch(e:any){
@@ -194,6 +149,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     const next:Record<string,boolean>={};
     evidenceKeys.forEach((key) => { next[key] = data.evidence[key].value; });
     setAutoChecks(next);
+    setManualEvidence({});
     const instrumentEl=document.querySelector('[name=instrument]') as HTMLSelectElement | null;
     if(instrumentEl) instrumentEl.value=data.instrument;
     const directionEl=document.querySelector('[name=direction]') as HTMLSelectElement | null;
@@ -210,11 +166,11 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    evidenceKeys.forEach(k=>body[k]=fd.get(k)==='on'); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
+    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=Object.entries(manualEvidence).map(([evidenceKey,confirmed])=>({evidenceKey,confirmed})); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
     try{
       const res=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const data=await res.json();
-      if(res.ok)setResult(data);else setError(data.error||'Please review the form values.');
+      if(res.ok){setResult(data);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current)}else setError(apiErrorMessage(data,'Please review the form values.'));
     }catch(e:any){
       setError(e.message||'Could not request authorization.');
     }finally{
@@ -292,34 +248,45 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const missingRules = aiCommentary.missing.slice(0,4);
   const riskChecks = [...(result?.vetoes ?? []), ...(result?.observations ?? [])].slice(0,4);
   const inspectorHighlights = confidenceBreakdown.slice(0,4);
-  const copilotCopy=useMemo(()=>getCopilotCopy({analyzing,analysis,result,strategy,displayName}),[analyzing,analysis,result,strategy,displayName]);
   const primaryMissingCondition = missingRules[0] ? missingRules[0] : (analysis ? 'a clearer market structure' : 'the next market read');
   const hasConfidence=analysis?.status==='VALID_ANALYSIS'&&analysis.liveAnalysisConfidence!=null;
   const confidenceValue = hasConfidence ? `${analysis.liveAnalysisConfidence}%` : '—';
   const confidenceFill = hasConfidence ? `${Math.max(8, Math.min(100, analysis.liveAnalysisConfidence!))}%` : '0%';
-  const confidenceInterpretation = !analysis?'Awaiting analysis':analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected for this strategy':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules are not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Update this legacy strategy before live analysis':hasConfidence&&analysis.liveAnalysisConfidence!>=threshold?'Meets your threshold':hasConfidence&&analysis.liveAnalysisConfidence!>=threshold-10?'Near your threshold':'Analysis unavailable';
+  const readinessInterpretation = useMemo(() => getReadinessInterpretation(analysis, threshold), [analysis, threshold]);
   const nextActionValue = !analysis?'Run the live market read.':analyzing?'Hold while the market is checked.':result?.verdict==='REJECTED'?'Review the policy settings.':result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY')?'Review the trade details.':'Wait for confirmation.';
   const respectedCount=result?.scoreItems.filter(item=>item.earned>=item.possible).length??0;
   const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
 
-  return <div className="validate-page-flow">
+  return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
+
+    <DecisionHero
+      analyzing={analyzing}
+      analysis={analysis}
+      result={result}
+      strategy={strategy}
+      threshold={threshold}
+      primaryMissingCondition={primaryMissingCondition}
+      nextActionValue={nextActionValue}
+      readinessInterpretation={readinessInterpretation}
+      onViewReport={() => setShowReasoning(true)}
+      reportButtonRef={reasoningButtonRef}
+    />
 
     <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onLoadingChange={setAnalyzing}/>
 
-    <div className="validate-workspace-grid">
-      <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
+    <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <h2 className="workspace-title">TRADE WORKSPACE</h2>
-        <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategy.trendTimeframe}/{strategy.confirmationTimeframe}/{strategy.entryTimeframe} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
+        <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
         <div className="grid grid-2">
           <label>Instrument<select name="instrument">{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
           <label>Direction<select name="direction"><option>BUY</option><option>SELL</option></select></label>
         </div>
         </section>
-        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Confidence {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence"><small>H4 {analysis.h4Bias}</small><small>H1 {analysis.h1Bias}</small><small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
+        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
         {error&&<p className="error">{error}</p>}
-        {analysis&&<div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Live setup confidence {analysis.liveAnalysisConfidence}%</span><span>Strategy required threshold {analysis.strategyConfidenceThreshold}%</span></>}<span>H4 {analysis.h4Bias}</span><span>H1 {analysis.h1Bias}</span></div>}
+        {analysis&&<div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div>}
         <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
           <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
           <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
@@ -334,63 +301,32 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         {accounts.length===0&&<p className="warning">No trading account yet. You can validate with a manual balance, or create an auditable account from Accounts.</p>}
         <section className="workspace-section confirmation-section"><h3>Confirmation Checklist</h3>
         <div className="grid grid-2">
-          {checks.map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} onChange={e=>setAutoChecks(v=>({...v,[name]:e.target.checked}))}/><span>{label}{ai&&<small>{ai.confidence}% · {ai.reason}</small>}</span></label>})}
+          {checks.map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const rule=name==='highImpactNews'?null:strategy.rules?.find(item=>item.ruleKey===name&&item.enabled);const isManual=name==='highImpactNews'||rule?.evaluationMode==='MANUAL';const detail=isManual?'Manual confirmation':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'&&!isManual} onChange={e=>{setAutoChecks(v=>({...v,[name]:e.target.checked}));if(name!=='highImpactNews'&&isManual)setManualEvidence(v=>({...v,[name]:e.target.checked}))}}/><span>{label}<small>{detail}</small></span></label>})}
         </div>
         </section>
         <section className="workspace-section authorization-section"><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Authorization suspended':loading?'Reviewing…':'Request authorization'}</button></section>
       </form>
 
-      <div className="card primary-workspace-surface decision-workspace">
-        <h2 className="workspace-title">DECISION WORKSPACE</h2>
-        <section className={`workspace-section ai-dock ${aiCommentary.tone || 'analytical'}`}>
-          <div className="copilot-shell">
-            <div className="copilot-head">
-              <div className="copilot-status">
-                <div className="copilot-primary">
-                  <StatusPill label={aiStatus.label} variant={aiStatus.variant} />
-                </div>
-                <div className="copilot-heading">
-                  <p className="copilot-message" aria-live="polite">{copilotCopy.primary}</p>
-                  <p className="copilot-secondary">{copilotCopy.secondary}</p>
-                </div>
-              </div>
-              <div className="copilot-actions"><button ref={reasoningButtonRef} type="button" className="copilot-toggle" onClick={()=>setShowReasoning(true)}>View Trade Reasoning</button></div>
-            </div>
+    <div className="card primary-workspace-surface decision-report-workspace">
+      <h2 className="workspace-title">DECISION REPORT</h2>
+      <p className="decision-report-lead muted">What Trade Police detected, what your strategy requires, and what happens next.</p>
 
-            <div className="copilot-body">
-              <div className="copilot-stats-grid">
-                <CopilotField label="Confidence" value={confidenceValue} detail={confidenceInterpretation} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} className={`copilot-confidence ${analysis ? '' : 'idle'}`}>
-                  {hasConfidence&&<div className="copilot-confidence-bar">
-                    <span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{ width: confidenceFill }} />
-                  </div>}
-                  <div className="copilot-confidence-foot">
-                    <span>{hasConfidence?'Threshold':'No setup score'}</span>
-                    <span>{hasConfidence?`${threshold}%`:'—'}</span>
-                  </div>
-                </CopilotField>
+      <section className="workspace-section verdict-summary-card"><h3>Police Verdict</h3>{!result?<p className="muted compact-empty-state">Awaiting authorization.</p>:<><span className={`badge ${result.verdict.toLowerCase()}`}>{result.verdict}</span><div className="score">{result.score}</div><h3>Grade {result.grade}</h3><p>RR <strong>1:{result.rr}</strong> · Risk <strong>${result.riskAmount}</strong></p>{result.vetoes.length>0&&<><h4>Automatic vetoes</h4><ul>{result.vetoes.map((v,index)=><li key={`veto-${index}-${v}`}>{v}</li>)}</ul></>}{result.observations.length>0&&<><h4>Pending evidence</h4><ul>{result.observations.map((v,index)=><li key={`observation-${index}-${v}`}>{v}</li>)}</ul></>}</>}</section>
 
-                <CopilotField label="Waiting for" value={primaryMissingCondition} tone="warning" className="copilot-missing" />
+      <section className="workspace-section discipline-card"><h3>Override / Discipline</h3>{!result?<p className="muted compact-empty-state">Request authorization to review discipline controls.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Discipline score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Take Anyway is disabled because the daily limit is a hard risk-control rule.</p>:null}<div className="discipline-action-row"><button type="button" onClick={()=>saveTakenTrade(result.verdict!=='AUTHORIZED')} disabled={savingTrade||result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'}>{savingTrade?'Saving trade…':result.verdict==='AUTHORIZED'?'Trade taken':'Take anyway'}</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View Active Trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
+    </div>
 
-                <CopilotField label="Next action" value={nextActionValue} tone="neutral" className="copilot-next" />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="workspace-section verdict-summary-card"><h3>Police Verdict</h3>{!result?<p className="muted compact-empty-state">Awaiting authorization.</p>:<><span className={`badge ${result.verdict.toLowerCase()}`}>{result.verdict}</span><div className="score">{result.score}</div><h3>Grade {result.grade}</h3><p>RR <strong>1:{result.rr}</strong> · Risk <strong>${result.riskAmount}</strong></p>{result.vetoes.length>0&&<><h4>Automatic vetoes</h4><ul>{result.vetoes.map((v,index)=><li key={`veto-${index}-${v}`}>{v}</li>)}</ul></>}{result.observations.length>0&&<><h4>Pending evidence</h4><ul>{result.observations.map((v,index)=><li key={`observation-${index}-${v}`}>{v}</li>)}</ul></>}</>}</section>
-
-        <section className="workspace-section discipline-card"><h3>Override / Discipline</h3>{!result?<p className="muted compact-empty-state">Request authorization to review discipline controls.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Discipline score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Take Anyway is disabled because the daily limit is a hard risk-control rule.</p>:null}<div className="discipline-action-row"><button type="button" onClick={()=>saveTakenTrade(result.verdict!=='AUTHORIZED')} disabled={savingTrade||result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'}>{savingTrade?'Saving trade…':result.verdict==='AUTHORIZED'?'Trade taken':'Take anyway'}</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View Active Trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
-
-        <section className="workspace-section compact-history-card"><h3>LAST 3 TRADES</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
-      </div>
+    <div className="card primary-workspace-surface recent-activity-card">
+      <h2 className="workspace-title">RECENT ACTIVITY</h2>
+      <section className="workspace-section compact-history-card"><h3>LAST 3 TRADES</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
     </div>
 
     {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
-      <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="trade-reasoning-title">
-      <header className="reasoning-modal-header"><div><p className="brand" id="trade-reasoning-title">TRADE REASONING</p><p className="reasoning-panel-copy">Why the engine reached this conclusion.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Trade Reasoning" onClick={()=>setShowReasoning(false)}>×</button></header>
+      <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
+      <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
       <div className="reasoning-modal-body"><div className="trade-reasoning-grid">
         <ReasoningSection label="Decision" value={decisionLabel} tone={result?.verdict === 'AUTHORIZED' ? 'positive' : result?.verdict === 'REJECTED' || result?.verdict === 'WAIT' ? 'warning' : 'neutral'} support={decisionCopy} />
-        <ReasoningSection label="Confidence" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Threshold ${threshold}%` : confidenceInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
+        <ReasoningSection label="Readiness" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Required readiness ${threshold}%` : readinessInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
         <ReasoningSection label="Missing confirmation" value={missingRules.length ? `${missingRules.length} pending` : 'Clear'} tone={missingRules.length ? 'warning' : 'positive'} support={missingRules.length ? undefined : 'No missing confirmation.'}>{missingRules.length?<div className="reasoning-list">{missingRules.map((item,index)=><span className="reasoning-pill" key={`missing-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
         <ReasoningSection label="Evidence" value={inspectorHighlights[0]?.label ? 'Recent signals' : 'No evidence yet'} tone={inspectorHighlights.length ? 'neutral' : 'info'} support={inspectorHighlights.length ? 'The latest read is carrying the following signals.' : 'No evidence yet.'}>{inspectorHighlights.length?<div className="reasoning-list">{inspectorHighlights.map((item,index)=><div className="reasoning-row" key={`evidence-${index}-${item.key??'unknown'}`}><div><strong>{item.label}</strong><small>{item.reason}</small></div><span>{item.passed?'✓':'•'} {item.confidence}%</span></div>)}</div>:null}</ReasoningSection>
         <ReasoningSection label="Satisfied rules" value={satisfiedRules.length ? `${satisfiedRules.length} met` : 'None yet'} tone={satisfiedRules.length ? 'positive' : 'neutral'} support={satisfiedRules.length ? undefined : 'No rules have been satisfied yet.'}>{satisfiedRules.length?<div className="reasoning-list">{satisfiedRules.map((item,index)=><span className="reasoning-pill positive" key={`satisfied-${index}-${item??'unknown'}`}>✓ {item}</span>)}</div>:null}</ReasoningSection>

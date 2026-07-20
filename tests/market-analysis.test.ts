@@ -7,7 +7,7 @@ function candles(slope:number,shock=0):Candle[]{
   const start=Date.now()-39*3_600_000;
   return Array.from({length:40},(_,i)=>{const base=100+i*slope;const close=base+(i===39?shock:0);return {datetime:new Date(start+i*3_600_000).toISOString(),open:base-.2,high:Math.max(base,close)+.5,low:Math.min(base,close)-.5,close,volume:1000+i};});
 }
-function series(data:Candle[]){return {H4:data,H1:data,M30:data};}
+function series(data:Candle[]){return {D1:data,H4:data,H1:data,M30:data,M5:data};}
 function strategy(overrides:Partial<StrategyProfile>={}):StrategyProfile{return {...DEFAULT_STRATEGY_PROFILE,id:'strategy-a',aiBehavior:{tone:'analytical',strictness:'conservative',confidenceThreshold:75,explainDecisions:true,suggestAlternatives:true,useDisplayName:true},...overrides};}
 
 test('different instruments are independently calculated from their own candles',()=>{
@@ -67,4 +67,17 @@ test('unreachable enabled evidence produces STRATEGY_UNSUPPORTED without a numer
   const unsupported=strategy({rules:[{ruleKey:'orderBlock',label:'Order block',enabled:true,mandatory:true,weight:100,minimumConfidence:60,timeframeRole:'CONFIRMATION'}]});
   const result=buildLiveAnalysis('XAUUSD',unsupported,series(candles(1,15)),'fixture');
   assert.equal(result.status,'STRATEGY_UNSUPPORTED');assert.equal(result.liveAnalysisConfidence,null);assert.deepEqual(result.breakdown.unsupported,['orderBlock']);
+});
+
+test('five configured layers are analyzed without fixed timeframe behavior',()=>{
+  const s=strategy({macroTimeframe:'W1',trendTimeframe:'D1',confirmationTimeframe:'H2',entryTimeframe:'M15',triggerTimeframe:'M3'});
+  const data=candles(1,15);const result=buildLiveAnalysis('XAUUSD',s,{W1:data,D1:data,H2:data,M15:data,M3:data},'fixture');
+  assert.deepEqual(result.detectedTimeframes,['W1','D1','H2','M15','M3']);
+  assert.deepEqual(result.layerAnalysis.map(layer=>[layer.role,layer.timeframe]),[['MACRO','W1'],['TREND','D1'],['CONFIRMATION','H2'],['ENTRY','M15'],['TRIGGER','M3']]);
+});
+
+test('manual rules remain pending without making automatic analysis unsupported',()=>{
+  const s=strategy({rules:[{ruleKey:'orderBlock',label:'Order block',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'ENTRY',evaluationMode:'MANUAL'},{ruleKey:'bosConfirmed',label:'Break',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode:'AUTOMATIC'}]});
+  const result=buildLiveAnalysis('XAUUSD',s,series(candles(1,15)),'fixture');
+  assert.notEqual(result.status,'STRATEGY_UNSUPPORTED');assert.deepEqual(result.breakdown.manual,['orderBlock']);
 });

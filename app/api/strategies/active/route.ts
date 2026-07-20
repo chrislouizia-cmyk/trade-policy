@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { loadActiveStrategy } from '@/lib/server/active-strategy';
+import { apiError } from '@/lib/server/public-error';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -13,7 +14,7 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+      return apiError('UNAUTHORIZED','Unauthorized.',401);
     }
 
     const strategy = await loadActiveStrategy(supabase, user.id);
@@ -23,14 +24,6 @@ export async function GET() {
     );
   } catch (error) {
     console.error('Active strategy error:', error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Could not load the active strategy.',
-      },
-      { status: 500 },
-    );
+    return apiError('ACTIVE_STRATEGY_UNAVAILABLE',error instanceof Error?error.message:'Could not load the active strategy.',500);
   }
 }

@@ -52,7 +52,14 @@ export type StrategyRule = {
   weight: number;
   minimumConfidence: number;
   timeframeRole: 'MACRO' | 'TREND' | 'CONFIRMATION' | 'ENTRY' | 'TRIGGER';
+  evaluationMode?: 'AUTOMATIC' | 'MANUAL';
 };
+
+export type TimeframeRole='MACRO'|'TREND'|'CONFIRMATION'|'ENTRY'|'TRIGGER';
+export type MarketBias='BULLISH'|'BEARISH'|'RANGE'|'UNCLEAR';
+export type TimeframeLayer={role:TimeframeRole;timeframe:string};
+export type LayerAnalysis=TimeframeLayer&{bias:MarketBias;confirmedEvidence:string[];missingEvidence:string[];confidence:number|null};
+export type ManualConfirmation={evidenceKey:EvidenceKey;confirmed:boolean;note?:string};
 
 export type StopLimit = {
   instrument: string;
@@ -89,6 +96,7 @@ export type PersonalTradingRule = { key: string; enabled: boolean; value?: strin
 
 export type StrategyProfile = {
   id?: string;
+  engineVersion?: number;
   name: string;
   description?: string;
   isDefault?: boolean;
@@ -146,6 +154,7 @@ export type StrategyProfile = {
 };
 
 export const DEFAULT_STRATEGY_PROFILE: StrategyProfile = {
+  engineVersion: 2,
   name: 'Chris Core Strategy',
   description: 'Core multi-timeframe rules for disciplined execution.',
   isDefault: true,
@@ -215,6 +224,7 @@ export const DEFAULT_STRATEGY_PROFILE: StrategyProfile = {
     'Breakout and Retest',
   ],
   rejectUnlistedSetups: false,
+  aiBehavior:{tone:'analytical',strictness:'conservative',confidenceThreshold:80,explainDecisions:true,suggestAlternatives:true,useDisplayName:true},
 };
 
 export type TradeInput = {
@@ -239,6 +249,7 @@ export type TradeInput = {
   retestConfirmed: boolean;
   setupType?: SetupType;
   setupConfidence?: number;
+  manualConfirmations?: ManualConfirmation[];
   strategyProfile?: StrategyProfile;
 };
 
@@ -297,8 +308,10 @@ export type ChartAnalysis = {
   calculatedAt: string;
   latestCandleTimestamp: string;
   detectedTimeframes: string[];
-  h4Bias: 'BULLISH' | 'BEARISH' | 'RANGE' | 'UNCLEAR';
-  h1Bias: 'BULLISH' | 'BEARISH' | 'RANGE' | 'UNCLEAR';
+  layerAnalysis?: LayerAnalysis[];
+  timeframeBiases?: Record<string,MarketBias>;
+  h4Bias: MarketBias;
+  h1Bias: MarketBias;
   suggestedDirection: Direction | null;
   setupType: SetupType;
   liveAnalysisConfidence: number | null;
@@ -308,6 +321,7 @@ export type ChartAnalysis = {
   warnings: string[];
   summary: string;
   aiCommentary?: AICommentary;
+  manualConfirmations?: ManualConfirmation[];
 };
 export type TradeOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' | 'PARTIAL';
 export type PostTradeAnalysis = {
