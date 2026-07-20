@@ -8,6 +8,7 @@ import { buildDecisionNarrative } from '@/lib/intelligence/decision-narrative';
 import { enhanceDecisionNarrative } from '@/lib/server/decision-narrative-ai';
 import { apiError } from '@/lib/server/public-error';
 import type { TradeInput } from '@/types/trade';
+import { confirmationState } from '@/lib/manual-confirmations';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ const schema = z.object({
   retestConfirmed: z.boolean(),
   setupType: z.string().trim().max(120).optional(),
   setupConfidence: z.number().min(0).max(100).optional(),
-  manualConfirmations:z.array(z.object({evidenceKey:z.enum(['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','orderBlock','fairValueGap','retestConfirmed']),confirmed:z.boolean(),note:z.string().max(240).optional()})).optional().default([]),
+  manualConfirmations:z.array(z.object({evidenceKey:z.string().trim().min(1).max(120),state:z.enum(['PENDING','CONFIRMED','FAILED']).optional(),confirmed:z.boolean().optional(),note:z.string().max(240).optional()}).refine(value=>value.state!==undefined||value.confirmed!==undefined,{message:'Manual confirmation state required.'})).optional().default([]),
 });
 
 export async function POST(request: Request) {
@@ -66,8 +67,10 @@ export async function POST(request: Request) {
     const manualRuleKeys=new Set((strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL').map(rule=>rule.ruleKey));
     const invalidManual=parsed.data.manualConfirmations.find(item=>!manualRuleKeys.has(item.evidenceKey));
     if(invalidManual)return apiError('INVALID_MANUAL_CONFIRMATION',invalidManual.evidenceKey+' is not configured as a manual rule.',400);
-    const input={...parsed.data};
-    for(const item of parsed.data.manualConfirmations)input[item.evidenceKey]=item.confirmed;
+    const normalizedConfirmations=parsed.data.manualConfirmations.map(item=>({...item,state:confirmationState(item)}));
+    const input={...parsed.data,manualConfirmations:normalizedConfirmations} as TradeInput;
+    const evidenceKeys=new Set(['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','orderBlock','fairValueGap','retestConfirmed']);
+    for(const item of normalizedConfirmations)if(evidenceKeys.has(item.evidenceKey))(input as unknown as Record<string,unknown>)[item.evidenceKey]=item.state==='CONFIRMED';
     const result = validateTradeWithStrategy(input, strategy, dailyContext);
     const deterministicNarrative = buildDecisionNarrative({
       result,
@@ -89,7 +92,7 @@ export async function POST(request: Request) {
           name: strategy.name,
           engineVersion:strategy.engineVersion??1,
         },
-        manualConfirmations:parsed.data.manualConfirmations,
+        manualConfirmations:normalizedConfirmations,
         decisionNarrative,
       },
       { headers: { 'Cache-Control': 'no-store' } },

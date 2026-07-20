@@ -1,5 +1,6 @@
 import type { MissingEvidenceItem } from '../../types/intelligence.ts';
 import type { EvidenceKey, StrategyProfile, TradeInput } from '../../types/trade.ts';
+import { confirmationState, ruleLabel } from '../manual-confirmations.ts';
 
 const labels: Record<EvidenceKey, string> = {
   h4TrendAligned: 'Trend timeframe aligned',
@@ -36,14 +37,14 @@ export function buildMissingEvidence(
         (item) => item.evidenceKey === evidenceKey,
       );
       const detected = evaluationMode === 'MANUAL'
-        ? manualConfirmation?.confirmed ?? null
+        ? confirmationState(manualConfirmation)==='CONFIRMED'?true:null
         : evaluationMode === 'EXTERNAL' ? null : Boolean(input[evidenceKey]);
 
       return {
         id: `evidence:${evidenceKey}`,
         evidenceKey,
         ruleKey: rule.ruleKey,
-        label: rule.label || labels[evidenceKey],
+        label: ruleLabel(rule.ruleKey,rule.label)||labels[evidenceKey],
         layer: layerByRole[rule.timeframeRole],
         timeframe: timeframeForRole(strategy, rule.timeframeRole),
         evaluationMode,
@@ -54,7 +55,7 @@ export function buildMissingEvidence(
           ? rule.minimumConfidence
           : undefined,
         reason: evaluationMode === 'MANUAL'
-          ? `${rule.label || labels[evidenceKey]} requires trader confirmation.`
+          ? `${ruleLabel(rule.ruleKey,rule.label)||labels[evidenceKey]} requires trader confirmation.`
           : evaluationMode === 'EXTERNAL'
             ? `${rule.label || labels[evidenceKey]} requires evidence from the configured external source.`
             : `${rule.label || labels[evidenceKey]} has not been detected automatically.`,

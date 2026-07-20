@@ -6,13 +6,15 @@ import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
 import MethodologyAudit from '@/components/MethodologyAudit';
 import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
+import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
-import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage} from '@/lib/api-error';
 import {trackBetaEvent} from '@/lib/beta-intelligence';
+import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
 
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
@@ -56,7 +58,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [savingTrade,setSavingTrade]=useState(false);
   const [error,setError]=useState('');
   const [autoChecks,setAutoChecks]=useState<Record<string,boolean>>({});
-  const [manualEvidence,setManualEvidence]=useState<Record<string,boolean>>({});
+  const [manualEvidence,setManualEvidence]=useState<Record<string,ManualConfirmationState>>(()=>initialManualConfirmations(initialStrategy.rules??[]));
+  const [showManualConfirmations,setShowManualConfirmations]=useState(false);
+  const [reevaluatingManual,setReevaluatingManual]=useState(false);
   const [history,setHistory]=useState<SavedSetup[]>([]);
   const [reviewAcknowledged,setReviewAcknowledged]=useState(false);
   const [showReasoning,setShowReasoning]=useState(false);
@@ -76,7 +80,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
-    const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
+    const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setManualEvidence({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
     window.addEventListener('trade-police:strategy-changed',handler);
     return()=>window.removeEventListener('trade-police:strategy-changed',handler);
   },[]);
@@ -86,7 +90,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       const data=await response.json();
       if(!response.ok)throw new Error(apiErrorMessage(data,'Could not load the active strategy.'));
       if (!data.strategy) throw new Error('No active strategy was returned.');
-      setStrategy(data.strategy);
+      setStrategy(data.strategy);setManualEvidence(initialManualConfirmations(data.strategy.rules??[]));
     }catch(e:any){
       setError(e.message||'Could not load the active strategy.');
     }
@@ -158,7 +162,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     const next:Record<string,boolean>={};
     evidenceKeys.forEach((key) => { next[key] = data.evidence[key].value; });
     setAutoChecks(next);
-    setManualEvidence({});
+    setManualEvidence(initialManualConfirmations(strategy.rules??[]));
     const instrumentEl=document.querySelector('[name=instrument]') as HTMLSelectElement | null;
     if(instrumentEl) instrumentEl.value=data.instrument;
     const directionEl=document.querySelector('[name=direction]') as HTMLSelectElement | null;
@@ -175,7 +179,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=Object.entries(manualEvidence).map(([evidenceKey,confirmed])=>({evidenceKey,confirmed})); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
+    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
     analysisAttemptActive.current=true;
     void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
@@ -188,6 +192,12 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       analysisAttemptActive.current=false;
       setLoading(false);
     }
+  }
+
+  async function updateManualConfirmation(ruleKey:string,state:ManualConfirmationState){
+    const next={...manualEvidence,[ruleKey]:state};setManualEvidence(next);if(!lastAnalysisInput)return;
+    const body={...lastAnalysisInput,manualConfirmations:confirmationList(next)};setReevaluatingManual(true);setError('');
+    try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
   }
 
   function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; const instrument=document.querySelector('[name=instrument]') as HTMLSelectElement|null;if(instrument)instrument.value=analysis.instrument;set('entry',c.entryLow??c.entryHigh);set('stopLoss',c.stopLoss);set('takeProfit',c.takeProfit);const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction;setCandidateApplied('Candidate applied.');}
@@ -271,6 +281,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
   const narrative=result?.decisionNarrative;
+  const manualRules=useMemo(()=>(strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL'),[strategy.rules]);
+  const pendingManualRules=manualRules.filter(rule=>(manualEvidence[rule.ruleKey]??'PENDING')==='PENDING');
+  const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];
+  const optionalMissing=narrative?.missingEvidence.filter(item=>!item.mandatory)??[];
 
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
@@ -298,9 +312,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
           <label>Direction<select name="direction"><option>BUY</option><option>SELL</option></select></label>
         </div>
         </section>
-        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
+        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
         {error&&<p className="error">{error}</p>}
-        {analysis&&<div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div>}
+        {analysis&&<><div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div><p className="readiness-disclaimer">Readiness reflects completion of your configured playbook rules. It is not a probability of profit.</p></>}
         <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
           <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
           <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
@@ -313,9 +327,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         </div>
         </section>
         {accounts.length===0&&<p className="warning">No trading account yet. You can validate with a manual balance, or create an auditable account from Accounts.</p>}
-        <section className="workspace-section confirmation-section"><h3>Confirmation Checklist</h3>
+        {manualRules.length>0&&<section className="workspace-section manual-confirmation-summary"><div><h3>Manual confirmations</h3><strong>{pendingManualRules.length} pending</strong></div>{pendingManualRules.length?<ul>{pendingManualRules.map(rule=><li key={rule.ruleKey}>{ruleLabel(rule.ruleKey,rule.label)}</li>)}</ul>:<p className="success">All manual confirmations have an answer.</p>}<button type="button" onClick={()=>setShowManualConfirmations(true)}>{pendingManualRules.length?'Complete manual confirmations':'Review confirmations'}</button></section>}
+        <section className="workspace-section confirmation-section"><h3>Automatic Confirmation Checklist</h3>
         <div className="grid grid-2">
-          {checks.map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const rule=name==='highImpactNews'?null:strategy.rules?.find(item=>item.ruleKey===name&&item.enabled);const isManual=name==='highImpactNews'||rule?.evaluationMode==='MANUAL';const isExternal=rule?.evaluationMode==='EXTERNAL';const detail=isManual?'Manual confirmation':isExternal?'External evidence':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'&&!isManual} onChange={e=>{setAutoChecks(v=>({...v,[name]:e.target.checked}));if(name!=='highImpactNews'&&isManual)setManualEvidence(v=>({...v,[name]:e.target.checked}))}}/><span>{label}<small>{detail}</small></span></label>})}
+          {checks.filter(([name])=>name==='highImpactNews'||(strategy.rules?.find(item=>item.ruleKey===name&&item.enabled)?.evaluationMode??'AUTOMATIC')==='AUTOMATIC').map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const detail=name==='highImpactNews'?'Trade-specific news conflict':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'} onChange={e=>setAutoChecks(v=>({...v,[name]:e.target.checked}))}/><span>{label}<small>{detail}</small></span></label>})}
         </div>
         </section>
         <section className="workspace-section authorization-section"><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Authorization suspended':loading?'Reviewing…':'Request authorization'}</button></section>
@@ -343,7 +358,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       {!narrative?<section className="narrative-empty" aria-live="polite"><strong>Complete the trade details</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section>:<>
       <section className="narrative-section narrative-why" aria-labelledby="narrative-why-title"><div className="narrative-section-head"><span>01</span><div><h3 id="narrative-why-title">Why?</h3><p>The engine reasons behind this answer.</p></div></div><div className="narrative-list">{narrative.reasons.length?narrative.reasons.map(reason=><div className={`narrative-item ${reason.blocking?'blocking':'advisory'}`} key={reason.id}><span className="narrative-item-icon" aria-hidden="true">{reason.blocking?'!':'·'}</span><div><strong>{reason.message}</strong><small>{reason.blocking?'Blocking condition':'Context to review'}</small></div></div>):<div className="narrative-item clear"><span className="narrative-item-icon" aria-hidden="true">✓</span><div><strong>No blocking reasons</strong><small>The configured deterministic checks passed.</small></div></div>}</div></section>
 
-      <section className="narrative-section" aria-labelledby="narrative-missing-title"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{narrative.missingEvidence.length?<div className="narrative-list">{narrative.missingEvidence.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div>:<p className="narrative-clear-copy">Nothing is missing from the configured evidence set.</p>}</section>
+      <section className="narrative-section" aria-labelledby="narrative-missing-title"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{requiredMissing.length?<><h4>Still required</h4><div className="narrative-list">{requiredMissing.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div></>:<p className="narrative-clear-copy">No required playbook evidence is pending.</p>}{optionalMissing.length?<><h4>Additional confirmations that could strengthen this setup</h4><div className="narrative-list">{optionalMissing.map(item=><div className="narrative-item evidence optional" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}</small></div></div>)}</div></>:null}</section>
 
       <section className="narrative-section" aria-labelledby="narrative-next-title"><div className="narrative-section-head"><span>03</span><div><h3 id="narrative-next-title">What should I do next?</h3><p>Follow these steps in order.</p></div></div><ol className="narrative-actions">{narrative.nextActions.map(action=><li key={action.id}><div><strong>{action.label}</strong><p>{action.rationale}</p></div>{action.blocking?<span>Required</span>:null}</li>)}</ol></section>
 
@@ -358,6 +373,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
     {narrative&&lastAnalysisInput&&<MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/>}
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
+    <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>
 
     <div className="card primary-workspace-surface recent-activity-card">
       <h2 className="workspace-title">RECENT ACTIVITY</h2>

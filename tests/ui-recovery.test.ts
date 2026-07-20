@@ -31,8 +31,8 @@ test('Validate retains the two-column decision rail around the Sprint workspace'
   assert.match(validator,/className="decision-workspace-column"/);
   assert.match(validator,/className="decision-workspace-sticky"/);
   assert.match(validator,/className="card primary-workspace-surface trade-workspace"/);
-  assert.match(validator,/manualConfirmations=Object\.entries\(manualEvidence\)/);
-  assert.match(validator,/rule\?\.evaluationMode==='MANUAL'/);
+  assert.match(validator,/manualConfirmations=confirmationList\(manualEvidence\)/);
+  assert.match(validator,/ManualConfirmationDrawer/);
 });
 
 test('Rule Builder retains all Sprint A rule controls',()=>{

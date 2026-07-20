@@ -16,26 +16,27 @@ const rules:StrategyRule[]=[
 
 test('methodology audit separates sources and reports only passed failed or not evaluated',()=>{
   const audit=buildMethodologyAudit(rules,{manualConfirmations:[{evidenceKey:'psychology',confirmed:true}]},{evidence:{bosConfirmed:{value:true},liquiditySweep:{value:false}}} as any);
-  assert.equal(audit.automatic[0].status,'PASSED');
-  assert.equal(audit.automatic[1].status,'FAILED');
+  assert.equal(audit.required[0].status,'PASSED');
+  assert.equal(audit.optional[0].status,'FAILED');
   assert.equal(audit.manual[0].status,'PASSED');
-  assert.equal(audit.manual[0].detail,'Confirmed by user');
+  assert.equal(audit.manual[0].detail,'Confirmed by you');
   assert.equal(audit.external[0].status,'NOT_EVALUATED');
   assert.equal(audit.external[0].detail,'Pending integration');
 });
 
 test('unknown automatic and unconfirmed manual rules are visibly not evaluated',()=>{
   const audit=buildMethodologyAudit([{...rules[0],ruleKey:'customAutomatic'},{...rules[2],ruleKey:'customManual'}],{},null);
-  assert.equal(audit.automatic[0].status,'NOT_EVALUATED');
+  assert.equal(audit.required[0].status,'NOT_EVALUATED');
   assert.equal(audit.manual[0].status,'NOT_EVALUATED');
 });
 
 test('completed analyses render Methodology Applied and collapsible Decision Evidence',()=>{
   assert.match(validator,/narrative&&lastAnalysisInput&&<MethodologyAudit/);
   assert.match(component,/Methodology Applied/);
-  assert.match(component,/<AuditGroup title="Automatic"/);
-  assert.match(component,/<AuditGroup title="Manual"/);
-  assert.match(component,/<AuditGroup title="External"/);
+  assert.match(component,/<AuditGroup title="Required checks"/);
+  assert.match(component,/<AuditGroup title="Optional confirmations"/);
+  assert.match(component,/<AuditGroup title="Manual confirmations"/);
+  assert.match(component,/<AuditGroup title="External checks"/);
   assert.match(component,/<details className="decision-evidence">/);
   assert.match(component,/<summary>Decision Evidence<\/summary>/);
 });

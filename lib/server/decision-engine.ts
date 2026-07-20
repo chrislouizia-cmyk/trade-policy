@@ -3,6 +3,7 @@ import 'server-only';
 import type { EvidenceKey, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
 import type { DailyTradeContext } from '@/lib/server/daily-trade-context';
 import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
+import { evaluateRequiredRules, ruleLabel } from '@/lib/manual-confirmations';
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
@@ -137,9 +138,15 @@ export function validateTradeWithStrategy(
   ) {
     vetoes.push('Required timeframe alignment is missing.');
   }
+  const rules=profile.rules??[];
+  const ruleByKey=new Map(rules.map(rule=>[rule.ruleKey,rule]));
+  let mandatoryPending=false;
   policy.requiredConfirmations.forEach((key) => {
-    if (!input[key]) vetoes.push(`${labels[key]} is mandatory.`);
+    if(!ruleByKey.has(key)&&!input[key])vetoes.push(`${ruleLabel(key,labels[key])} is mandatory.`);
   });
+  const requiredRules=evaluateRequiredRules(rules,input.manualConfirmations??[],input as unknown as Record<string,unknown>);
+  for(const rule of requiredRules.filter(rule=>rule.state==='FAILED'))vetoes.push(rule.mode==='MANUAL'?`${rule.label} failed manual confirmation.`:`${rule.label} is mandatory.`);
+  mandatoryPending=requiredRules.some(rule=>rule.state==='NOT_EVALUATED');
   if (rr < policy.minimumRR) {
     vetoes.push(`RR is ${round(rr)}; strategy minimum is ${policy.minimumRR}.`);
   }
@@ -189,6 +196,8 @@ export function validateTradeWithStrategy(
   const baseVerdict =
     vetoes.length > 0
       ? 'REJECTED'
+      : mandatoryPending
+        ? 'WAIT'
       : confidenceBelow
         ? 'WAIT'
       : score >= profile.authorizationScore

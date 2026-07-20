@@ -59,7 +59,8 @@ export type TimeframeRole='MACRO'|'TREND'|'CONFIRMATION'|'ENTRY'|'TRIGGER';
 export type MarketBias='BULLISH'|'BEARISH'|'RANGE'|'UNCLEAR';
 export type TimeframeLayer={role:TimeframeRole;timeframe:string};
 export type LayerAnalysis=TimeframeLayer&{bias:MarketBias;confirmedEvidence:string[];missingEvidence:string[];confidence:number|null};
-export type ManualConfirmation={evidenceKey:EvidenceKey;confirmed:boolean;note?:string};
+export type ManualConfirmationState='PENDING'|'CONFIRMED'|'FAILED';
+export type ManualConfirmation={evidenceKey:string;state?:ManualConfirmationState;confirmed?:boolean;note?:string};
 
 export type StopLimit = {
   instrument: string;
