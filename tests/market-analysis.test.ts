@@ -81,3 +81,11 @@ test('manual rules remain pending without making automatic analysis unsupported'
   const result=buildLiveAnalysis('XAUUSD',s,series(candles(1,15)),'fixture');
   assert.notEqual(result.status,'STRATEGY_UNSUPPORTED');assert.deepEqual(result.breakdown.manual,['orderBlock']);
 });
+
+test('external rules remain attached without being treated as automatic detector failures',()=>{
+  const s=strategy({rules:[{ruleKey:'spreadFilter',label:'Broker spread',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'TRIGGER',evaluationMode:'EXTERNAL'},{ruleKey:'bosConfirmed',label:'Break',enabled:true,mandatory:true,weight:50,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode:'AUTOMATIC'}]});
+  const result=buildLiveAnalysis('XAUUSD',s,series(candles(0)),'fixture');
+  assert.notEqual(result.status,'STRATEGY_UNSUPPORTED');
+  assert.deepEqual(result.breakdown.external,['spreadFilter']);
+  assert.deepEqual(result.breakdown.unsupported,[]);
+});

@@ -37,7 +37,7 @@ export function buildMissingEvidence(
       );
       const detected = evaluationMode === 'MANUAL'
         ? manualConfirmation?.confirmed ?? null
-        : Boolean(input[evidenceKey]);
+        : evaluationMode === 'EXTERNAL' ? null : Boolean(input[evidenceKey]);
 
       return {
         id: `evidence:${evidenceKey}`,
@@ -55,7 +55,9 @@ export function buildMissingEvidence(
           : undefined,
         reason: evaluationMode === 'MANUAL'
           ? `${rule.label || labels[evidenceKey]} requires trader confirmation.`
-          : `${rule.label || labels[evidenceKey]} has not been detected automatically.`,
+          : evaluationMode === 'EXTERNAL'
+            ? `${rule.label || labels[evidenceKey]} requires evidence from the configured external source.`
+            : `${rule.label || labels[evidenceKey]} has not been detected automatically.`,
         canUserConfirm: evaluationMode === 'MANUAL',
       } satisfies MissingEvidenceItem;
     });

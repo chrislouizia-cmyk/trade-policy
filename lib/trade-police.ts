@@ -1,4 +1,5 @@
-import { DEFAULT_STRATEGY_PROFILE, EvidenceKey, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
+import { DEFAULT_STRATEGY_PROFILE } from '../types/trade.ts';
+import type { EvidenceKey, StrategyProfile, TradeInput, TradeResult } from '../types/trade.ts';
 const round=(n:number,digits=2)=>Number(n.toFixed(digits));
 const labels:Record<EvidenceKey,string>={
   h4TrendAligned:'Trend timeframe aligned',h1TrendAligned:'Confirmation timeframe aligned',

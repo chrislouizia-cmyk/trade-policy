@@ -33,10 +33,11 @@ export async function POST(req: Request) {
     const deterministicCommentary = buildAICommentary(structuredAnalysis, strategy, displayName);
     const aiCommentary = await explainDeterministicAnalysis(structuredAnalysis, deterministicCommentary);
     const enrichedAnalysis = {...analysis, aiCommentary};
-    await supabase.from('market_scans').insert({ user_id: user.id, instrument, strategy_profile_id: strategy.id || null, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis });
+    const {data:scan,error:scanError}=await supabase.from('market_scans').insert({ user_id: user.id, instrument, strategy_profile_id: strategy.id || null, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
+    if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
     await supabase.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}});
     const diagnostics=process.env.NODE_ENV==='development'?{strategyId:analysis.strategyId,strategySchemaVersion:analysis.strategySchemaVersion,methodologyIds:analysis.methodologyIds,instrument,providerSymbol:analysis.providerSymbol,timeframes,candleCounts:Object.fromEntries(timeframes.map((frame,index)=>[frame,values[index].length])),latestCandleTimestamp:analysis.latestCandleTimestamp,detectorSupportedIds:Object.keys(analysis.evidence).filter(key=>key!=='orderBlock'),evidenceIdsDetected:Object.entries(analysis.evidence).filter(([,value])=>value.value).map(([key])=>key),mandatoryEvidenceIds:[...analysis.breakdown.mandatoryConfirmed,...analysis.breakdown.mandatoryMissing],missingMandatoryIds:analysis.breakdown.mandatoryMissing,unsupportedIds:analysis.breakdown.unsupported,contradictedIds:analysis.breakdown.contradicted,timeframeAligned:analysis.timeframeAligned,confidenceComponents:analysis.components,finalStatus:analysis.status,finalConfidence:analysis.liveAnalysisConfidence,calculationTimestamp:analysis.calculatedAt,cache:'MISS'}:undefined;
-    return NextResponse.json({...enrichedAnalysis,strategyApplied:{id:strategy.id,name:strategy.name},diagnostics},{headers:{'Cache-Control':'no-store, max-age=0'}});
+    return NextResponse.json({...enrichedAnalysis,analysisId:scan.id,strategyApplied:{id:strategy.id,name:strategy.name},diagnostics},{headers:{'Cache-Control':'no-store, max-age=0'}});
   } catch (error) {
     if(error instanceof StrategyConfigurationError)return apiError('STRATEGY_INCOMPLETE','Strategy configuration incomplete.',409,{missingFields:error.missingFields});
     if(error instanceof MarketAnalysisError){

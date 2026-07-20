@@ -26,16 +26,18 @@ export async function POST(request:Request){
     const parsed=schema.safeParse(await request.json());
     if(!parsed.success)return apiError('INVALID_STRATEGY',parsed.error.issues[0]?.message||'Strategy data is invalid.',400,parsed.error.flatten());
     const payload=parsed.data;
+    const previousRules=payload.strategyId?(await supabase.from('strategy_rules').select('rule_key,label,enabled,mandatory,weight,minimum_confidence,timeframe_role,evaluation_mode').eq('strategy_id',payload.strategyId).eq('user_id',user.id)).data??[]:[];
     const {data,error}=await supabase.rpc('save_strategy_bundle',{
       p_strategy_id:payload.strategyId,p_profile:payload.profile,p_instruments:payload.instruments,
       p_sessions:payload.sessions,p_rules:payload.rules,p_stop_limits:payload.stopLimits,p_activate:payload.activate,
     });
     if(error)return apiError('STRATEGY_SAVE_FAILED',error.message,500);
     if(!data?.strategyId||data.saved!==true)return apiError('STRATEGY_SAVE_FAILED','Strategy was not returned after saving.',500);
-    const modeWrites=payload.rules.map(rule=>supabase.from('strategy_rules').update({evaluation_mode:rule.evaluation_mode==='MANUAL'?'MANUAL':'AUTOMATIC'}).eq('strategy_id',data.strategyId).eq('user_id',user.id).eq('rule_key',String(rule.rule_key??'')));
+    const modeWrites=payload.rules.map(rule=>{const requested=String(rule.evaluation_mode??'AUTOMATIC');const evaluationMode=['AUTOMATIC','MANUAL','EXTERNAL'].includes(requested)?requested:'AUTOMATIC';return supabase.from('strategy_rules').update({evaluation_mode:evaluationMode}).eq('strategy_id',data.strategyId).eq('user_id',user.id).eq('rule_key',String(rule.rule_key??''));});
     const modeResults=await Promise.all(modeWrites);
     const modeError=modeResults.find(result=>result.error)?.error;
     if(modeError)return apiError('RULE_MODE_SAVE_FAILED',modeError.message,500);
+    if(payload.strategyId){const fields=['label','enabled','mandatory','weight','minimum_confidence','timeframe_role','evaluation_mode'];const before=new Map(previousRules.map((rule:any)=>[String(rule.rule_key),JSON.stringify(fields.map(field=>rule[field]??null))]));const after=new Map(payload.rules.map((rule:any)=>[String(rule.rule_key??''),JSON.stringify(fields.map(field=>rule[field]??null))]));const edited=[...new Set([...before.keys(),...after.keys()])].filter(key=>key&&before.get(key)!==after.get(key));if(edited.length){const {error:metricError}=await supabase.rpc('record_playbook_rule_edits',{p_playbook_id:data.strategyId,p_rule_keys:edited});if(metricError)console.error('Playbook rule edit metric failed.',metricError.message)}}
     const {data:persisted,error:verifyError}=await supabase.from('strategy_profiles').select('id,name,is_default,engine_version,ai_behavior,macro_timeframe,trend_timeframe,confirmation_timeframe,entry_timeframe,trigger_timeframe').eq('id',data.strategyId).eq('user_id',user.id).single();
     if(verifyError||!persisted)return apiError('STRATEGY_VERIFY_FAILED',verifyError?.message||'Strategy could not be verified after saving.',500);
     return NextResponse.json({...data,strategy:persisted},{headers:{'Cache-Control':'no-store'}});

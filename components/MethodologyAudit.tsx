@@ -1,0 +1,11 @@
+import { buildMethodologyAudit, type MethodologyAuditRule } from '@/lib/methodology-audit';
+import type { DecisionNarrative } from '@/types/intelligence';
+import type { ChartAnalysis, StrategyRule } from '@/types/trade';
+
+export default function MethodologyAudit({rules,input,analysis,narrative}:{rules:StrategyRule[];input:Record<string,unknown>;analysis:ChartAnalysis|null;narrative:DecisionNarrative}){
+  const groups=buildMethodologyAudit(rules,input,analysis);
+  const verdict=narrative.recommendation==='ENTER'?'APPROVE':narrative.recommendation;
+  return <section className="card methodology-audit" aria-labelledby="methodology-audit-title"><div className="section-title"><div><p className="muted">PLAYBOOK TRACE</p><h2 id="methodology-audit-title">Methodology Applied</h2><p>These are the playbook rules evaluated for this decision.</p></div></div><div className="methodology-audit-groups"><AuditGroup title="Automatic" rules={groups.automatic}/><AuditGroup title="Manual" rules={groups.manual}/><AuditGroup title="External" rules={groups.external}/></div><details className="decision-evidence"><summary>Decision Evidence</summary><div><p className="muted">DETERMINISTIC RESULT</p><strong className={`audit-verdict ${verdict.toLowerCase()}`}>{verdict}</strong><p>{narrative.explanation}</p>{narrative.reasons.length>0&&<ul>{narrative.reasons.map(reason=><li key={reason.id}>{reason.message}</li>)}</ul>}{narrative.missingEvidence.length>0&&<p><strong>Still required:</strong> {narrative.missingEvidence.map(item=>item.label).join(', ')}</p>}</div></details></section>;
+}
+
+function AuditGroup({title,rules}:{title:string;rules:MethodologyAuditRule[]}){return <section><h3>{title}<span>{rules.length}</span></h3>{rules.length?<div className="methodology-audit-rules">{rules.map(rule=><div key={rule.ruleKey}><span className={`audit-status ${rule.status.toLowerCase()}`} aria-hidden="true">{rule.status==='PASSED'?'✓':rule.status==='FAILED'?'✗':'○'}</span><div><strong>{rule.label}</strong><small>{rule.status==='PASSED'?'Passed':rule.status==='FAILED'?'Failed':'Not evaluated'} · {rule.detail}</small></div></div>)}</div>:<p className="muted">No enabled {title.toLowerCase()} rules.</p>}</section>}

@@ -52,7 +52,7 @@ export type StrategyRule = {
   weight: number;
   minimumConfidence: number;
   timeframeRole: 'MACRO' | 'TREND' | 'CONFIRMATION' | 'ENTRY' | 'TRIGGER';
-  evaluationMode?: 'AUTOMATIC' | 'MANUAL';
+  evaluationMode?: 'AUTOMATIC' | 'MANUAL' | 'EXTERNAL';
 };
 
 export type TimeframeRole='MACRO'|'TREND'|'CONFIRMATION'|'ENTRY'|'TRIGGER';
@@ -299,6 +299,7 @@ export type EntryCandidate = {
   rationale: string;
 };
 export type ChartAnalysis = {
+  analysisId?: string;
   status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   analysisStatus: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   instrument: Instrument;

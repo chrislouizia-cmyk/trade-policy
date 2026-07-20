@@ -47,6 +47,19 @@ export function buildNextActions(
     });
   }
 
+  const external = missingEvidence.filter((item) => item.evaluationMode === 'EXTERNAL');
+  if (external.length) {
+    actions.push({
+      id: 'action:review-external-evidence',
+      type: 'REVIEW_EXTERNAL_EVIDENCE',
+      priority: result.verdict === 'REJECTED' || automatic.length || manual.length ? 4 : 1,
+      label: 'Review external evidence',
+      rationale: external.map((item) => item.label).join(', '),
+      blocking: external.some((item) => item.mandatory),
+      relatedEvidenceIds: external.map((item) => item.id),
+    });
+  }
+
   const riskReasonIds = reasons
     .filter((reason) => ['RISK', 'DAILY_LIMIT', 'NEWS', 'SESSION'].includes(reason.category))
     .map((reason) => reason.id);

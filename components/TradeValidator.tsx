@@ -4,12 +4,15 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'reac
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
+import MethodologyAudit from '@/components/MethodologyAudit';
+import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
 import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage} from '@/lib/api-error';
+import {trackBetaEvent} from '@/lib/beta-intelligence';
 
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
@@ -64,10 +67,14 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [accountId,setAccountId]=useState('');
   const [typedMessage,setTypedMessage]=useState('');
   const [sessionHistory,setSessionHistory]=useState<{time:string;headline:string;detail:string}[]>([]);
+  const [lastAnalysisInput,setLastAnalysisInput]=useState<Record<string,unknown>|null>(null);
+  const [feedbackAnalysisId,setFeedbackAnalysisId]=useState<string|null>(null);
   const reasoningButtonRef=useRef<HTMLButtonElement>(null);
   const reasoningCloseRef=useRef<HTMLButtonElement>(null);
+  const analysisAttemptActive=useRef(false);
 
   useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
+  useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
     const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
     window.addEventListener('trade-police:strategy-changed',handler);
@@ -169,13 +176,16 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
     evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=Object.entries(manualEvidence).map(([evidenceKey,confirmed])=>({evidenceKey,confirmed})); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
+    analysisAttemptActive.current=true;
+    void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
       const res=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const data=await res.json();
-      if(res.ok){setResult(data);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current)}else setError(apiErrorMessage(data,'Please review the form values.'));
+      if(res.ok){setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current);await trackBetaEvent('ANALYSIS_COMPLETED',strategy.id);if(analysis?.analysisId){const eligibility=await fetch(`/api/beta-intelligence/feedback?analysisId=${encodeURIComponent(analysis.analysisId)}`,{cache:'no-store'});if(eligibility.ok){const feedback=await eligibility.json();if(feedback.eligible)setFeedbackAnalysisId(analysis.analysisId)}}}else setError(apiErrorMessage(data,'Please review the form values.'));
     }catch(e:any){
       setError(e.message||'Could not request authorization.');
     }finally{
+      analysisAttemptActive.current=false;
       setLoading(false);
     }
   }
@@ -305,7 +315,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         {accounts.length===0&&<p className="warning">No trading account yet. You can validate with a manual balance, or create an auditable account from Accounts.</p>}
         <section className="workspace-section confirmation-section"><h3>Confirmation Checklist</h3>
         <div className="grid grid-2">
-          {checks.map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const rule=name==='highImpactNews'?null:strategy.rules?.find(item=>item.ruleKey===name&&item.enabled);const isManual=name==='highImpactNews'||rule?.evaluationMode==='MANUAL';const detail=isManual?'Manual confirmation':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'&&!isManual} onChange={e=>{setAutoChecks(v=>({...v,[name]:e.target.checked}));if(name!=='highImpactNews'&&isManual)setManualEvidence(v=>({...v,[name]:e.target.checked}))}}/><span>{label}<small>{detail}</small></span></label>})}
+          {checks.map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const rule=name==='highImpactNews'?null:strategy.rules?.find(item=>item.ruleKey===name&&item.enabled);const isManual=name==='highImpactNews'||rule?.evaluationMode==='MANUAL';const isExternal=rule?.evaluationMode==='EXTERNAL';const detail=isManual?'Manual confirmation':isExternal?'External evidence':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'&&!isManual} onChange={e=>{setAutoChecks(v=>({...v,[name]:e.target.checked}));if(name!=='highImpactNews'&&isManual)setManualEvidence(v=>({...v,[name]:e.target.checked}))}}/><span>{label}<small>{detail}</small></span></label>})}
         </div>
         </section>
         <section className="workspace-section authorization-section"><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Authorization suspended':loading?'Reviewing…':'Request authorization'}</button></section>
@@ -345,6 +355,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       </div>
     </aside>
     </div>
+
+    {narrative&&lastAnalysisInput&&<MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/>}
+    {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
 
     <div className="card primary-workspace-surface recent-activity-card">
       <h2 className="workspace-title">RECENT ACTIVITY</h2>

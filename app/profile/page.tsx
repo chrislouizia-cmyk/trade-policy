@@ -9,5 +9,5 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
   const displayName = await getUserDisplayName(supabase, user);
-  return <main className="container builder-container"><AppHeader eyebrow="TRADE POLICE / STRATEGY BUILDER" displayName={displayName} description="Build, switch and refine the rules that govern every decision." userId={user.id} /><StrategyBuilder userId={user.id} /></main>;
+  return <main className="container builder-container"><AppHeader eyebrow="TRADE POLICE / YOUR PLAYBOOK" displayName={displayName} description="Teach Trade Police How You Trade" userId={user.id} /><StrategyBuilder userId={user.id} /></main>;
 }

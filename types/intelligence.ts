@@ -32,7 +32,7 @@ export type MissingEvidenceItem = {
   label: string;
   layer?: number;
   timeframe?: string;
-  evaluationMode: 'AUTOMATIC' | 'MANUAL';
+  evaluationMode: 'AUTOMATIC' | 'MANUAL' | 'EXTERNAL';
   mandatory: boolean;
   detected: boolean | null;
   confidence: number | null;
@@ -44,6 +44,7 @@ export type MissingEvidenceItem = {
 export type NextActionType =
   | 'WAIT_FOR_EVIDENCE'
   | 'CONFIRM_MANUAL_EVIDENCE'
+  | 'REVIEW_EXTERNAL_EVIDENCE'
   | 'REVIEW_RISK'
   | 'RUN_ANALYSIS'
   | 'REVIEW_ENTRY'
