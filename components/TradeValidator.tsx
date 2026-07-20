@@ -7,6 +7,7 @@ import DecisionHero from '@/components/decision/DecisionHero';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
 import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import type { DecisionNarrative } from '@/types/intelligence';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage} from '@/lib/api-error';
 
@@ -20,6 +21,7 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative };
 
 type SavedSetup = {
   id:string; createdAt:string; source:'SUGGESTED'|'EXECUTED'; instrument:string; direction:string; setupType:string;
@@ -44,7 +46,7 @@ function ReasoningSection({ label, value, tone = 'neutral', support, children }:
 
 
 export default function TradeValidator({userId,displayName,initialStrategy}:{userId:string;displayName:string;initialStrategy:StrategyProfile}) {
-  const [result,setResult]=useState<TradeResult|null>(null);
+  const [result,setResult]=useState<ValidationResult|null>(null);
   const [analysis,setAnalysis]=useState<ChartAnalysis|null>(null);
   const [loading,setLoading]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
@@ -258,6 +260,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
+  const narrative=result?.decisionNarrative;
 
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
@@ -265,6 +268,17 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onLoadingChange={setAnalyzing}/>
 
     <div className="validate-workspace-grid">
+    <section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title">
+      <p className="brand">SHOULD I TAKE THIS TRADE?</p>
+      <h2 id="mobile-decision-title">{narrative?.recommendation??aiStatus.label}</h2>
+      <strong>{narrative?.headline??aiStatus.detail}</strong>
+      {narrative?.explanation?<p>{narrative.explanation}</p>:null}
+      <div className="mobile-decision-facts">
+        <span><small>Readiness</small><strong>{narrative?.readiness.currentScore==null?confidenceValue:`${narrative.readiness.currentScore}%`}</strong></span>
+        <span><small>Missing</small><strong>{narrative?.missingEvidence[0]?.label??primaryMissingCondition}</strong></span>
+        <span><small>Next</small><strong>{narrative?.nextActions[0]?.label??nextActionValue}</strong></span>
+      </div>
+    </section>
     <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <h2 className="workspace-title">TRADE WORKSPACE</h2>
         <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
@@ -303,6 +317,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         analyzing={analyzing}
         analysis={analysis}
         result={result}
+        narrative={narrative}
         strategy={strategy}
         threshold={threshold}
         primaryMissingCondition={primaryMissingCondition}
@@ -312,20 +327,18 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         reportButtonRef={reasoningButtonRef}
       />
 
-    <div className="card primary-workspace-surface decision-report-workspace">
-      <h2 className="workspace-title">TRADE POLICE AI</h2>
-      <p className="decision-report-lead muted">Live strategy, evidence, risk, and discipline context.</p>
+    <div className="card primary-workspace-surface decision-report-workspace narrative-workspace">
+      <div className="narrative-workspace-head"><div><p className="brand">YOUR ANSWER</p><h2>Decision breakdown</h2></div><span className="narrative-provenance">{narrative?.source==='AI_ENHANCED'?'Deterministic decision · coaching added':'Deterministic decision'}</span></div>
 
-      <section className="decision-context-grid" aria-label="Current decision context">
-        <div className="decision-context-item"><span>Strategy</span><strong>{strategy.name}</strong></div>
-        <div className="decision-context-item"><span>Instrument</span><strong>{analysis?.instrument??strategy.instruments[0]??'—'}</strong></div>
-        <div className="decision-context-item"><span>Evidence</span><strong>{analysis?`${evidencePassed}/${evidenceTotal||9} confirmed`:'Awaiting analysis'}</strong></div>
-        <div className="decision-context-item"><span>Readiness</span><strong>{confidenceValue}</strong></div>
-        <div className="decision-context-item decision-context-wide"><span>Missing confirmation</span><strong>{primaryMissingCondition}</strong></div>
-        <div className="decision-context-item decision-context-wide"><span>Next action</span><strong>{nextActionValue}</strong></div>
-      </section>
+      {!narrative?<section className="narrative-empty" aria-live="polite"><strong>Complete the trade details</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section>:<>
+      <section className="narrative-section narrative-why" aria-labelledby="narrative-why-title"><div className="narrative-section-head"><span>01</span><div><h3 id="narrative-why-title">Why?</h3><p>The engine reasons behind this answer.</p></div></div><div className="narrative-list">{narrative.reasons.length?narrative.reasons.map(reason=><div className={`narrative-item ${reason.blocking?'blocking':'advisory'}`} key={reason.id}><span className="narrative-item-icon" aria-hidden="true">{reason.blocking?'!':'·'}</span><div><strong>{reason.message}</strong><small>{reason.blocking?'Blocking condition':'Context to review'}</small></div></div>):<div className="narrative-item clear"><span className="narrative-item-icon" aria-hidden="true">✓</span><div><strong>No blocking reasons</strong><small>The configured deterministic checks passed.</small></div></div>}</div></section>
 
-      <section className="workspace-section verdict-summary-card"><h3>Police Verdict</h3>{!result?<p className="muted compact-empty-state">Awaiting authorization.</p>:<><span className={`badge ${result.verdict.toLowerCase()}`}>{result.verdict}</span><div className="score">{result.score}</div><h3>Grade {result.grade}</h3><p>RR <strong>1:{result.rr}</strong> · Risk <strong>${result.riskAmount}</strong></p>{result.vetoes.length>0&&<><h4>Automatic vetoes</h4><ul>{result.vetoes.map((v,index)=><li key={`veto-${index}-${v}`}>{v}</li>)}</ul></>}{result.observations.length>0&&<><h4>Pending evidence</h4><ul>{result.observations.map((v,index)=><li key={`observation-${index}-${v}`}>{v}</li>)}</ul></>}</>}</section>
+      <section className="narrative-section" aria-labelledby="narrative-missing-title"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{narrative.missingEvidence.length?<div className="narrative-list">{narrative.missingEvidence.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div>:<p className="narrative-clear-copy">Nothing is missing from the configured evidence set.</p>}</section>
+
+      <section className="narrative-section" aria-labelledby="narrative-next-title"><div className="narrative-section-head"><span>03</span><div><h3 id="narrative-next-title">What should I do next?</h3><p>Follow these steps in order.</p></div></div><ol className="narrative-actions">{narrative.nextActions.map(action=><li key={action.id}><div><strong>{action.label}</strong><p>{action.rationale}</p></div>{action.blocking?<span>Required</span>:null}</li>)}</ol></section>
+
+      {(narrative.educationalExplanation||narrative.coachingMessage||narrative.learningTip)?<section className="narrative-coaching" aria-label="Educational coaching"><span>COACHING · EDUCATIONAL ONLY</span>{narrative.educationalExplanation?<p>{narrative.educationalExplanation}</p>:null}{narrative.coachingMessage?<p>{narrative.coachingMessage}</p>:null}{narrative.learningTip?<small>{narrative.learningTip}</small>:null}</section>:null}
+      </>}
 
       <section className="workspace-section discipline-card"><h3>Override / Discipline</h3>{!result?<p className="muted compact-empty-state">Request authorization to review discipline controls.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Discipline score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Take Anyway is disabled because the daily limit is a hard risk-control rule.</p>:null}<div className="discipline-action-row"><button type="button" onClick={()=>saveTakenTrade(result.verdict!=='AUTHORIZED')} disabled={savingTrade||result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'}>{savingTrade?'Saving trade…':result.verdict==='AUTHORIZED'?'Trade taken':'Take anyway'}</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View Active Trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
     </div>

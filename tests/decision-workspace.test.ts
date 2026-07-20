@@ -158,9 +158,24 @@ test('decision hero maps deterministic states to primary verdicts', () => {
   }).verdict, 'READY');
 });
 
-test('validate page identity uses DECISION branding', () => {
+test('Analyze page is framed around the trade decision question', () => {
   const page = readFileSync(`${root}/app/validate/page.tsx`, 'utf8');
-  assert.match(page, /TRADE POLICE \/ DECISION/);
-  assert.match(page, /Should you risk your money right now\?/);
+  assert.match(page, /TRADE POLICE \/ ANALYZE/);
+  assert.match(page, /Should I take this trade\?/);
   assert.doesNotMatch(page, /VALIDATION DESK/);
+});
+
+test('Analyze consumes the additive Decision Narrative contract without recreating backend logic', () => {
+  const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
+  const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
+
+  assert.match(tradeValidator, /result\?\.decisionNarrative/);
+  assert.match(tradeValidator, /narrative\.reasons\.map/);
+  assert.match(tradeValidator, /narrative\.missingEvidence\.map/);
+  assert.match(tradeValidator, /narrative\.nextActions\.map/);
+  assert.match(tradeValidator, /educationalExplanation/);
+  assert.match(decisionHero, /SHOULD I TAKE THIS TRADE\?/);
+  assert.match(decisionHero, /narrative\?\.recommendation/);
+  assert.doesNotMatch(tradeValidator, /dangerouslySetInnerHTML/);
+  assert.doesNotMatch(decisionHero, /dangerouslySetInnerHTML/);
 });

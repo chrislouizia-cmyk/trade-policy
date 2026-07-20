@@ -55,3 +55,17 @@ test('responsive styles contain Validate, rule rows, and the decision modal',()=
   assert.match(css,/\.reasoning-modal\s*\{[\s\S]*?max-width:\s*100%[\s\S]*?box-sizing:\s*border-box/);
   assert.match(css,/\.reasoning-modal-body\s*\{[\s\S]*?overflow-x:\s*hidden[\s\S]*?overscroll-behavior:\s*contain/);
 });
+
+test('Analyze narrative hierarchy is responsive and moves the answer before the form on mobile',()=>{
+  const css=source('app/trade-police.css');
+  const validator=source('components/TradeValidator.tsx');
+
+  assert.match(validator,/className="card primary-workspace-surface decision-report-workspace narrative-workspace"/);
+  assert.match(validator,/>Why\?</);
+  assert.match(validator,/>What is missing\?</);
+  assert.match(validator,/>What should I do next\?</);
+  assert.ok(validator.indexOf('className="card mobile-decision-answer"')<validator.indexOf('className="card primary-workspace-surface trade-workspace"'));
+  assert.match(css,/@media\(max-width:900px\)[\s\S]*?\.mobile-decision-answer\s*\{[\s\S]*?grid-row:\s*1/);
+  assert.match(css,/@media\(max-width:900px\)[\s\S]*?\.decision-workspace-column\s*\{[\s\S]*?grid-row:\s*3/);
+  assert.match(css,/@media\(max-width:640px\)[\s\S]*?\.narrative-actions li\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+});

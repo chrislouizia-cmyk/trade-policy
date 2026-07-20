@@ -16,7 +16,7 @@ export default async function ValidatePage() {
     strategy = await loadActiveStrategy(supabase, user.id);
   } catch (error) {
     if (!(error instanceof NoActiveStrategyError)&&!(error instanceof StrategyConfigurationError)) throw error;
-    return <main className="container"><AppHeader eyebrow="TRADE POLICE / DECISION" displayName={displayName} description="Should you risk your money right now?" userId={user.id} /><div className="card empty-state"><h2>{error instanceof NoActiveStrategyError?'No active strategy':'Active strategy needs configuration'}</h2><p className="muted">{error.message}</p><a className="button-link primary" href="/profile">Build or configure strategy</a></div></main>;
+    return <main className="container"><AppHeader eyebrow="TRADE POLICE / ANALYZE" displayName={displayName} description="Should I take this trade?" userId={user.id} /><div className="card empty-state"><h2>{error instanceof NoActiveStrategyError?'No active strategy':'Active strategy needs configuration'}</h2><p className="muted">{error.message}</p><a className="button-link primary" href="/profile">Build or configure strategy</a></div></main>;
   }
-  return <main className="container"><AppHeader eyebrow="TRADE POLICE / DECISION" displayName={displayName} description="Should you risk your money right now?" userId={user.id} /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} /></main>;
+  return <main className="container"><AppHeader eyebrow="TRADE POLICE / ANALYZE" displayName={displayName} description="Should I take this trade?" userId={user.id} /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} /></main>;
 }
