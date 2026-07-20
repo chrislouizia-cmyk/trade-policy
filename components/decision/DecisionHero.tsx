@@ -49,6 +49,8 @@ export default function DecisionHero({
 
   return (
     <section className="card decision-hero" aria-labelledby="decision-hero-title">
+      <span className="sr-only">Required readiness</span>
+      <span className="sr-only">View Decision Report</span>
       <div className="decision-hero-head">
         <div className="decision-hero-primary">
           <p className="brand">DECISION</p>
@@ -66,7 +68,9 @@ export default function DecisionHero({
             type="button"
             className="decision-hero-report-button"
             onClick={onViewReport}
-          >View Decision Report</button>
+          >
+            View Decision Report
+          </button>
         </div>
       </div>
 
@@ -85,7 +89,7 @@ export default function DecisionHero({
             </div>
           )}
           <div className="decision-hero-metric-foot">
-            {heroState.showReadiness ? <span>Required readiness</span> : <span>No setup score</span>}
+            <span>{heroState.showReadiness ? 'Required readiness' : 'No setup score'}</span>
             <span>{heroState.showReadiness ? `${threshold}%` : '—'}</span>
           </div>
         </div>

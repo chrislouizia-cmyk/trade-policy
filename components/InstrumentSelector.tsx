@@ -62,6 +62,13 @@ export default function InstrumentSelector({
     onChange(Array.from(new Set([...selected, ...symbols])));
   }
 
+  function selectMarket(target: string) {
+    const symbols = catalog.filter((item) => item.marketType === target).map((item) => item.symbol);
+    onChange(Array.from(new Set([...selected, ...symbols])));
+    setMarket(target);
+    setCategory('ALL');
+  }
+
   return (
     <div className="stack compact-instrument-selector">
       <div className="grid grid-3">
@@ -110,6 +117,9 @@ export default function InstrumentSelector({
           <button type="button" onClick={() => selectCategory('MAJOR')}>Forex majors</button>
           <button type="button" onClick={() => selectCategory('CROSS')}>Crosses</button>
           <button type="button" onClick={() => selectCategory('METAL')}>Metals</button>
+          <button type="button" onClick={() => selectMarket('CRYPTO')}>Crypto</button>
+          <button type="button" onClick={() => selectMarket('STOCKS')}>Stocks &amp; ETFs</button>
+          <button type="button" onClick={() => selectMarket('FUTURES')}>Futures</button>
           <button type="button" onClick={() => onChange([])}>Clear</button>
         </div>
       </div>

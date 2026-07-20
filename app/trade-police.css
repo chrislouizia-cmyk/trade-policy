@@ -678,14 +678,69 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
   margin-top: 0;
 }
 .validate-page-flow {
-  display: grid;
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  gap: 18px;
 }
 .validate-workspace-grid {
   display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.85fr) minmax(330px, .9fr);
+  gap: 18px;
+  align-items: start;
+}
+.decision-workspace-column {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-self: start;
+}
+.decision-workspace-sticky {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - 36px);
+}
+.decision-workspace-column .decision-hero,
+.decision-workspace-column .decision-report-workspace {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.decision-workspace-column .decision-hero {
+  padding: 18px;
+  gap: 14px;
+}
+.decision-workspace-column .decision-hero-head {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.decision-workspace-column .decision-hero-actions {
+  justify-content: stretch;
+}
+.decision-workspace-column .decision-hero-report-button {
+  width: 100%;
+}
+.decision-workspace-column .decision-hero-metrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  align-items: stretch;
+  gap: 10px;
+}
+.decision-workspace-column .decision-hero-readiness {
+  grid-column: 1 / -1;
+}
+.decision-workspace-column .decision-report-workspace {
+  height: 100%;
+  min-height: 0;
+}
+.decision-workspace-column .discipline-card {
+  margin-top: auto;
 }
 .primary-workspace-surface {
   display: flex;
@@ -853,7 +908,9 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 }
 .reasoning-modal {
   width: min(1100px, calc(100vw - 48px));
+  max-width: 100%;
   max-height: 88vh;
+  box-sizing: border-box;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -888,6 +945,8 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 .reasoning-modal-body {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 20px;
 }
 .trade-reasoning-grid {
@@ -918,6 +977,14 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
   .validate-workspace-grid {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
+  }
+  .decision-workspace-sticky {
+    position: static;
+    min-height: 0;
+    grid-template-rows: auto;
+  }
+  .decision-workspace-column .decision-report-workspace {
+    height: auto;
   }
   .primary-workspace-surface {
     height: auto;
@@ -979,5 +1046,97 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
   }
   .discipline-action-row button {
     width: 100%;
+  }
+}
+
+/* V23 UI recovery: presentation-only containment and responsive structure. */
+.decision-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+.decision-context-item {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+}
+.decision-context-item span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.decision-context-item strong {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.decision-context-wide {
+  grid-column: 1 / -1;
+}
+.analytics-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.analytics-table table {
+  min-width: 900px;
+}
+.analytics-table th,
+.analytics-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.sprint-rule-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.sprint-rule-table .rule-table-row > span {
+  display: grid;
+  grid-template-columns: minmax(115px, 1fr) minmax(105px, .9fr);
+  gap: 8px;
+  min-width: 0;
+}
+.sprint-rule-table .rule-table-row select,
+.sprint-rule-table .rule-table-row input {
+  max-width: 100%;
+  min-width: 0;
+}
+@media(max-width:760px) {
+  .sprint-rule-table {
+    overflow: visible;
+  }
+  .sprint-rule-table .rule-table-head {
+    display: none;
+  }
+  .sprint-rule-table .rule-table-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+    min-width: 0;
+    gap: 10px;
+    padding: 14px 0;
+  }
+  .sprint-rule-table .rule-table-row > strong,
+  .sprint-rule-table .rule-table-row > span {
+    grid-column: 2;
+  }
+  .sprint-rule-table .rule-table-row > input:not([type="checkbox"]) {
+    grid-column: 2;
+    width: 100%;
+  }
+  .decision-context-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .decision-context-wide {
+    grid-column: auto;
   }
 }

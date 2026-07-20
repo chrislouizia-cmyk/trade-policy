@@ -12,6 +12,7 @@ export default function StrategyPersonalization({profile,onChange}:{profile:Stra
       <p className="muted">These settings change deterministic confidence eligibility and how Trade Police explains the structured result.</p>
       <div className="grid grid-3">
         <label>Tone<select value={ai.tone} onChange={event=>onChange({...profile,aiBehavior:{...ai,tone:event.target.value as AIBehaviorProfile['tone']}})}><option value="direct">Direct</option><option value="educational">Educational</option><option value="analytical">Analytical</option><option value="mentor">Mentor</option></select></label>
+        <label>Strictness<select value={ai.strictness} onChange={event=>onChange({...profile,aiBehavior:{...ai,strictness:event.target.value as AIBehaviorProfile['strictness']}})}><option value="conservative">Conservative</option><option value="balanced">Balanced</option><option value="opportunistic">Opportunistic</option></select></label>
         <label>Minimum confidence<input type="number" min="0" max="100" value={ai.confidenceThreshold} onChange={event=>onChange({...profile,aiBehavior:{...ai,confidenceThreshold:Number(event.target.value)}})}/></label>
       </div>
       <div className="grid grid-3">
@@ -19,7 +20,7 @@ export default function StrategyPersonalization({profile,onChange}:{profile:Stra
         <label className="check-row"><input type="checkbox" checked={ai.suggestAlternatives} onChange={event=>onChange({...profile,aiBehavior:{...ai,suggestAlternatives:event.target.checked}})}/><span>Suggest compliant alternatives</span></label>
         <label className="check-row"><input type="checkbox" checked={ai.useDisplayName} onChange={event=>onChange({...profile,aiBehavior:{...ai,useDisplayName:event.target.checked}})}/><span>Use my display name sparingly</span></label>
       </div>
-      <p className="muted">Methodology libraries, personal timing rules, holding-time policies, and AI strictness are coming later.</p>
+      <p className="muted">Methodology libraries, personal timing rules, and holding-time policies are coming later.</p>
     </div>
   </div>;
 }

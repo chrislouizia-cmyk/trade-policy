@@ -256,25 +256,15 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const nextActionValue = !analysis?'Run the live market read.':analyzing?'Hold while the market is checked.':result?.verdict==='REJECTED'?'Review the policy settings.':result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY')?'Review the trade details.':'Wait for confirmation.';
   const respectedCount=result?.scoreItems.filter(item=>item.earned>=item.possible).length??0;
   const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
+  const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
+  const evidenceTotal=confidenceBreakdown.length;
 
-  return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">View Decision Report</span>
+  return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
-
-    <DecisionHero
-      analyzing={analyzing}
-      analysis={analysis}
-      result={result}
-      strategy={strategy}
-      threshold={threshold}
-      primaryMissingCondition={primaryMissingCondition}
-      nextActionValue={nextActionValue}
-      readinessInterpretation={readinessInterpretation}
-      onViewReport={() => setShowReasoning(true)}
-      reportButtonRef={reasoningButtonRef}
-    />
 
     <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onLoadingChange={setAnalyzing}/>
 
+    <div className="validate-workspace-grid">
     <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <h2 className="workspace-title">TRADE WORKSPACE</h2>
         <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
@@ -307,13 +297,40 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         <section className="workspace-section authorization-section"><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Authorization suspended':loading?'Reviewing…':'Request authorization'}</button></section>
       </form>
 
+    <aside className="decision-workspace-column">
+      <div className="decision-workspace-sticky">
+      <DecisionHero
+        analyzing={analyzing}
+        analysis={analysis}
+        result={result}
+        strategy={strategy}
+        threshold={threshold}
+        primaryMissingCondition={primaryMissingCondition}
+        nextActionValue={nextActionValue}
+        readinessInterpretation={readinessInterpretation}
+        onViewReport={() => setShowReasoning(true)}
+        reportButtonRef={reasoningButtonRef}
+      />
+
     <div className="card primary-workspace-surface decision-report-workspace">
-      <h2 className="workspace-title">DECISION REPORT</h2>
-      <p className="decision-report-lead muted">What Trade Police detected, what your strategy requires, and what happens next.</p>
+      <h2 className="workspace-title">TRADE POLICE AI</h2>
+      <p className="decision-report-lead muted">Live strategy, evidence, risk, and discipline context.</p>
+
+      <section className="decision-context-grid" aria-label="Current decision context">
+        <div className="decision-context-item"><span>Strategy</span><strong>{strategy.name}</strong></div>
+        <div className="decision-context-item"><span>Instrument</span><strong>{analysis?.instrument??strategy.instruments[0]??'—'}</strong></div>
+        <div className="decision-context-item"><span>Evidence</span><strong>{analysis?`${evidencePassed}/${evidenceTotal||9} confirmed`:'Awaiting analysis'}</strong></div>
+        <div className="decision-context-item"><span>Readiness</span><strong>{confidenceValue}</strong></div>
+        <div className="decision-context-item decision-context-wide"><span>Missing confirmation</span><strong>{primaryMissingCondition}</strong></div>
+        <div className="decision-context-item decision-context-wide"><span>Next action</span><strong>{nextActionValue}</strong></div>
+      </section>
 
       <section className="workspace-section verdict-summary-card"><h3>Police Verdict</h3>{!result?<p className="muted compact-empty-state">Awaiting authorization.</p>:<><span className={`badge ${result.verdict.toLowerCase()}`}>{result.verdict}</span><div className="score">{result.score}</div><h3>Grade {result.grade}</h3><p>RR <strong>1:{result.rr}</strong> · Risk <strong>${result.riskAmount}</strong></p>{result.vetoes.length>0&&<><h4>Automatic vetoes</h4><ul>{result.vetoes.map((v,index)=><li key={`veto-${index}-${v}`}>{v}</li>)}</ul></>}{result.observations.length>0&&<><h4>Pending evidence</h4><ul>{result.observations.map((v,index)=><li key={`observation-${index}-${v}`}>{v}</li>)}</ul></>}</>}</section>
 
       <section className="workspace-section discipline-card"><h3>Override / Discipline</h3>{!result?<p className="muted compact-empty-state">Request authorization to review discipline controls.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Discipline score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Take Anyway is disabled because the daily limit is a hard risk-control rule.</p>:null}<div className="discipline-action-row"><button type="button" onClick={()=>saveTakenTrade(result.verdict!=='AUTHORIZED')} disabled={savingTrade||result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'}>{savingTrade?'Saving trade…':result.verdict==='AUTHORIZED'?'Trade taken':'Take anyway'}</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View Active Trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
+    </div>
+      </div>
+    </aside>
     </div>
 
     <div className="card primary-workspace-surface recent-activity-card">

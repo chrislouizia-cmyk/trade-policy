@@ -88,7 +88,7 @@ export default function LiveMarketPanel({
         <div>
           <p className="brand">LIVE DATA MODE</p>
           <h2>Analyze configured timeframes automatically</h2>
-          <p className="muted">Trade Police reads {strategyTimeframeLayers(strategy).map(layer=>layer.role.toLowerCase()+' '+layer.timeframe).join(' · ')} from live market data.</p>
+          <p className="muted">Trade Police reads {strategyTimeframeLayers(strategy).map(layer=>`${layer.role.toLowerCase()} ${layer.timeframe}`).join(' · ')} from live market data.</p>
         </div>
         <div>
           <label>
@@ -124,7 +124,7 @@ export default function LiveMarketPanel({
           <span>Last analyzed: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
           <span>{analysis.instrument} · {analysis.timeframe}</span>
           <span>Market data: {analysis.provider} · latest candle {analysis.latestCandleTimestamp}</span>
-        </div><div className="grid grid-3">{analysis.layerAnalysis?.map((layer:any)=><div className="card inset-card" key={layer.role+'-'+layer.timeframe}><strong>{layer.role} · {layer.timeframe}</strong><span>{layer.bias}</span><small>{layer.confidence==null?'Context only':layer.confidence+'% automatic confirmations'}</small>{layer.missingEvidence?.length>0&&<small>Pending: {layer.missingEvidence.join(', ')}</small>}</div>)}</div></>
+        </div><div className="grid grid-3 layer-analysis-grid">{analysis.layerAnalysis?.map((layer:any)=><div className="card inset-card" key={`${layer.role}-${layer.timeframe}`}><strong>{layer.role} · {layer.timeframe}</strong><span>{layer.bias}</span><small>{layer.confidence==null?'Context only':`${layer.confidence}% automatic confirmations`}</small>{layer.missingEvidence?.length>0&&<small>Pending: {layer.missingEvidence.join(', ')}</small>}</div>)}</div></>
       )}
     </section>
   );

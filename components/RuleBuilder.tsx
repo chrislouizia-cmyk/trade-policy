@@ -40,18 +40,18 @@ export default function RuleBuilder({ rules, onChange }: { rules: StrategyRule[]
   }
 
   return (
-    <div className="rule-table">
+    <div className="rule-table sprint-rule-table">
       <div className="rule-table-head"><span>Enabled</span><span>Rule</span><span>Mandatory</span><span>Weight</span><span>Confidence</span><span>Timeframe / mode</span></div>
       {rules.map((rule, index) => (
         <div className="rule-table-row" key={rule.ruleKey}>
-          <input type="checkbox" checked={rule.enabled} onChange={(event) => update(index, { enabled: event.target.checked })} />
+          <input aria-label={`${rule.label} enabled`} type="checkbox" checked={rule.enabled} onChange={(event) => update(index, { enabled: event.target.checked })} />
           <strong>{rule.label}{NOT_LIVE_DETECTABLE.has(rule.ruleKey)?' · not available in live analysis':''}</strong>
-          <input type="checkbox" checked={rule.mandatory} disabled={!rule.enabled} onChange={(event) => update(index, { mandatory: event.target.checked })} />
-          <input type="number" min="0" max="100" value={rule.weight} disabled={!rule.enabled} onChange={(event) => update(index, { weight: Number(event.target.value) })} />
-          <input type="number" min="0" max="100" value={rule.minimumConfidence} disabled={!rule.enabled} onChange={(event) => update(index, { minimumConfidence: Number(event.target.value) })} />
-          <span><select value={rule.timeframeRole} disabled={!rule.enabled} onChange={(event) => update(index, { timeframeRole: event.target.value as StrategyRule['timeframeRole'] })}>
+          <input aria-label={`${rule.label} mandatory`} type="checkbox" checked={rule.mandatory} disabled={!rule.enabled} onChange={(event) => update(index, { mandatory: event.target.checked })} />
+          <input aria-label={`${rule.label} weight`} type="number" min="0" max="100" value={rule.weight} disabled={!rule.enabled} onChange={(event) => update(index, { weight: Number(event.target.value) })} />
+          <input aria-label={`${rule.label} confidence`} type="number" min="0" max="100" value={rule.minimumConfidence} disabled={!rule.enabled} onChange={(event) => update(index, { minimumConfidence: Number(event.target.value) })} />
+          <span><select aria-label={`${rule.label} timeframe`} value={rule.timeframeRole} disabled={!rule.enabled} onChange={(event) => update(index, { timeframeRole: event.target.value as StrategyRule['timeframeRole'] })}>
             {['MACRO','TREND','CONFIRMATION','ENTRY','TRIGGER'].map((role) => <option key={role}>{role}</option>)}
-          </select><select value={rule.evaluationMode??'AUTOMATIC'} disabled={!rule.enabled} onChange={event=>update(index,{evaluationMode:event.target.value as StrategyRule['evaluationMode']})}><option value="AUTOMATIC">Automatic</option><option value="MANUAL">Manual</option></select></span>
+          </select><select aria-label={`${rule.label} evaluation mode`} value={rule.evaluationMode??'AUTOMATIC'} disabled={!rule.enabled} onChange={event=>update(index,{evaluationMode:event.target.value as StrategyRule['evaluationMode']})}><option value="AUTOMATIC">Automatic</option><option value="MANUAL">Manual</option></select></span>
         </div>
       ))}
     </div>

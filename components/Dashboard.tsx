@@ -13,6 +13,7 @@ type Props = {
 };
 
 export default function Dashboard(p: Props) {
+  const setupComplete=Boolean(p.account&&p.strategy&&p.hasTrade);
   return (
     <div className="stack">
       <section className="dashboard-hero card command-center-hero">
@@ -25,11 +26,11 @@ export default function Dashboard(p: Props) {
         <a className="button-link primary dashboard-primary-action" href="/validate">Open validator</a>
       </section>
 
-      <OnboardingChecklist
+      {!setupComplete&&<OnboardingChecklist
         hasAccount={Boolean(p.account)}
         hasStrategy={Boolean(p.strategy)}
         hasTrade={p.hasTrade}
-      />
+      />}
 
       <div className="grid grid-4 metric-grid compact-dashboard-grid">
         <Card
@@ -62,7 +63,7 @@ export default function Dashboard(p: Props) {
           </div>
         </div>
         <div className="button-row">
-          <a className="button-link primary" href="/validate">Analyze market</a>
+          <a className="button-link secondary" href="/validate">Analyze market</a>
           <a className="button-link secondary" href="/active-trade">Review open trades</a>
           <a className="button-link secondary" href="/profile">Adjust strategy</a>
           <a className="button-link secondary" href="/analytics">Review analytics</a>
@@ -94,7 +95,6 @@ export default function Dashboard(p: Props) {
     </div>
   );
 }
-
 function Card({ label, value, sub, href }:{ label:string; value:string; sub?:string; href?:string }) {
   const body = <><span className="muted">{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</>;
   return href

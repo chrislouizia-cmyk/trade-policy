@@ -15,7 +15,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
-  ['identity','Name'],['markets','Markets'],['schedule','Sessions'],['timeframes','Timeframes'],['risk','Risk'],['rules','Rules'],['management','Management'],['review','Review']
+  ['identity','Identity'],['markets','Market Context'],['schedule','Filters'],['timeframes','Five Layers'],['risk','Risk'],['rules','Confirmations & AI'],['management','Management'],['review','Final Review']
 ] as const;
 type BuilderStep = typeof BUILDER_STEPS[number][0];
 
@@ -326,17 +326,17 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
           </div>
         </div>
 
-        <div className="card builder-section step-markets"><h2>Markets & instruments</h2><p className="muted">Phase 1 includes the Forex and metals catalog. Futures and dynamic stock search are prepared for the next phase.</p><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
+        <div className="card builder-section step-markets"><h2>Market Context</h2><p className="muted">Choose the markets and instruments this strategy may analyze.</p><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
 
-        <div className="card builder-section step-timeframes"><h2>Timeframe stack</h2><div className="grid grid-3">
+        <div className="card builder-section step-timeframes"><h2>Five-Layer Context and Execution</h2><p className="muted">Macro, trend, and confirmation establish context; entry and trigger govern execution.</p><div className="grid grid-3">
           {([['macroTimeframe','Macro'],['trendTimeframe','Trend'],['confirmationTimeframe','Confirmation'],['entryTimeframe','Entry'],['triggerTimeframe','Trigger']] as [keyof StrategyProfile,string][]).map(([key,label]) => <label key={String(key)}>{label}<select value={String(profile[key] ?? '')} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}>{TIMEFRAMES.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>)}
         </div><p className="muted">All five configured layers are persisted and used by live analysis.</p></div>
 
-        <div className="card builder-section step-schedule"><h2>Trading sessions</h2><p className="muted">Session hours stay attached to their market timezone and are automatically shown in your timezone, including daylight-saving changes.</p><SessionSelector sessions={sessions} onChange={setSessions} userTimezone={userTimezone} onUserTimezoneChange={updateUserTimezone} /></div>
+        <div className="card builder-section step-schedule"><h2>Filters</h2><h3>Trading sessions</h3><p className="muted">Session hours stay attached to their market timezone and are automatically shown in your timezone, including daylight-saving changes.</p><SessionSelector sessions={sessions} onChange={setSessions} userTimezone={userTimezone} onUserTimezoneChange={updateUserTimezone} /></div>
 
         <div className="card builder-section step-risk"><h2>Risk & authorization</h2><RiskSettings profile={profile} onChange={setProfile} /></div>
 
-        <div className="card builder-section step-rules"><h2>Build your methodology</h2><StrategyPersonalization profile={profile} onChange={setProfile} /><hr/><h2>Evidence rules, weights & mandatory confirmations</h2><p className="muted">Mandatory rules override the score. A high score cannot authorize a trade missing required evidence.</p><RuleBuilder rules={rules} onChange={setRules} /></div>
+        <div className="card builder-section step-rules"><h2>Confirmations and AI Behavior</h2><p className="muted">Configure how Trade Police explains the result, then define the automatic and manual evidence required by the strategy.</p><StrategyPersonalization profile={profile} onChange={setProfile} /><hr/><h2>Evidence rules, weights & mandatory confirmations</h2><p className="muted">Mandatory rules override the score. A high score cannot authorize a trade missing required evidence.</p><RuleBuilder rules={rules} onChange={setRules} /></div>
 
         <div className="card builder-section step-management"><h2>Stop-loss operating range by instrument</h2><p className="muted">Minimum prevents unrealistically tight stops, preferred defines your normal operating distance, and maximum is the hard ceiling.</p><StopLimitBuilder instruments={profile.instruments} limits={stopLimits} onChange={setStopLimits} /></div>
 
