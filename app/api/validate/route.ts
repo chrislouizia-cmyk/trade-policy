@@ -4,7 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { loadActiveStrategy } from '@/lib/server/active-strategy';
 import { loadDailyTradeContext } from '@/lib/server/daily-trade-context';
 import { validateTradeWithStrategy } from '@/lib/server/decision-engine';
+import { buildDecisionNarrative } from '@/lib/intelligence/decision-narrative';
+import { enhanceDecisionNarrative } from '@/lib/server/decision-narrative-ai';
 import { apiError } from '@/lib/server/public-error';
+import type { TradeInput } from '@/types/trade';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +69,17 @@ export async function POST(request: Request) {
     const input={...parsed.data};
     for(const item of parsed.data.manualConfirmations)input[item.evidenceKey]=item.confirmed;
     const result = validateTradeWithStrategy(input, strategy, dailyContext);
+    const deterministicNarrative = buildDecisionNarrative({
+      result,
+      strategy,
+      input: input as TradeInput,
+    });
+    let decisionNarrative = deterministicNarrative;
+    try {
+      decisionNarrative = await enhanceDecisionNarrative(deterministicNarrative);
+    } catch (narrativeError) {
+      console.error('Decision narrative error:', narrativeError);
+    }
 
     return NextResponse.json(
       {
@@ -76,6 +90,7 @@ export async function POST(request: Request) {
           engineVersion:strategy.engineVersion??1,
         },
         manualConfirmations:parsed.data.manualConfirmations,
+        decisionNarrative,
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
