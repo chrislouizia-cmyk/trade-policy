@@ -44,6 +44,7 @@ export async function POST(request: Request) {
     if(!department)return NextResponse.json({error:'Active department required.'},{status:400});
     if(!position||position.department_id!==department.id)return NextResponse.json({error:'Position must belong to the selected department.'},{status:400});
     if(!permissionProfile)return NextResponse.json({error:'Active permission profile required.'},{status:400});
+    if(permissionProfile.role_key==='OWNER')return NextResponse.json({error:'The Owner permission profile cannot be assigned by invitation.'},{status:400});
     if(reportsToEmployeeId&&!manager)return NextResponse.json({error:'Reports To must reference an active employee.'},{status:400});
     const staffRole=permissionProfile.role_key,title=position.title;
     const origin = new URL(request.url).origin;
