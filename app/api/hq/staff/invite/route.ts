@@ -1,123 +1,73 @@
-import { NextResponse } from 'next/server';
+import {NextResponse} from 'next/server';
+import {z} from 'zod';
+import {createClient} from '@/lib/supabase/server';
+import {createAdminClient} from '@/lib/supabase/admin';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+export const runtime='nodejs';
+export const dynamic='force-dynamic';
 
-const InviteSchema = z.object({
-  email: z.string().trim().email(),
-  displayName: z.string().trim().min(2).max(120),
-  departmentId:z.string().uuid(),positionId:z.string().uuid(),permissionProfileId:z.string().uuid(),reportsToEmployeeId:z.string().uuid().or(z.literal('')).optional().default(''),
+const InviteSchema=z.object({
+ email:z.string({required_error:'Email is required.'}).trim().email('Enter a valid employee email.'),
+ displayName:z.string({required_error:'Employee name is required.'}).trim().min(2,'Employee name is required.').max(120),
+ departmentId:z.string({required_error:'Department is required.'}).uuid('Department is required.'),
+ positionId:z.string({required_error:'Position is required.'}).uuid('Position is required.'),
+ permissionProfileId:z.string({required_error:'Permission profile is required.'}).uuid('Permission profile is required.'),
+ reportsToEmployeeId:z.string().uuid('Select an eligible manager.').or(z.literal('')).optional().default(''),
 });
+type AdminClient=ReturnType<typeof createAdminClient>;
+const jsonError=(error:string,status:number,requestId:string,code:string)=>NextResponse.json({ok:false,error,code,requestId},{status});
+function serverLog(level:'info'|'error',event:string,details:Record<string,unknown>){console[level](JSON.stringify({scope:'staff_invitation',event,...details}))}
+async function findAuthUserByEmail(admin:AdminClient,email:string){for(let page=1;page<=20;page++){const {data,error}=await admin.auth.admin.listUsers({page,perPage:100});if(error)throw error;const match=data.users.find(user=>user.email?.toLowerCase()===email.toLowerCase());if(match)return match;if(data.users.length<100)return null}return null}
+function authFailure(error:unknown){const raw=error instanceof Error?error.message:String(error??'');if(/rate.?limit|too many requests/i.test(raw))return{message:'Email rate limit exceeded. Wait before trying again or check the Supabase Auth email rate limit.',status:429,code:'EMAIL_RATE_LIMIT'};if(/already.*registered|already.*exists/i.test(raw))return{message:'This email already belongs to an employee or existing account.',status:409,code:'EMAIL_EXISTS'};return{message:`Supabase could not create the invitation${raw?`: ${raw}`:'.'}`,status:502,code:'AUTH_INVITE_FAILED'}}
+async function audit(admin:AdminClient,input:{actor:string;target?:string|null;success:boolean;requestId:string;code:string;email:string;metadata?:Record<string,unknown>}){const {error}=await admin.from('admin_access_logs').insert({staff_user_id:input.actor,customer_user_id:input.target||null,action:'INVITE_STAFF_ATTEMPT',resource_type:'STAFF_INVITATION',resource_id:input.target||input.email,success:input.success,metadata:{request_id:input.requestId,result_code:input.code,email:input.email,...input.metadata}});if(error)serverLog('error','audit_failed',{requestId:input.requestId,error:error.message})}
 
-export async function POST(request: Request) {
-  try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-
-    const [{ data: role }, { data: allowed }] = await Promise.all([
-      supabase.rpc('current_staff_role'),
-      supabase.rpc('has_staff_permission', { p_permission: 'staff.manage' }),
-    ]);
-    if (role !== 'OWNER' || !allowed) {
-      return NextResponse.json({ error: 'Only the Owner can invite staff.' }, { status: 403 });
-    }
-
-    const parsed = InviteSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid invitation.' }, { status: 400 });
-    }
-
-    const { email, displayName, departmentId, positionId, permissionProfileId, reportsToEmployeeId } = parsed.data;
-    const admin = createAdminClient();
-    const { data: organizationId, error: orgError } = await supabase.rpc('ensure_internal_organization');
-    if (orgError) return NextResponse.json({ error: orgError.message }, { status: 400 });
-    const [{data:department},{data:position},{data:permissionProfile},{data:manager}]=await Promise.all([
-      admin.from('org_departments').select('id,name').eq('id',departmentId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
-      admin.from('org_positions').select('id,title,department_id').eq('id',positionId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
-      admin.from('permission_profiles').select('id,name,role_key').eq('id',permissionProfileId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
-      reportsToEmployeeId?admin.from('staff_roles').select('user_id').eq('user_id',reportsToEmployeeId).eq('organization_id',organizationId).eq('is_active',true).maybeSingle():Promise.resolve({data:null}),
-    ]);
-    if(!department)return NextResponse.json({error:'Active department required.'},{status:400});
-    if(!position||position.department_id!==department.id)return NextResponse.json({error:'Position must belong to the selected department.'},{status:400});
-    if(!permissionProfile)return NextResponse.json({error:'Active permission profile required.'},{status:400});
-    if(permissionProfile.role_key==='OWNER')return NextResponse.json({error:'The Owner permission profile cannot be assigned by invitation.'},{status:400});
-    if(reportsToEmployeeId&&!manager)return NextResponse.json({error:'Reports To must reference an active employee.'},{status:400});
-    const staffRole=permissionProfile.role_key,title=position.title;
-    const origin = new URL(request.url).origin;
-    const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/callback?next=/hq`,
-      data: { account_type: 'staff', display_name: displayName },
-    });
-    if (inviteError || !invite.user) {
-      const message = inviteError?.message ?? 'Invitation could not be created.';
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-
-    const { error: staffError } = await admin.from('staff_roles').upsert({
-      user_id: invite.user.id,
-      role: staffRole,
-      is_active: true,
-      organization_id: organizationId,
-      display_title: title || staffRole.replaceAll('_', ' '),
-      invited_by: user.id,
-      mfa_required: true,
-      department: department.name,department_id:department.id,position_id:position.id,permission_profile_id:permissionProfile.id,
-      manager_user_id: reportsToEmployeeId || null,reports_to_employee_id:reportsToEmployeeId||null,
-    }, { onConflict: 'user_id' });
-    if (staffError) return NextResponse.json({ error: staffError.message }, { status: 400 });
-
-    const { error: memberError } = await admin.from('organization_members').upsert({
-      organization_id: organizationId,
-      user_id: invite.user.id,
-      membership_type: 'STAFF',
-      status: 'INVITED',
-    }, { onConflict: 'organization_id,user_id' });
-    if (memberError) return NextResponse.json({ error: memberError.message }, { status: 400 });
-
-    await admin.from('staff_invitations').upsert({
-      user_id: invite.user.id,
-      email,
-      display_name: displayName,
-      role: staffRole,
-      display_title: title || null,
-      organization_id: organizationId,
-      invited_by: user.id,
-      status: 'INVITED',
-      invited_at: new Date().toISOString(),
-      expires_at: new Date(Date.now()+7*24*60*60*1000).toISOString(),
-      department: department.name,
-      manager_user_id: reportsToEmployeeId || null,
-    }, { onConflict: 'email' });
-
-    await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invite.user.id,action:'INVITE_STAFF',resource_type:'STAFF_INVITATION',resource_id:invite.user.id,access_scope:staffRole,success:true,metadata:{email}});
-
-    return NextResponse.json({ ok: true, message: `Invitation sent to ${email}.` });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unexpected invitation error.' }, { status: 500 });
-  }
-}
-
-const ActionSchema=z.object({invitationId:z.string().uuid(),action:z.enum(['resend','cancel'])});
-export async function PATCH(request:Request){
+export async function POST(request:Request){
+ const requestId=crypto.randomUUID();let actor:string|undefined;let email='unknown';
  try{
-  const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:'Authentication required.'},{status:401});
-  const {data:allowed}=await supabase.rpc('has_staff_permission',{p_permission:'staff.manage'});if(!allowed)return NextResponse.json({error:'Staff management permission denied.'},{status:403});
-  const parsed=ActionSchema.safeParse(await request.json());if(!parsed.success)return NextResponse.json({error:'Invalid invitation action.'},{status:400});
-  const admin=createAdminClient();const {data:invitation,error}=await admin.from('staff_invitations').select('id,user_id,email,display_name,status').eq('id',parsed.data.invitationId).single();if(error||!invitation)return NextResponse.json({error:'Invitation not found.'},{status:404});
-  if(parsed.data.action==='cancel'){
-   const {error:updateError}=await admin.from('staff_invitations').update({status:'CANCELLED',updated_at:new Date().toISOString()}).eq('id',invitation.id);if(updateError)return NextResponse.json({error:updateError.message},{status:400});
-   await admin.from('staff_roles').update({is_active:false,updated_at:new Date().toISOString()}).eq('user_id',invitation.user_id);
-   await admin.from('organization_members').update({status:'REMOVED'}).eq('user_id',invitation.user_id);
-   await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invitation.user_id,action:'CANCEL_STAFF_INVITATION',resource_type:'STAFF_INVITATION',resource_id:invitation.id,success:true,metadata:{email:invitation.email}});
-   return NextResponse.json({ok:true,message:`Invitation for ${invitation.email} cancelled.`});
-  }
-  const origin=new URL(request.url).origin;const {error:resendError}=await admin.auth.admin.inviteUserByEmail(invitation.email,{redirectTo:`${origin}/auth/callback?next=/hq`,data:{account_type:'staff',display_name:invitation.display_name}});if(resendError)return NextResponse.json({error:resendError.message},{status:400});
-  await admin.from('staff_invitations').update({status:'INVITED',invited_at:new Date().toISOString(),expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),updated_at:new Date().toISOString()}).eq('id',invitation.id);
-  await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invitation.user_id,action:'RESEND_STAFF_INVITATION',resource_type:'STAFF_INVITATION',resource_id:invitation.id,success:true,metadata:{email:invitation.email}});
-  return NextResponse.json({ok:true,message:`Invitation resent to ${invitation.email}.`});
- }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Invitation action failed.'},{status:500})}
+  const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();actor=user?.id;
+  if(!user)return jsonError('Authentication required.',401,requestId,'AUTH_REQUIRED');
+  const [{data:role,error:roleError},{data:allowed,error:permissionError}]=await Promise.all([supabase.rpc('current_staff_role'),supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);
+  if(roleError||permissionError){serverLog('error','authorization_lookup_failed',{requestId,roleError:roleError?.message,permissionError:permissionError?.message});return jsonError('Employee invitation authorization could not be verified.',500,requestId,'AUTHORIZATION_LOOKUP_FAILED')}
+  if(!allowed||!['OWNER','SECURITY_ADMIN'].includes(role)){await audit(createAdminClient(),{actor:user.id,success:false,requestId,code:'FORBIDDEN',email});return jsonError('You are not authorized to invite employees.',403,requestId,'FORBIDDEN')}
+  let body:unknown;try{body=await request.json()}catch{return jsonError('Invitation request is not valid JSON.',400,requestId,'INVALID_JSON')}
+  const parsed=InviteSchema.safeParse(body);if(!parsed.success)return jsonError(parsed.error.issues[0]?.message??'Invalid invitation.',400,requestId,'VALIDATION_FAILED');
+  const input=parsed.data;email=input.email;const admin=createAdminClient();
+  const {data:organizationId,error:orgError}=await supabase.rpc('ensure_internal_organization');if(orgError||!organizationId)return jsonError('Your staff organization could not be resolved.',500,requestId,'ORGANIZATION_REQUIRED');
+  const existingAuth=await findAuthUserByEmail(admin,email);
+  if(existingAuth){const {data:existingStaff}=await admin.from('staff_roles').select('user_id').eq('user_id',existingAuth.id).maybeSingle();const message=existingStaff?'This email already belongs to an employee.':'This email already belongs to an existing account.';return jsonError(message,409,requestId,existingStaff?'DUPLICATE_EMPLOYEE':'EMAIL_EXISTS')}
+  const {data:existingInvitation,error:existingError}=await admin.from('staff_invitations').select('id,status,expires_at').ilike('email',email).maybeSingle();
+  if(existingError)throw new Error(`Duplicate invitation check failed: ${existingError.message}`);
+  if(existingInvitation?.status==='PENDING'&&(!existingInvitation.expires_at||new Date(existingInvitation.expires_at)>new Date()))return jsonError('This email already has a pending invitation.',409,requestId,'DUPLICATE_PENDING_INVITATION');
+  const [departmentResult,positionResult,profileResult,managerResult]=await Promise.all([
+   admin.from('org_departments').select('id,name,active').eq('id',input.departmentId).eq('organization_id',organizationId).maybeSingle(),
+   admin.from('org_positions').select('id,title,department_id,active').eq('id',input.positionId).eq('organization_id',organizationId).maybeSingle(),
+   admin.from('permission_profiles').select('id,name,role_key,active').eq('id',input.permissionProfileId).eq('organization_id',organizationId).maybeSingle(),
+   input.reportsToEmployeeId?admin.from('staff_roles').select('user_id,is_active,organization_id').eq('user_id',input.reportsToEmployeeId).maybeSingle():Promise.resolve({data:null,error:null}),
+  ]);
+  for(const result of [departmentResult,positionResult,profileResult,managerResult])if(result.error)throw new Error(`Invitation dependency lookup failed: ${result.error.message}`);
+  const department=departmentResult.data,position=positionResult.data,profile=profileResult.data,manager=managerResult.data;
+  if(!department?.active)return jsonError('The selected department is inactive or unavailable.',400,requestId,'INVALID_DEPARTMENT');
+  if(!position?.active)return jsonError('The selected position is inactive or unavailable.',400,requestId,'INVALID_POSITION');
+  if(position.department_id!==department.id)return jsonError('The selected position does not belong to this department.',400,requestId,'POSITION_DEPARTMENT_MISMATCH');
+  if(!profile?.active)return jsonError('Permission profile is required and must be active.',400,requestId,'INVALID_PERMISSION_PROFILE');
+  if(profile.role_key==='OWNER')return jsonError('The Owner permission profile cannot be assigned by invitation.',400,requestId,'OWNER_PROFILE_FORBIDDEN');
+  if(input.reportsToEmployeeId&&(!manager?.is_active||manager.organization_id!==organizationId))return jsonError('The selected manager is inactive or ineligible.',400,requestId,'INACTIVE_MANAGER');
+  const invitationId=existingInvitation?.id??crypto.randomUUID(),attemptedAt=new Date().toISOString(),expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+  const invitationRecord={id:invitationId,user_id:null,email,display_name:input.displayName,role:profile.role_key,display_title:position.title,organization_id:organizationId,invited_by:user.id,status:'DELIVERY_FAILED',invited_at:attemptedAt,expires_at:expiresAt,department:department.name,department_id:department.id,position_id:position.id,permission_profile_id:profile.id,manager_user_id:input.reportsToEmployeeId||null,reports_to_employee_id:input.reportsToEmployeeId||null,delivery_provider:'SUPABASE_AUTH',delivery_attempted_at:attemptedAt,delivery_error:'Invitation setup started but did not complete.',provider_message_id:null,revoked_at:null,updated_at:attemptedAt};
+  const {error:prepareError}=await admin.from('staff_invitations').upsert(invitationRecord,{onConflict:'email'});if(prepareError)throw new Error(`Invitation record could not be prepared: ${prepareError.message}`);
+  const origin=new URL(request.url).origin;const redirectTo=`${origin}/auth/callback?next=/hq`;
+  const {data:authInvite,error:inviteError}=await admin.auth.admin.inviteUserByEmail(email,{redirectTo,data:{account_type:'staff',display_name:input.displayName}});
+  if(inviteError||!authInvite.user){const failure=authFailure(inviteError);await admin.from('staff_invitations').update({status:'DELIVERY_FAILED',delivery_error:failure.message,updated_at:new Date().toISOString()}).eq('id',invitationId);await audit(admin,{actor:user.id,success:false,requestId,code:failure.code,email,metadata:{redirect_to:redirectTo}});serverLog('error','auth_invitation_failed',{requestId,code:failure.code,error:inviteError?.message});return jsonError(failure.message,failure.status,requestId,failure.code)}
+  const invitedUser=authInvite.user;let persistenceError:string|null=null;
+  const {error:staffError}=await admin.from('staff_roles').upsert({user_id:invitedUser.id,role:profile.role_key,is_active:true,organization_id:organizationId,display_title:position.title,invited_by:user.id,mfa_required:true,department:department.name,department_id:department.id,position_id:position.id,permission_profile_id:profile.id,manager_user_id:input.reportsToEmployeeId||null,reports_to_employee_id:input.reportsToEmployeeId||null},{onConflict:'user_id'});if(staffError)persistenceError=`Staff record failed: ${staffError.message}`;
+  if(!persistenceError){const {error}=await admin.from('organization_members').upsert({organization_id:organizationId,user_id:invitedUser.id,membership_type:'STAFF',status:'INVITED'},{onConflict:'organization_id,user_id'});if(error)persistenceError=`Organization membership failed: ${error.message}`}
+  if(!persistenceError){const {error}=await admin.from('staff_invitations').update({user_id:invitedUser.id,status:'PENDING',delivery_error:null,updated_at:new Date().toISOString()}).eq('id',invitationId);if(error)persistenceError=`Invitation persistence failed: ${error.message}`}
+  if(persistenceError){const cleanup=await admin.auth.admin.deleteUser(invitedUser.id);await admin.from('staff_roles').delete().eq('user_id',invitedUser.id);await admin.from('organization_members').delete().eq('user_id',invitedUser.id);await admin.from('staff_invitations').update({user_id:null,status:'DELIVERY_FAILED',delivery_error:`Invitation created, but employee setup failed. ${persistenceError}`,updated_at:new Date().toISOString()}).eq('id',invitationId);await audit(admin,{actor:user.id,success:false,requestId,code:'PERSISTENCE_FAILED',email,metadata:{invited_user_id:invitedUser.id,auth_cleanup_succeeded:!cleanup.error}});serverLog('error','persistence_failed',{requestId,error:persistenceError,authCleanupError:cleanup.error?.message});return jsonError(cleanup.error?'Invitation created, but employee setup failed and Auth cleanup requires attention.':'Invitation created, but employee setup failed. The Auth invitation was cleaned up.',500,requestId,'PERSISTENCE_FAILED')}
+  await audit(admin,{actor:user.id,target:invitedUser.id,success:true,requestId,code:'PENDING',email,metadata:{delivery_provider:'SUPABASE_AUTH',delivery_confirmed:false,redirect_to:redirectTo}});serverLog('info','invitation_pending',{requestId,invitationId,userId:invitedUser.id});
+  return NextResponse.json({ok:true,requestId,invitation:{id:invitationId,email,status:'PENDING'},delivery:{provider:'SUPABASE_AUTH',accepted:true,confirmed:false,message:'Supabase Auth accepted the invitation request. Final email delivery is not confirmed.'},message:`Invitation created for ${email}. Email delivery was requested but cannot be confirmed.`},{status:201});
+ }catch(error){const message=error instanceof Error?error.message:'Unexpected invitation error.';serverLog('error','unexpected_failure',{requestId,actor,error:message});if(actor)await audit(createAdminClient(),{actor,success:false,requestId,code:'UNEXPECTED_FAILURE',email,metadata:{error:message}});return jsonError(`Employee invitation failed: ${message}`,500,requestId,'UNEXPECTED_FAILURE')}
 }
+
+const ActionSchema=z.object({invitationId:z.string().uuid(),action:z.enum(['resend','revoke'])});
+export async function PATCH(request:Request){
+ const requestId=crypto.randomUUID();try{const supabase=await createClient(),{data:{user}}=await supabase.auth.getUser();if(!user)return jsonError('Authentication required.',401,requestId,'AUTH_REQUIRED');const [{data:role},{data:allowed}]=await Promise.all([supabase.rpc('current_staff_role'),supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);if(!allowed||!['OWNER','SECURITY_ADMIN'].includes(role))return jsonError('You are not authorized to manage invitations.',403,requestId,'FORBIDDEN');const parsed=ActionSchema.safeParse(await request.json());if(!parsed.success)return jsonError('Invalid invitation action.',400,requestId,'INVALID_ACTION');const admin=createAdminClient(),{data:invitation,error}=await admin.from('staff_invitations').select('*').eq('id',parsed.data.invitationId).single();if(error||!invitation)return jsonError('Invitation not found.',404,requestId,'NOT_FOUND');if(parsed.data.action==='revoke'){if(invitation.user_id){await admin.auth.admin.deleteUser(invitation.user_id);await admin.from('staff_roles').delete().eq('user_id',invitation.user_id);await admin.from('organization_members').delete().eq('user_id',invitation.user_id)}const {error:updateError}=await admin.from('staff_invitations').update({user_id:null,status:'REVOKED',revoked_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',invitation.id);if(updateError)throw updateError;await audit(admin,{actor:user.id,success:true,requestId,code:'REVOKED',email:invitation.email});return NextResponse.json({ok:true,message:`Invitation for ${invitation.email} revoked.`,requestId})}const {error:resendError}=await admin.auth.resend({type:'signup',email:invitation.email,options:{emailRedirectTo:`${new URL(request.url).origin}/auth/callback?next=/hq`}});if(resendError){const failure=authFailure(resendError);await admin.from('staff_invitations').update({status:'DELIVERY_FAILED',delivery_error:failure.message,delivery_attempted_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',invitation.id);return jsonError(failure.message,failure.status,requestId,failure.code)}await admin.from('staff_invitations').update({status:'PENDING',delivery_error:null,delivery_attempted_at:new Date().toISOString(),invited_at:new Date().toISOString(),expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),updated_at:new Date().toISOString()}).eq('id',invitation.id);await audit(admin,{actor:user.id,target:invitation.user_id,success:true,requestId,code:'RESENT',email:invitation.email});return NextResponse.json({ok:true,message:`Invitation delivery requested again for ${invitation.email}; final delivery is not confirmed.`,delivery:{accepted:true,confirmed:false},requestId})}catch(error){const message=error instanceof Error?error.message:'Invitation action failed.';serverLog('error','action_failed',{requestId,error:message});return jsonError(message,500,requestId,'ACTION_FAILED')}}
