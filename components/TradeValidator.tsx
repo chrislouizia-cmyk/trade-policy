@@ -7,10 +7,12 @@ import DecisionHero from '@/components/decision/DecisionHero';
 import MethodologyAudit from '@/components/MethodologyAudit';
 import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
 import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
+import TradingDnaEvidenceReportView from '@/components/TradingDnaEvidenceReport';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
 import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
+import type { TradingDnaEvidenceReport } from '@/lib/trading-dna/runtime';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage} from '@/lib/api-error';
 import {trackBetaEvent} from '@/lib/beta-intelligence';
@@ -26,7 +28,7 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
-type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport };
 
 type SavedSetup = {
   id:string; createdAt:string; source:'SUGGESTED'|'EXECUTED'; instrument:string; direction:string; setupType:string;
@@ -371,6 +373,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     </aside>
     </div>
 
+    {result?.evidenceReport&&<TradingDnaEvidenceReportView report={result.evidenceReport}/>}
     {narrative&&lastAnalysisInput&&<MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/>}
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
     <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>

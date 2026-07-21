@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import InstrumentSelector, { CatalogInstrument } from '@/components/InstrumentSelector';
 import SessionSelector, { PRESET_SESSIONS } from '@/components/SessionSelector';
-import RuleBuilder, { DEFAULT_RULES } from '@/components/RuleBuilder';
+import { DEFAULT_RULES } from '@/components/RuleBuilder';
+import RuleComposer from '@/components/RuleComposer';
 import RiskSettings from '@/components/RiskSettings';
 import StopLimitBuilder from '@/components/StopLimitBuilder';
 import StrategyPersonalization from '@/components/StrategyPersonalization';
@@ -390,7 +391,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
 
         <div className="card builder-section step-risk"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>How should I protect you when risk rises?</h2><p>Set the boundaries that must hold before I authorize a trade.</p></div></div><RiskSettings profile={profile} onChange={setProfile} /></div>
 
-        <div className="card builder-section step-rules"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>What must you see before taking the trade?</h2><p>Classify every rule by who supplies the evidence: Trade Police, you, or an external source.</p></div></div><StrategyPersonalization profile={profile} onChange={setProfile} /><hr/><h2>Your evidence rules</h2><p className="muted">Required rules override the score. Every enabled rule can be saved, regardless of its evidence source.</p><RuleBuilder rules={rules} onChange={setRules} /></div>
+        <div className="card builder-section step-rules"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>What must you see before taking the trade?</h2><p>Compose the automatic, manual, and external evidence Trade Police should enforce.</p></div></div><StrategyPersonalization profile={profile} onChange={setProfile} /><RuleComposer key={profile.id??'new'} rules={rules} onChange={setRules}/></div>
 
         <div className="card builder-section step-management"><h2>Stop-loss operating range by instrument</h2><p className="muted">Minimum prevents unrealistically tight stops, preferred defines your normal operating distance, and maximum is the hard ceiling.</p><StopLimitBuilder instruments={profile.instruments} limits={stopLimits} onChange={setStopLimits} /></div>
 
