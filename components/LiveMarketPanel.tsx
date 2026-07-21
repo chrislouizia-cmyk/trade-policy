@@ -5,6 +5,8 @@ import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage} from '@/lib/api-error';
+import SetupReadiness from './SetupReadiness';
+import MarketIntelligenceBetaResult from './MarketIntelligenceBetaResult';
 
 const scanStages = [
   'Connecting to market…',
@@ -118,7 +120,7 @@ export default function LiveMarketPanel({
       <TradingViewChart instrument={instrument} />
       {error && <p className="error">{error}</p>}
       {analysis && (
-        <><div className="analysis-strip">
+        <>{analysis.intelligenceV2 && <MarketIntelligenceBetaResult result={analysis.intelligenceV2} diagnostics={analysis.adminDiagnostics}/>}<SetupReadiness analysis={analysis}/><div className="analysis-strip">
           <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.status==='INSUFFICIENT_DATA'?'Insufficient market data':analysis.status==='ANALYSIS_FAILED'?'Analysis unavailable':analysis.setupType}</strong>
           {analysis.status==='VALID_ANALYSIS'&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span><span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets required readiness':'Below required readiness'}</span></>}
           <span>Last analyzed: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>

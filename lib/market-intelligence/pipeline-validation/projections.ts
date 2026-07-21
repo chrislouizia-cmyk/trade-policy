@@ -1,0 +1,23 @@
+import type { BreakOfStructureObservation, DetectorResult, LiquiditySweepObservation, MarketContext, MarketDataSnapshot, RangeLevelsObservation } from '../contracts.ts';
+import { createLegacyComparableObservations } from '../shadow-validation/legacy-shadow-adapter.ts';
+import type { LegacyComparableObservation } from '../shadow-validation/shadow-types.ts';
+import { composeProjection } from './legacy-composition.ts';
+import type { LegacyAnalysisProjection, MultiTimeframeAnalysisSnapshot, NewAnalysisProjection, ProjectionObservation, ValidationTimeframeRole } from './pipeline-types.ts';
+
+const roles: ValidationTimeframeRole[] = ['confirmation','entry','trigger'];
+const payload = <T>(items: readonly { detectorId: string; payload: unknown }[], id: string): T | null => (items.find((item) => item.detectorId === id)?.payload as T | null | undefined) ?? null;
+function snapshots(bundle: MultiTimeframeAnalysisSnapshot): Array<[ValidationTimeframeRole, MarketDataSnapshot]> { return roles.flatMap((role) => { const value = bundle.snapshots[role]; return value ? [[role,value] as [ValidationTimeframeRole,MarketDataSnapshot]] : []; }); }
+function executionSnapshot(bundle: MultiTimeframeAnalysisSnapshot): MarketDataSnapshot { return bundle.snapshots.trigger ?? bundle.snapshots.entry; }
+function composition(direction: MultiTimeframeAnalysisSnapshot['direction'], aligned: boolean, entries: Array<{ role: ValidationTimeframeRole; timeframe: string; items: readonly { detectorId: string; payload: unknown }[] }>, entryItems: readonly { detectorId: string; payload: unknown }[], close: number | null) { return composeProjection(direction, aligned, entries.map((item) => ({ timeframe: item.timeframe, bos: payload<BreakOfStructureObservation>(item.items,'break-of-structure'), sweep: payload<LiquiditySweepObservation>(item.items,'liquidity-sweep') })), payload<RangeLevelsObservation>(entryItems,'range-levels'), close); }
+
+export function createLegacyAnalysisProjection(bundle: MultiTimeframeAnalysisSnapshot): LegacyAnalysisProjection {
+  const projected: ProjectionObservation[] = snapshots(bundle).map(([role,snapshot]) => ({ role, timeframe: snapshot.timeframe, snapshotId: snapshot.id, observations: createLegacyComparableObservations(snapshot).observations }));
+  const entry = projected.find((item) => item.role === 'entry')!; const execution = executionSnapshot(bundle); const close = execution.candles.filter((candle) => candle.complete && Date.parse(candle.closedAt) <= Date.parse(execution.requestedAt)).at(-1)?.close ?? null;
+  return Object.freeze({ symbol: bundle.symbol, requestedAt: bundle.requestedAt, snapshots: { confirmation: bundle.snapshots.confirmation.id, entry: bundle.snapshots.entry.id, trigger: bundle.snapshots.trigger?.id ?? null }, timeframeObservations: projected, composition: composition(bundle.direction,bundle.aligned,projected.map((item)=>({role:item.role,timeframe:item.timeframe,items:item.observations})),entry.observations,close), finalOutput: bundle.legacyFinal ?? null });
+}
+export function createNewAnalysisProjection(bundle: MultiTimeframeAnalysisSnapshot): NewAnalysisProjection {
+  const entries = roles.flatMap((role) => { const context = bundle.newContexts[role]; return context ? [{ role, timeframe: bundle.snapshots[role]!.timeframe, items: context.detectorResults }] : []; }); const entry = entries.find((item) => item.role === 'entry')!; const execution = executionSnapshot(bundle); const close = execution.candles.filter((candle) => candle.complete && Date.parse(candle.closedAt) <= Date.parse(execution.requestedAt)).at(-1)?.close ?? null;
+  return Object.freeze({ symbol: bundle.symbol, requestedAt: bundle.requestedAt, snapshots: { confirmation: bundle.snapshots.confirmation.id, entry: bundle.snapshots.entry.id, trigger: bundle.snapshots.trigger?.id ?? null }, contexts: { confirmation: bundle.newContexts.confirmation.contextId, entry: bundle.newContexts.entry.contextId, trigger: bundle.newContexts.trigger?.contextId ?? null }, composition: composition(bundle.direction,bundle.aligned,entries,entry.items,close), finalOutput: bundle.newFinal ?? null });
+}
+export function legacyObservationFor(projection: LegacyAnalysisProjection, role: ValidationTimeframeRole, detectorId: string): LegacyComparableObservation | undefined { return projection.timeframeObservations.find((item) => item.role === role)?.observations.find((item) => item.detectorId === detectorId); }
+export function newResultFor(bundle: MultiTimeframeAnalysisSnapshot, role: ValidationTimeframeRole, detectorId: string): DetectorResult | undefined { return bundle.newContexts[role]?.detectorResults.find((item) => item.detectorId === detectorId); }

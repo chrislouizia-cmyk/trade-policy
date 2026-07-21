@@ -1,0 +1,6 @@
+import type {ChartAnalysis} from '@/types/trade';
+
+export default function SetupReadiness({analysis}:{analysis:ChartAnalysis}){
+  const readiness=analysis.setupReadiness;if(!readiness)return null;const state=readiness.state.replaceAll('_',' ');
+  return <section className="setup-readiness card inset-card" aria-labelledby="setup-readiness-title"><header><div><p className="muted">SETUP READINESS</p><h3 id="setup-readiness-title">{readiness.percentage==null?'Configuration required':`${readiness.percentage}% Ready`}</h3></div><strong>{state}</strong></header><div className="grid grid-2"><div><h4>Required</h4><p><strong>{readiness.required.passed}</strong> passed · <strong>{readiness.required.failed}</strong> failed · <strong>{readiness.required.pending}</strong> pending</p></div><div><h4>Optional confluence</h4><p><strong>{readiness.optional.passed}</strong> passed · <strong>{readiness.optional.failed}</strong> failed · <strong>{readiness.optional.pending}</strong> pending</p></div></div>{readiness.blockers.length>0&&<div><h4>Failed</h4><ul>{readiness.blockers.map(item=><li key={`${item.label}-${item.status}`}>{item.label}</li>)}</ul></div>}{readiness.pendingConfirmations.length>0&&<div><h4>Pending</h4><ul>{readiness.pendingConfirmations.map(item=><li key={`${item.label}-${item.status}`}>{item.label}</li>)}</ul></div>}</section>
+}

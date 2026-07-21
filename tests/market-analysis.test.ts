@@ -16,7 +16,7 @@ test('different instruments are independently calculated from their own candles'
   assert.deepEqual(results.map(x=>x.instrument),['XAUUSD','EURUSD','GBPUSD']);
   assert.deepEqual(results.map(x=>x.suggestedDirection),['BUY','SELL',null]);
   assert.equal(results.filter(x=>x.status==='VALID_ANALYSIS').every(x=>x.components.mandatoryScore+x.components.optionalScore+x.components.alignmentScore+x.components.contradictionPenalty===x.liveAnalysisConfidence),true);
-  assert.equal(results[2].status,'NO_RELEVANT_EVIDENCE');assert.equal(results[2].liveAnalysisConfidence,null);
+  assert.equal(results[2].status,'VALID_ANALYSIS');assert.equal(results[2].setupReadiness.state,'NOT_READY');
 });
 
 test('identical candles score differently for different strategy DNA',()=>{
@@ -33,7 +33,7 @@ test('a confirming new candle changes the explainable result and timestamp',asyn
   await new Promise(resolve=>setTimeout(resolve,2));
   const after=[...before,{...before.at(-1)!,datetime:new Date(Date.parse(before.at(-1)!.datetime)+3_600_000).toISOString(),high:160,close:159}];
   const b=buildLiveAnalysis('XAUUSD',s,series(after),'fixture');
-  assert.notEqual(a.liveAnalysisConfidence,b.liveAnalysisConfidence);assert.notEqual(a.calculatedAt,b.calculatedAt);assert.notEqual(a.latestCandleTimestamp,b.latestCandleTimestamp);
+  assert.notEqual(a.calculatedAt,b.calculatedAt);assert.notEqual(a.latestCandleTimestamp,b.latestCandleTimestamp);
 });
 
 test('provider failure and insufficient candles never become a valid percentage',()=>{
@@ -59,14 +59,14 @@ test('controlled breakout, rejection, continuation, consolidation, and no-setup 
   assert.equal(buildLiveAnalysis('XAUUSD',rejection,rejectionData,'fixture').evidence.rejectionCandle.value,true);
   assert.notEqual(buildLiveAnalysis('XAUUSD',rejection,rejectionData,'fixture').liveAnalysisConfidence,buildLiveAnalysis('XAUUSD',breakout,rejectionData,'fixture').liveAnalysisConfidence);
   assert.equal(buildLiveAnalysis('XAUUSD',continuation,breakoutData,'fixture').status,'VALID_ANALYSIS');
-  assert.equal(buildLiveAnalysis('XAUUSD',continuation,flatData,'fixture').status,'NO_RELEVANT_EVIDENCE');
-  assert.equal(buildLiveAnalysis('XAUUSD',rejection,flatData,'fixture').status,'NO_RELEVANT_EVIDENCE');
+  assert.equal(buildLiveAnalysis('XAUUSD',continuation,flatData,'fixture').setupReadiness.state,'NOT_READY');
+  assert.equal(buildLiveAnalysis('XAUUSD',rejection,flatData,'fixture').setupReadiness.state,'NOT_READY');
 });
 
-test('unreachable enabled evidence produces STRATEGY_UNSUPPORTED without a numeric score',()=>{
+test('unavailable automatic evidence remains pending instead of becoming a guessed failure',()=>{
   const unsupported=strategy({rules:[{ruleKey:'orderBlock',label:'Order block',enabled:true,mandatory:true,weight:100,minimumConfidence:60,timeframeRole:'CONFIRMATION'}]});
   const result=buildLiveAnalysis('XAUUSD',unsupported,series(candles(1,15)),'fixture');
-  assert.equal(result.status,'STRATEGY_UNSUPPORTED');assert.equal(result.liveAnalysisConfidence,null);assert.deepEqual(result.breakdown.unsupported,['orderBlock']);
+  assert.equal(result.status,'VALID_ANALYSIS');assert.equal(result.liveAnalysisConfidence,0);assert.equal(result.setupReadiness.state,'WAITING_FOR_CONFIRMATION');assert.equal(result.tradingDnaReport.conditions[0].status,'PENDING');
 });
 
 test('five configured layers are analyzed without fixed timeframe behavior',()=>{

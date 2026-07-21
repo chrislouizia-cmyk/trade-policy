@@ -1,0 +1,30 @@
+import { compareDetector } from '../shadow-validation/detector-comparators.ts';
+import { DEFAULT_SHADOW_EPSILON } from '../shadow-validation/numeric-comparison.ts';
+import { LEGACY_PIPELINE_AUDIT } from './legacy-audit.ts';
+import { createLegacyAnalysisProjection, createNewAnalysisProjection, legacyObservationFor, newResultFor } from './projections.ts';
+import type { MultiTimeframeAnalysisSnapshot, PipelineFieldComparison, PipelineFinalProjection, PipelineValidationReport, ValidationTimeframeRole } from './pipeline-types.ts';
+
+const roles: ValidationTimeframeRole[] = ['confirmation','entry','trigger'];
+const scalar = (field: string, legacyValue: string|number|boolean|null, newValue: string|number|boolean|null, critical = true): PipelineFieldComparison => ({ level:'COMPOSITION', field, status:Object.is(legacyValue,newValue)?'MATCH':'MISMATCH', critical, legacyValue, newValue, reason:Object.is(legacyValue,newValue)?null:`${field} differs.` });
+const flattenFinal = (value: PipelineFinalProjection): Record<string,string|number|boolean|null> => ({ liveAnalysisConfidence:value.liveAnalysisConfidence, readinessPercentage:value.readinessPercentage, readinessState:value.readinessState, analysisStatus:value.analysisStatus, blockers:JSON.stringify(value.blockers), reasons:JSON.stringify(value.reasons), evidence:JSON.stringify(value.evidence) });
+
+export class FullPipelineValidator {
+  validate(bundle: MultiTimeframeAnalysisSnapshot): PipelineValidationReport {
+    const legacyProjection=createLegacyAnalysisProjection(bundle),newProjection=createNewAnalysisProjection(bundle);
+    const snapshotIdentityValid=legacyProjection.symbol===newProjection.symbol&&legacyProjection.requestedAt===newProjection.requestedAt&&roles.every((role)=>legacyProjection.snapshots[role]===newProjection.snapshots[role]&&(!bundle.snapshots[role]||bundle.newContexts[role]?.snapshotId===bundle.snapshots[role]?.id));
+    const observationComparisons=roles.flatMap((role)=>{if(!bundle.snapshots[role])return [];return legacyProjection.timeframeObservations.find((item)=>item.role===role)!.observations.map((legacy)=>compareDetector(legacy,newResultFor(bundle,role,legacy.detectorId),DEFAULT_SHADOW_EPSILON));});
+    const lc=legacyProjection.composition,nc=newProjection.composition;
+    const compositionComparisons=[scalar('direction',lc.direction,nc.direction),scalar('aligned',lc.aligned,nc.aligned),scalar('directionalSweep',lc.directionalSweep.satisfied,nc.directionalSweep.satisfied),scalar('directionalSweep.timeframes',JSON.stringify(lc.directionalSweep.timeframes),JSON.stringify(nc.directionalSweep.timeframes)),scalar('directionalBos',lc.directionalBos.satisfied,nc.directionalBos.satisfied),scalar('directionalBos.timeframes',JSON.stringify(lc.directionalBos.timeframes),JSON.stringify(nc.directionalBos.timeframes)),scalar('chochConfirmed',lc.chochConfirmed,nc.chochConfirmed),scalar('premiumDiscount',lc.premiumDiscount,nc.premiumDiscount),scalar('premiumDiscountEquilibrium',lc.premiumDiscountEquilibrium,nc.premiumDiscountEquilibrium),scalar('premiumDiscountExecutionClose',lc.premiumDiscountExecutionClose,nc.premiumDiscountExecutionClose)];
+    let finalOutputComparisons:PipelineFieldComparison[]=[];const blockers:string[]=[];
+    if(legacyProjection.finalOutput&&newProjection.finalOutput){const left=flattenFinal(legacyProjection.finalOutput),right=flattenFinal(newProjection.finalOutput);finalOutputComparisons=Object.keys(left).map((field)=>({...scalar(field,left[field],right[field]),level:'FINAL' as const}));}else{finalOutputComparisons=[{level:'FINAL',field:'finalOutput',status:'NOT_COMPARABLE',critical:true,legacyValue:legacyProjection.finalOutput?'AVAILABLE':'UNAVAILABLE',newValue:newProjection.finalOutput?'AVAILABLE':'UNAVAILABLE',reason:'Independent final scoring/readiness projections were not both supplied.'}];blockers.push('Independent final scoring, readiness, blocker, and reason parity is not available.');}
+    if(!snapshotIdentityValid)blockers.push('Snapshot identity differs between validation sides.');
+    for(const audit of LEGACY_PIPELINE_AUDIT)if(audit.productionInfluencing&&['NOT_YET_AVAILABLE','NON_DETERMINISTIC'].includes(audit.parityStatus))blockers.push(`${audit.legacyField}: ${audit.parityStatus}.`);
+    const all=[...observationComparisons,...compositionComparisons,...finalOutputComparisons],mismatchCount=all.filter((item)=>item.status==='MISMATCH').length,criticalMismatchCount=[...compositionComparisons,...finalOutputComparisons].filter((item)=>item.critical&&item.status==='MISMATCH').length+observationComparisons.filter((item)=>item.status==='MISMATCH').length,unavailableCount=all.filter((item)=>['BOTH_UNAVAILABLE','LEGACY_UNAVAILABLE','NEW_UNAVAILABLE'].includes(item.status)).length,nonComparableCount=all.filter((item)=>item.status==='NOT_COMPARABLE').length;
+    const errorCount=all.filter((item)=>item.status==='ERROR').length;if(errorCount)blockers.push(`${errorCount} comparison(s) returned ERROR.`);
+    const migrationReady=snapshotIdentityValid&&criticalMismatchCount===0&&unavailableCount===0&&nonComparableCount===0&&errorCount===0&&blockers.length===0;
+    const overallStatus:PipelineValidationReport['overallStatus']=!snapshotIdentityValid||errorCount?'ERROR':mismatchCount?'MISMATCH':migrationReady?'MATCH':'BLOCKED';
+    const report:PipelineValidationReport={version:'1.0.0',overallStatus,migrationReady,snapshotIdentityValid,legacyProjection,newProjection,observationComparisons,compositionComparisons,finalOutputComparisons,mismatchCount,criticalMismatchCount,unavailableCount,nonComparableCount,migrationBlockers:[...new Set(blockers)],warnings:[],summary:migrationReady?'All parity-critical pipeline fields match.':`Migration is not ready: ${[...new Set(blockers)].join(' ')||'parity mismatches or unavailable fields remain.'}`,generatedAt:bundle.requestedAt};
+    return deepFreeze(report);
+  }
+}
+function deepFreeze<T>(value:T):T{if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);for(const item of Object.values(value as object))deepFreeze(item);}return value;}

@@ -1,0 +1,17 @@
+import type { DetectorShadowComparison, LegacyComparableObservations, ShadowComparisonStatus } from '../shadow-validation/shadow-types.ts';
+import type { MarketContext, MarketDataSnapshot } from '../contracts.ts';
+
+export type PipelineParityStatus = ShadowComparisonStatus;
+export type PipelineAuditStatus = 'EXACTLY_AVAILABLE' | 'COMPOSABLE' | 'STRATEGY_LAYER_REQUIRED' | 'NOT_YET_AVAILABLE' | 'NON_DETERMINISTIC' | 'UNUSED_OR_DISPLAY_ONLY';
+export type PipelineAuditEntry = { legacyField: string; sourceCalculation: string; marketObservation: string; strategyContext: string | null; newEquivalent: string | null; parityStatus: PipelineAuditStatus; productionInfluencing: boolean; notes: string };
+export type ValidationTimeframeRole = 'confirmation' | 'entry' | 'trigger';
+export type ValidationSnapshotSet = { confirmation: MarketDataSnapshot; entry: MarketDataSnapshot; trigger?: MarketDataSnapshot };
+export type PipelineFinalProjection = { evidence: Record<string, boolean>; liveAnalysisConfidence: number | null; readinessPercentage: number | null; readinessState: string; analysisStatus: string; blockers: string[]; reasons: string[] };
+export type MultiTimeframeAnalysisSnapshot = { symbol: string; requestedAt: string; strategyId?: string; strategyVersion?: string | number; direction: 'BUY' | 'SELL' | null; aligned: boolean; snapshots: ValidationSnapshotSet; newContexts: { confirmation: MarketContext; entry: MarketContext; trigger?: MarketContext }; legacyFinal?: PipelineFinalProjection; newFinal?: PipelineFinalProjection };
+export type ProjectionObservation = { role: ValidationTimeframeRole; timeframe: string; snapshotId: string; observations: LegacyComparableObservations['observations'] };
+export type EvidenceSource = { satisfied: boolean; timeframes: string[] };
+export type PipelineCompositionProjection = { direction: 'BUY' | 'SELL' | null; aligned: boolean; directionalSweep: EvidenceSource; directionalBos: EvidenceSource; chochConfirmed: boolean; premiumDiscount: boolean; premiumDiscountEquilibrium: number | null; premiumDiscountExecutionClose: number | null };
+export type LegacyAnalysisProjection = { symbol: string; requestedAt: string; snapshots: Record<ValidationTimeframeRole, string | null>; timeframeObservations: ProjectionObservation[]; composition: PipelineCompositionProjection; finalOutput: PipelineFinalProjection | null };
+export type NewAnalysisProjection = { symbol: string; requestedAt: string; snapshots: Record<ValidationTimeframeRole, string | null>; contexts: Record<ValidationTimeframeRole, string | null>; composition: PipelineCompositionProjection; finalOutput: PipelineFinalProjection | null };
+export type PipelineFieldComparison = { level: 'COMPOSITION' | 'FINAL'; field: string; status: PipelineParityStatus; critical: boolean; legacyValue: string | number | boolean | null; newValue: string | number | boolean | null; reason: string | null };
+export type PipelineValidationReport = { version: '1.0.0'; overallStatus: 'MATCH' | 'MISMATCH' | 'BLOCKED' | 'ERROR'; migrationReady: boolean; snapshotIdentityValid: boolean; legacyProjection: LegacyAnalysisProjection; newProjection: NewAnalysisProjection; observationComparisons: DetectorShadowComparison[]; compositionComparisons: PipelineFieldComparison[]; finalOutputComparisons: PipelineFieldComparison[]; mismatchCount: number; criticalMismatchCount: number; unavailableCount: number; nonComparableCount: number; migrationBlockers: string[]; warnings: string[]; summary: string; generatedAt: string };
