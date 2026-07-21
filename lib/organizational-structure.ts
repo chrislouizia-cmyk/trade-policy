@@ -1,0 +1,9 @@
+export type ManagerOption={id:string;name:string;position:string|null;department:string|null;departmentId:string|null;managementLevel:number;role:string;isDepartmentHead:boolean};
+export type OrgPerson={id:string;name:string;position:string|null;department:string|null;reportsTo:string|null;directReports:number};
+export type OrgNode=OrgPerson&{children:OrgNode[]};
+
+export function positionsForDepartment<T extends {departmentId:string;active:boolean}>(positions:T[],departmentId:string){return positions.filter(position=>position.active&&position.departmentId===departmentId)}
+export function prioritizeManagers(managers:ManagerOption[],departmentId:string,employeeId?:string){return managers.filter(item=>item.id!==employeeId).sort((a,b)=>score(b,departmentId)-score(a,departmentId)||b.managementLevel-a.managementLevel||a.name.localeCompare(b.name))}
+function score(manager:ManagerOption,departmentId:string){if(manager.isDepartmentHead&&manager.departmentId===departmentId)return 400;if(manager.departmentId===departmentId&&manager.managementLevel>0)return 300;if(['OWNER','SECURITY_ADMIN'].includes(manager.role))return 200;return 100}
+export function wouldCreateReportingCycle(employeeId:string,managerId:string|null,relationships:Record<string,string|null>){let cursor=managerId;const seen=new Set<string>();while(cursor){if(cursor===employeeId)return true;if(seen.has(cursor))return true;seen.add(cursor);cursor=relationships[cursor]??null}return false}
+export function buildOrgForest(people:OrgPerson[]):OrgNode[]{const nodes=new Map(people.map(person=>[person.id,{...person,children:[]} as OrgNode]));const roots:OrgNode[]=[];for(const node of nodes.values()){const manager=node.reportsTo?nodes.get(node.reportsTo):undefined;if(manager)manager.children.push(node);else roots.push(node)}const sort=(items:OrgNode[])=>items.sort((a,b)=>a.name.localeCompare(b.name)).forEach(item=>sort(item.children));sort(roots);return roots}

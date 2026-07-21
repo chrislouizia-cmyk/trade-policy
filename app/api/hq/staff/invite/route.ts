@@ -9,10 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const InviteSchema = z.object({
   email: z.string().trim().email(),
   displayName: z.string().trim().min(2).max(120),
-  role: z.enum(['HEAD_OF_SALES','COMPLIANCE_OFFICER','SUPPORT','TECHNICIAN','SECURITY_ADMIN']),
-  title: z.string().trim().max(120).optional().default(''),
-  department: z.string().trim().max(120).optional().default(''),
-  managerUserId: z.string().uuid().or(z.literal('')).optional().default(''),
+  departmentId:z.string().uuid(),positionId:z.string().uuid(),permissionProfileId:z.string().uuid(),reportsToEmployeeId:z.string().uuid().or(z.literal('')).optional().default(''),
 });
 
 export async function POST(request: Request) {
@@ -34,8 +31,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid invitation.' }, { status: 400 });
     }
 
-    const { email, displayName, role: staffRole, title, department, managerUserId } = parsed.data;
+    const { email, displayName, departmentId, positionId, permissionProfileId, reportsToEmployeeId } = parsed.data;
     const admin = createAdminClient();
+    const { data: organizationId, error: orgError } = await supabase.rpc('ensure_internal_organization');
+    if (orgError) return NextResponse.json({ error: orgError.message }, { status: 400 });
+    const [{data:department},{data:position},{data:permissionProfile},{data:manager}]=await Promise.all([
+      admin.from('org_departments').select('id,name').eq('id',departmentId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
+      admin.from('org_positions').select('id,title,department_id').eq('id',positionId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
+      admin.from('permission_profiles').select('id,name,role_key').eq('id',permissionProfileId).eq('organization_id',organizationId).eq('active',true).maybeSingle(),
+      reportsToEmployeeId?admin.from('staff_roles').select('user_id').eq('user_id',reportsToEmployeeId).eq('organization_id',organizationId).eq('is_active',true).maybeSingle():Promise.resolve({data:null}),
+    ]);
+    if(!department)return NextResponse.json({error:'Active department required.'},{status:400});
+    if(!position||position.department_id!==department.id)return NextResponse.json({error:'Position must belong to the selected department.'},{status:400});
+    if(!permissionProfile)return NextResponse.json({error:'Active permission profile required.'},{status:400});
+    if(reportsToEmployeeId&&!manager)return NextResponse.json({error:'Reports To must reference an active employee.'},{status:400});
+    const staffRole=permissionProfile.role_key,title=position.title;
     const origin = new URL(request.url).origin;
     const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo: `${origin}/auth/callback?next=/hq`,
@@ -46,9 +56,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const { data: organizationId, error: orgError } = await supabase.rpc('ensure_internal_organization');
-    if (orgError) return NextResponse.json({ error: orgError.message }, { status: 400 });
-
     const { error: staffError } = await admin.from('staff_roles').upsert({
       user_id: invite.user.id,
       role: staffRole,
@@ -57,8 +64,8 @@ export async function POST(request: Request) {
       display_title: title || staffRole.replaceAll('_', ' '),
       invited_by: user.id,
       mfa_required: true,
-      department: department || null,
-      manager_user_id: managerUserId || null,
+      department: department.name,department_id:department.id,position_id:position.id,permission_profile_id:permissionProfile.id,
+      manager_user_id: reportsToEmployeeId || null,reports_to_employee_id:reportsToEmployeeId||null,
     }, { onConflict: 'user_id' });
     if (staffError) return NextResponse.json({ error: staffError.message }, { status: 400 });
 
@@ -81,8 +88,8 @@ export async function POST(request: Request) {
       status: 'INVITED',
       invited_at: new Date().toISOString(),
       expires_at: new Date(Date.now()+7*24*60*60*1000).toISOString(),
-      department: department || null,
-      manager_user_id: managerUserId || null,
+      department: department.name,
+      manager_user_id: reportsToEmployeeId || null,
     }, { onConflict: 'email' });
 
     await admin.from('admin_access_logs').insert({staff_user_id:user.id,customer_user_id:invite.user.id,action:'INVITE_STAFF',resource_type:'STAFF_INVITATION',resource_id:invite.user.id,access_scope:staffRole,success:true,metadata:{email}});
