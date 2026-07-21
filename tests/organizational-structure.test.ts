@@ -4,6 +4,7 @@ import test from 'node:test';
 import {buildOrgForest,positionsForDepartment,prioritizeManagers,wouldCreateReportingCycle} from '../lib/organizational-structure.ts';
 
 const migration=readFileSync(new URL('../supabase/migrations/033_organizational_structure_v1.sql',import.meta.url),'utf8');
+const invitationMigration=readFileSync(new URL('../supabase/migrations/037_secure_staff_invitation_operations.sql',import.meta.url),'utf8');
 const invite=readFileSync(new URL('../app/api/hq/staff/invite/route.ts',import.meta.url),'utf8');
 const workspace=readFileSync(new URL('../components/hq/TeamWorkspace.tsx',import.meta.url),'utf8');
 
@@ -15,7 +16,7 @@ test('self reporting is prevented in both selector behavior and database enforce
 });
 test('direct reporting cycles are rejected',()=>{assert.equal(wouldCreateReportingCycle('a','b',{a:'b',b:'a'}),true);assert.match(migration,/Reporting relationship would create a cycle/)});
 test('indirect reporting cycles are rejected',()=>{assert.equal(wouldCreateReportingCycle('a','b',{b:'c',c:'d',d:'a'}),true);assert.match(migration,/with recursive managers/)});
-test('inactive employees cannot be selected as managers',()=>{assert.match(migration,/m\.is_active/);assert.match(invite,/manager\?\.is_active/)});
+test('inactive employees cannot be selected as managers',()=>{assert.match(migration,/m\.is_active/);assert.match(invitationMigration,/manager\.is_active/)});
 test('department heads reference active employees and appear first in manager priority',()=>{
  const managers=[{id:'owner',name:'Owner',position:'Owner',department:null,departmentId:null,managementLevel:20,role:'OWNER',isDepartmentHead:false},{id:'head',name:'Head',position:'Head',department:'Support',departmentId:'support',managementLevel:10,role:'SUPPORT',isDepartmentHead:true}];assert.equal(prioritizeManagers(managers,'support')[0].id,'head');assert.match(migration,/Department head must be an active employee/);
 });

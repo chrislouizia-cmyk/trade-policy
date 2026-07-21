@@ -6,6 +6,7 @@ import {positionsForDepartment} from '../lib/organizational-structure.ts';
 const migration=readFileSync(new URL('../supabase/migrations/035_safe_department_deletion.sql',import.meta.url),'utf8');
 const component=readFileSync(new URL('../components/hq/DepartmentDeletionManager.tsx',import.meta.url),'utf8');
 const invite=readFileSync(new URL('../app/api/hq/staff/invite/route.ts',import.meta.url),'utf8');
+const invitationMigration=readFileSync(new URL('../supabase/migrations/037_secure_staff_invitation_operations.sql',import.meta.url),'utf8');
 
 test('a completely unused active or archived department is eligible for permanent deletion',()=>{
  assert.match(migration,/employee_count=0 and x\.position_count=0 and not x\.has_head and x\.pending_invitation_count=0/);
@@ -29,7 +30,7 @@ test('a department head blocks deletion',()=>{
 test('pending staff invitations use a normalized restrictive reference and block deletion',()=>{
  assert.match(migration,/staff_invitations[\s\S]+department_id uuid references public\.org_departments\(id\) on delete restrict/);
  assert.match(migration,/status in \('INVITED','PENDING'\).*expires_at>now\(\)/);
- assert.match(invite,/department_id:department\.id/);
+ assert.match(invite,/p_department_id:input\.departmentId/);assert.match(invitationMigration,/department_id[\s\S]+department_row\.id/);
 });
 test('only Owner or authorized Admin callers can delete',()=>{
  assert.match(migration,/has_staff_permission\('staff\.manage'\)/);
