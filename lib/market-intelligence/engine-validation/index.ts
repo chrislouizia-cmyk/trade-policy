@@ -7,3 +7,4 @@ export * from './pipeline-replay-adapter.ts';
 export * from './report-renderer.ts';
 export * from './explainability-types.ts';
 export * from './explainability.ts';
+export * from './local-regime.ts';

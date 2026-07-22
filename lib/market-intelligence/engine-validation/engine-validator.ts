@@ -6,6 +6,7 @@ import { aggregateExplainability, extractOpportunityExplainability } from './exp
 import type { DetectorContribution, EngineValidationProtocol, EngineValidationReport, ExplainablePipelineReplayPort, FailureSegment, HistoricalValidationDataset, PipelineReplayPort, ValidationConclusion, ValidationOpportunity } from './validation-types.ts';
 import { assessReproducibility, createValidationConfigurationHash } from '../../market-intelligence-lab/reproducibility/reproducibility.ts';
 import type { ResearchArtifactProvenance } from '../../market-intelligence-lab/reproducibility/reproducibility-types.ts';
+import { classifyLocalMarketRegime } from './local-regime.ts';
 
 export const DEFAULT_ENGINE_VALIDATION_PROTOCOL: EngineValidationProtocol = Object.freeze({ version: '1.0.0', horizonCandles: 4, warmupCandles: 30, sampleStride: 4, minimumReturnBps: 2, confidenceLevel: .95, bootstrapIterations: 2_000, calibrationFraction: .7, readinessThresholds: Object.freeze(Array.from({ length: 21 }, (_, index) => index * 5)), minimumThresholdCoverage: .05, seed: 20260721 });
 
@@ -31,7 +32,8 @@ function opportunity(result: Awaited<ReturnType<PipelineReplayPort['evaluate']>>
   const directionalReturnBps = direction === null ? null : forwardReturnBps * (direction === 'BUY' ? 1 : -1);
   const detectorStates: ValidationOpportunity['detectorStates'] = {};
   for (const detector of result.marketContext?.detectorResults ?? []) detectorStates[detector.detectorId] = detector.status;
-  return Object.freeze({ id: `validation-opportunity:${stableFingerprint({ dataset: dataset.id, version: dataset.version, index, pipeline: result.pipelineResultId })}`, index, evaluatedAt: current.closedAt, entryPrice: current.close, exitPrice: future.close, forwardReturnBps, direction, directionalReturnBps, successful: directionalReturnBps === null ? null : directionalReturnBps > protocol.minimumReturnBps, readinessPercent: result.readinessAssessment?.confidencePercent ?? null, readinessStatus: result.readinessAssessment?.status ?? null, approved: result.decisionAssessment?.actionable === true && direction !== null, pipelineStatus: result.status, detectorStates, warnings: Object.freeze([...result.warnings]), explainability: extractOpportunityExplainability(result, timing, counterfactualDirection) });
+  const localRegime = classifyLocalMarketRegime(dataset.candles.slice(index - protocol.warmupCandles + 1, index + 1));
+  return Object.freeze({ id: `validation-opportunity:${stableFingerprint({ dataset: dataset.id, version: dataset.version, index, pipeline: result.pipelineResultId })}`, index, evaluatedAt: current.closedAt, entryPrice: current.close, exitPrice: future.close, forwardReturnBps, direction, directionalReturnBps, successful: directionalReturnBps === null ? null : directionalReturnBps > protocol.minimumReturnBps, readinessPercent: result.readinessAssessment?.confidencePercent ?? null, readinessStatus: result.readinessAssessment?.status ?? null, approved: result.decisionAssessment?.actionable === true && direction !== null, pipelineStatus: result.status, detectorStates, warnings: Object.freeze([...result.warnings]), localRegime, explainability: extractOpportunityExplainability(result, timing, counterfactualDirection, [`local-market:${localRegime.regime}`]) });
 }
 
 const rate = (rows: readonly ValidationOpportunity[]): number | null => { const selected = rows.filter((row) => row.approved && row.successful !== null); return selected.length ? selected.filter((row) => row.successful).length / selected.length : null; };

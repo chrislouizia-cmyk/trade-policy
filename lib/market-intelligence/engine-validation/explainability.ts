@@ -12,14 +12,7 @@ const observationFired = (status: DetectorOpportunityTrace['status'], payload: u
   for (const key of ['classification', 'direction', 'side']) if (typeof record[key] === 'string') return !['NONE', 'NOT_DETECTED', 'NOT_EXPANDED', 'NOT_DISPLACEMENT', 'NOT_MET', 'CLOSED'].includes(record[key] as string);
   return true;
 };
-const payloadTag = (detectorId: string, payload: unknown): string[] => {
-  if (!payload || typeof payload !== 'object') return [];
-  const record = payload as Record<string, unknown>;
-  for (const key of ['direction', 'classification', 'side', 'status', 'trendBias']) if (typeof record[key] === 'string') return [`${detectorId}:${record[key]}`];
-  return [];
-};
-
-export function extractOpportunityExplainability(result: IntelligencePipelineResult, timing: PipelineTimingTrace | null, counterfactualDirection: 'BUY' | 'SELL' | null = null): OpportunityExplainabilityTrace {
+export function extractOpportunityExplainability(result: IntelligencePipelineResult, timing: PipelineTimingTrace | null, counterfactualDirection: 'BUY' | 'SELL' | null = null, regimeTags: readonly string[] = []): OpportunityExplainabilityTrace {
   const rules = result.strategyContext?.ruleResults ?? [], confidence = result.confidenceAssessment?.contributions ?? [], failedRequired = new Set([...(result.readinessAssessment?.failedRequiredRuleIds ?? []), ...(result.decisionAssessment?.failedRequiredRuleIds ?? [])]);
   const detectorResults = result.marketContext?.detectorResults ?? [], configuredTotal = result.confidenceAssessment?.configuredWeight ?? 0;
   const detectorTraces: DetectorOpportunityTrace[] = detectorResults.map((detector) => {
@@ -33,7 +26,6 @@ export function extractOpportunityExplainability(result: IntelligencePipelineRes
     const blockingRuleIds = references.filter((rule) => failedRequired.has(rule.ruleId) || rule.requirement === 'REQUIRED' && rule.status !== 'MATCHED').map((rule) => rule.ruleId);
     return Object.freeze({ detectorId: detector.detectorId, detectorVersion: detector.detectorVersion, status: detector.status, fired: observationFired(detector.status, detector.payload), blocked: blockingRuleIds.length > 0, blockingRuleIds: Object.freeze(blockingRuleIds), referencedRuleIds: Object.freeze([...referenceIds]), confidenceConfiguredWeight: configured, confidenceEligibleWeight: eligible, confidenceEarnedWeight: earned, readinessContributionPercent: configuredTotal ? earned / configuredTotal * 100 : 0, evidenceIds: Object.freeze(detector.evidence.map((item) => item.id)) });
   });
-  const regimeTags = unique(detectorResults.flatMap((detector) => payloadTag(detector.detectorId, detector.payload)));
   const engineDirection = result.directionAssessment?.direction ?? null;
   return Object.freeze({ detectorTraces: Object.freeze(detectorTraces), firedDetectorIds: Object.freeze(detectorTraces.filter((item) => item.fired).map((item) => item.detectorId)), blockingDetectorIds: Object.freeze(detectorTraces.filter((item) => item.blocked).map((item) => item.detectorId)), evidenceGraph: result.evidenceGraph, decisionPath: Object.freeze([...(result.decisionAssessment?.criteria ?? [])]), finalDecisionOutcome: result.decisionAssessment?.outcome ?? null, finalDirection: engineDirection ?? counterfactualDirection, directionSource: engineDirection ? 'ENGINE' : counterfactualDirection ? 'DIAGNOSTIC' : 'UNAVAILABLE', timing, regimeTags: Object.freeze(regimeTags) });
 }

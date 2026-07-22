@@ -2,6 +2,7 @@ import type { IntelligencePipelineResult } from '../pipeline/intelligence-pipeli
 import type { NormalizedCandle } from '../contracts.ts';
 import type { EngineExplainabilitySummary, OpportunityExplainabilityTrace, PipelineTimingTrace } from './explainability-types.ts';
 import type { ReproducibilityAssessment, ResearchArtifactProvenance } from '../../market-intelligence-lab/reproducibility/reproducibility-types.ts';
+import type { LocalRegimeObservation } from './local-regime.ts';
 
 export type ValidationDirection = 'BUY' | 'SELL';
 export type Interval = { estimate: number; lower: number; upper: number; confidenceLevel: number };
@@ -62,6 +63,7 @@ export type ValidationOpportunity = {
   pipelineStatus: string;
   detectorStates: Record<string, 'DETECTED' | 'NOT_DETECTED' | 'INSUFFICIENT_DATA' | 'ERROR' | 'MISSING'>;
   warnings: readonly string[];
+  localRegime: LocalRegimeObservation;
   explainability: OpportunityExplainabilityTrace | null;
 };
 
