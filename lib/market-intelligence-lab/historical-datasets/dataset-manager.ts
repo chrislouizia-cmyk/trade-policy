@@ -1,0 +1,18 @@
+import { calculateHistoricalDatasetHash, freezeCandles, validateHistoricalDataset } from './dataset-validator.ts';
+import type { HistoricalDataset, HistoricalDatasetImport, HistoricalDatasetManifest, HistoricalDatasetRepository, PreparedHistoricalDataset } from './dataset-types.ts';
+
+export class HistoricalDatasetValidationError extends Error { readonly report: ReturnType<typeof validateHistoricalDataset>; constructor(report: ReturnType<typeof validateHistoricalDataset>) { super(`Historical dataset is invalid: ${report.issues.map((issue) => issue.message).join(' ')}`); this.name = 'HistoricalDatasetValidationError'; this.report = report; } }
+export class HistoricalDatasetManager {
+  readonly #repository: HistoricalDatasetRepository;
+  constructor(repository: HistoricalDatasetRepository) { this.#repository = repository; }
+  async importDataset(input: HistoricalDatasetImport): Promise<HistoricalDatasetManifest> { const normalized = { ...input, instrument: input.instrument.trim().toUpperCase(), assetClass: input.assetClass.trim().toUpperCase(), provider: input.provider.trim(), name: input.name.trim(), candles: freezeCandles(input.candles) }, validationReport = validateHistoricalDataset(normalized); if (!validationReport.valid) throw new HistoricalDatasetValidationError(validationReport); const contentHash = calculateHistoricalDatasetHash(normalized); const prepared: PreparedHistoricalDataset = Object.freeze({ name: normalized.name, version: normalized.version, instrument: normalized.instrument, assetClass: normalized.assetClass, timeframe: normalized.timeframe, provider: normalized.provider, candleCount: normalized.candles.length, startAt: validationReport.startAt!, endAt: validationReport.endAt!, contentHash, validationReport, createdBy: normalized.createdBy, candles: normalized.candles }); return this.#repository.saveImported(prepared); }
+  /** @deprecated Use importDataset followed by validate and certify. */
+  importAndSeal(input: HistoricalDatasetImport) { return this.importDataset(input); }
+  async validate(id: string) { await this.verifyIntegrity(id, 'IMPORTED'); return this.#repository.transitionStatus(id, 'VALIDATED'); }
+  async certify(id: string) { await this.verifyIntegrity(id, 'VALIDATED'); return this.#repository.transitionStatus(id, 'CERTIFIED'); }
+  getManifest(id: string) { return this.#repository.getManifest(id); }
+  getDataset(id: string): Promise<HistoricalDataset | null> { return this.#repository.getDataset(id); }
+  list() { return this.#repository.list(); }
+  archive(id: string) { return this.#repository.archive(id); }
+  private async verifyIntegrity(id: string, requiredStatus: HistoricalDatasetManifest['status']) { const dataset = await this.#repository.getDataset(id); if (!dataset) throw new Error('Historical dataset was not found.'); if (dataset.manifest.status !== requiredStatus) throw new Error(`Historical dataset must be ${requiredStatus} before this transition.`); const report = validateHistoricalDataset({ name: dataset.manifest.name, version: dataset.manifest.version, instrument: dataset.manifest.instrument, assetClass: dataset.manifest.assetClass, timeframe: dataset.manifest.timeframe, provider: dataset.manifest.provider, createdBy: dataset.manifest.createdBy, candles: dataset.candles }); if (!report.valid) throw new HistoricalDatasetValidationError(report); const hash = calculateHistoricalDatasetHash({ ...dataset.manifest, candles: dataset.candles }); if (hash !== dataset.manifest.contentHash || dataset.candles.length !== dataset.manifest.candleCount || report.startAt !== dataset.manifest.startAt || report.endAt !== dataset.manifest.endAt) throw new Error('Historical dataset integrity verification failed.'); }
+}

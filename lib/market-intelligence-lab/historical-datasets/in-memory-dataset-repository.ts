@@ -1,0 +1,12 @@
+import type { HistoricalDataset, HistoricalDatasetManifest, HistoricalDatasetRepository, PreparedHistoricalDataset } from './dataset-types.ts';
+const freeze = <T>(value: T): T => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value as Record<string, unknown>).forEach(freeze); Object.freeze(value); } return value; };
+export class InMemoryHistoricalDatasetRepository implements HistoricalDatasetRepository {
+  readonly #values = new Map<string, HistoricalDataset>(); readonly #now: () => string;
+  constructor(now: () => string = () => new Date().toISOString()) { this.#now = now; }
+  async saveImported(dataset: PreparedHistoricalDataset): Promise<HistoricalDatasetManifest> { const duplicate = [...this.#values.values()].find((value) => value.manifest.contentHash === dataset.contentHash); if (duplicate) return duplicate.manifest; const { candles, ...metadata } = dataset, id = `dataset:${dataset.contentHash}`, createdAt = this.#now(), manifest: HistoricalDatasetManifest = freeze({ ...metadata, id, status: 'IMPORTED' as const, createdAt, sealedAt: createdAt, validatedAt: null, certifiedAt: null }); const value = freeze({ manifest, candles }); this.#values.set(id, value); return manifest; }
+  async getManifest(id: string) { return this.#values.get(id)?.manifest ?? null; }
+  async getDataset(id: string) { return this.#values.get(id) ?? null; }
+  async list() { return freeze([...this.#values.values()].map((value) => value.manifest).sort((a, b) => b.createdAt.localeCompare(a.createdAt))); }
+  async transitionStatus(id: string, status: 'VALIDATED' | 'CERTIFIED' | 'ARCHIVED') { const current = this.#values.get(id); if (!current) throw new Error('Historical dataset was not found.'); const allowed = current.manifest.status === 'IMPORTED' && status === 'VALIDATED' || current.manifest.status === 'VALIDATED' && status === 'CERTIFIED' || current.manifest.status !== 'ARCHIVED' && status === 'ARCHIVED'; if (!allowed) throw new Error(`Invalid historical dataset transition: ${current.manifest.status} to ${status}.`); const changedAt = this.#now(), manifest = freeze({ ...current.manifest, status, validatedAt: status === 'VALIDATED' ? changedAt : current.manifest.validatedAt, certifiedAt: status === 'CERTIFIED' ? changedAt : current.manifest.certifiedAt }); this.#values.set(id, freeze({ ...current, manifest })); return manifest; }
+  archive(id: string) { return this.transitionStatus(id, 'ARCHIVED'); }
+}
