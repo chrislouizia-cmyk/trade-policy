@@ -7,3 +7,5 @@ export * from './tradeSimulator.ts';
 export * from './metrics.ts';
 export * from './validation.ts';
 export * from './runBacktest.ts';
+export * from './datasetArtifact.ts';
+export * from './researchAnalysis.ts';

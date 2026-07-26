@@ -1,7 +1,7 @@
 import { stableFingerprint } from '../market-intelligence/serialization/stable-fingerprint.ts';
 import { calculateMetrics } from './metrics.ts';
-import { findSignals } from './signalEvaluator.ts';
-import { DEFAULT_SIMULATION_CONFIGURATION, simulateTrades } from './tradeSimulator.ts';
+import { findSignalEvaluations } from './signalEvaluator.ts';
+import { DEFAULT_SIMULATION_CONFIGURATION, simulateTradesWithSkips } from './tradeSimulator.ts';
 import type { BacktestDataset, BacktestResult, BacktestSegmentResult, ClassificationCriteria, ResearchClassification, Signal, SimulatedTrade, SimulationConfiguration } from './types.ts';
 import { DEFAULT_CLASSIFICATION_CRITERIA, validateBacktestInputs } from './validation.ts';
 
@@ -39,7 +39,7 @@ export function runBacktest(dataset: BacktestDataset, strategy: import('./types.
   const criteria: ClassificationCriteria = Object.freeze({ ...DEFAULT_CLASSIFICATION_CRITERIA, ...options.classificationCriteria });
   const issues = validateBacktestInputs(dataset, strategy, configuration, inSampleFraction);
   if (issues.length) throw new Error(`Invalid backtest: ${issues.join(' ')}`);
-  const signals = findSignals(strategy, dataset.candles), trades = simulateTrades(signals, dataset.candles, configuration);
+  const evaluated = findSignalEvaluations(strategy, dataset.candles), signals = evaluated.signals, simulated = simulateTradesWithSkips(signals, dataset.candles, configuration), trades = simulated.trades;
   const splitIndex = Math.max(1, Math.min(dataset.candles.length - 1, Math.floor(dataset.candles.length * inSampleFraction)));
   const inSample = segment(dataset, 0, splitIndex, signals, trades, configuration);
   const outOfSample = segment(dataset, splitIndex, dataset.candles.length, signals, trades, configuration);
@@ -56,7 +56,7 @@ export function runBacktest(dataset: BacktestDataset, strategy: import('./types.
   const classification = classify(total, outOfSample, warnings, criteria);
   return Object.freeze({
     configuration, strategy, datasetMetadata: { symbol: dataset.symbol, timeframe: dataset.timeframe, timezone: dataset.timezone, source: dataset.source, startTime: dataset.startTime, endTime: dataset.endTime, candleCount: dataset.candles.length },
-    inSample, outOfSample, total, trades: total.trades, metrics: total.metrics, warnings: Object.freeze(warnings), classification,
+    inSample, outOfSample, total, skippedSignals: Object.freeze([...evaluated.skipped, ...simulated.skipped]), trades: total.trades, metrics: total.metrics, warnings: Object.freeze(warnings), classification,
     reproducibility: Object.freeze({ engineVersion: BACKTEST_ENGINE_VERSION, runId: `backtest:${configurationHash}`, configurationHash, runTimestamp, deterministic: true as const }),
     walkForwardSupported: true as const,
   });

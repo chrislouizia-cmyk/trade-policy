@@ -14,8 +14,8 @@ function positiveInteger(value: number, label: string, issues: string[]): void {
 }
 function validateRule(rule: ExecutableRule, issues: string[]): void {
   if (!rule.id) issues.push('Every rule requires an ID.');
-  if (rule.type === 'EMA_RELATION') { positiveInteger(rule.fastPeriod, `${rule.id}.fastPeriod`, issues); positiveInteger(rule.slowPeriod, `${rule.id}.slowPeriod`, issues); }
-  if (['CLOSE_VS_EMA', 'VOLUME_VS_SMA', 'ATR_THRESHOLD'].includes(rule.type)) positiveInteger((rule as { period: number }).period, `${rule.id}.period`, issues);
+  if (rule.type === 'EMA_RELATION' || rule.type === 'SMA_RELATION') { positiveInteger(rule.fastPeriod, `${rule.id}.fastPeriod`, issues); positiveInteger(rule.slowPeriod, `${rule.id}.slowPeriod`, issues); }
+  if (['CLOSE_VS_EMA', 'CLOSE_VS_SMA', 'VOLUME_VS_SMA', 'ATR_THRESHOLD'].includes(rule.type)) positiveInteger((rule as { period: number }).period, `${rule.id}.period`, issues);
   if (rule.type === 'BREAKOUT' || rule.type === 'PULLBACK_AFTER_BREAKOUT') positiveInteger(rule.lookback, `${rule.id}.lookback`, issues);
   if (rule.type === 'PULLBACK_AFTER_BREAKOUT') positiveInteger(rule.maximumBarsSinceBreakout, `${rule.id}.maximumBarsSinceBreakout`, issues);
   if (rule.type === 'MIN_BODY_TO_RANGE' && (rule.minimumRatio < 0 || rule.minimumRatio > 1)) issues.push(`${rule.id}.minimumRatio must be between zero and one.`);

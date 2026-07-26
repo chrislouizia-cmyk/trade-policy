@@ -25,7 +25,9 @@ export type BacktestDataset = Readonly<{
 type RuleBase = Readonly<{ id: string; required?: boolean }>;
 export type ExecutableRule =
   | (RuleBase & { type: 'EMA_RELATION'; fastPeriod: number; slowPeriod: number; relation: RuleOperator })
+  | (RuleBase & { type: 'SMA_RELATION'; fastPeriod: number; slowPeriod: number; relation: RuleOperator; closeMustConfirmSlow: boolean })
   | (RuleBase & { type: 'CLOSE_VS_EMA'; period: number; relation: RuleOperator })
+  | (RuleBase & { type: 'CLOSE_VS_SMA'; period: number; relation: RuleOperator })
   | (RuleBase & { type: 'PRICE_CROSS_LEVEL'; level: number; direction: RuleOperator })
   | (RuleBase & { type: 'BREAKOUT'; lookback: number; direction: RuleOperator })
   | (RuleBase & { type: 'PULLBACK_AFTER_BREAKOUT'; lookback: number; maximumBarsSinceBreakout: number; direction: RuleOperator })
@@ -35,7 +37,9 @@ export type ExecutableRule =
   | (RuleBase & { type: 'ATR_THRESHOLD'; period: number; relation: RuleOperator; threshold: number })
   | (RuleBase & { type: 'SESSION'; startUtcMinute: number; endUtcMinute: number })
   | (RuleBase & { type: 'DAY_OF_WEEK'; allowedDaysUtc: readonly number[] })
-  | (RuleBase & { type: 'MINIMUM_RR'; minimum: number });
+  | (RuleBase & { type: 'MINIMUM_RR'; minimum: number })
+  | (RuleBase & { type: 'LEGACY_RETEST'; atrPeriod: 14; lookback: 7; toleranceAtrMultiple: .35; tolerancePriceMultiple: .0002; trendFastPeriod: 10; trendSlowPeriod: 24 })
+  | (RuleBase & { type: 'LEGACY_DISPLACEMENT'; atrPeriod: 14; atrMultiple: 1.1; bodyRangeRatio: .65 });
 
 export type PriceDistanceRule =
   | Readonly<{ type: 'FIXED_PRICE'; distance: number }>
@@ -90,10 +94,22 @@ export type SimulatedTrade = Readonly<{
   exitPrice: number;
   outcome: TradeOutcome;
   pnlR: number;
+  rawPnlR: number;
+  costsR: number;
   maximumFavorableExcursionR: number;
   maximumAdverseExcursionR: number;
   barsHeld: number;
   exitReason: ExitReason;
+}>;
+
+export type SkippedSignal = Readonly<{
+  timestamp: string;
+  candleIndex: number;
+  matchedRules: readonly string[];
+  missingRules: readonly string[];
+  blockedRules: readonly string[];
+  reason: 'INSUFFICIENT_CONFIRMATIONS' | 'FORBIDDEN_RULE' | 'UNAVAILABLE_RISK_LEVELS' | 'OVERLAPPING_TRADE' | 'NO_NEXT_CANDLE';
+  evaluations: readonly RuleEvaluation[];
 }>;
 
 export type EntryTiming = 'SIGNAL_CLOSE' | 'NEXT_OPEN';
@@ -171,6 +187,7 @@ export type BacktestResult = Readonly<{
   inSample: BacktestSegmentResult;
   outOfSample: BacktestSegmentResult;
   total: BacktestSegmentResult;
+  skippedSignals: readonly SkippedSignal[];
   trades: readonly SimulatedTrade[];
   metrics: BacktestMetrics;
   warnings: readonly string[];

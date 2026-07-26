@@ -1,4 +1,4 @@
-import type { Candle, Signal, SimulatedTrade, SimulationConfiguration, TradeDirection } from './types.ts';
+import type { Candle, Signal, SimulatedTrade, SimulationConfiguration, SkippedSignal, TradeDirection } from './types.ts';
 
 const favorable = (direction: TradeDirection, price: number, entry: number) => direction === 'LONG' ? price - entry : entry - price;
 const adverse = (direction: TradeDirection, price: number, entry: number) => direction === 'LONG' ? entry - price : price - entry;
@@ -12,9 +12,7 @@ export function simulateTrade(signal: Signal, candles: readonly Candle[], config
   const entryIndex = configuration.entryTiming === 'NEXT_OPEN' ? signal.candleIndex + 1 : signal.candleIndex;
   const entryCandle = candles[entryIndex];
   if (!entryCandle) return null;
-  const rawEntry = configuration.entryTiming === 'NEXT_OPEN' ? entryCandle.open : signal.entryPrice;
-  const entryCost = configuration.costs.spreadPrice / 2 + configuration.costs.slippagePrice;
-  const entryPrice = signal.direction === 'LONG' ? rawEntry + entryCost : rawEntry - entryCost;
+  const entryPrice = configuration.entryTiming === 'NEXT_OPEN' ? entryCandle.open : signal.entryPrice;
   const stopDistance = Math.abs(signal.entryPrice - signal.stopPrice);
   const targetDistance = Math.abs(signal.targetPrice - signal.entryPrice);
   const stopPrice = signal.direction === 'LONG' ? entryPrice - stopDistance : entryPrice + stopDistance;
@@ -33,22 +31,30 @@ export function simulateTrade(signal: Signal, candles: readonly Candle[], config
     if (targetTouched) { exitPrice = targetPrice; exitReason = 'TAKE_PROFIT'; break; }
     if (held === maximumBars - 1) { exitPrice = candle.close; exitReason = index === candles.length - 1 ? 'END_OF_DATA' : 'MAX_HOLDING_PERIOD'; }
   }
-  const grossR = favorable(signal.direction, exitPrice, entryPrice) / stopDistance;
-  const pnlR = grossR - configuration.costs.commissionR;
+  const rawPnlR = favorable(signal.direction, exitPrice, entryPrice) / stopDistance;
+  const priceCostsR = (configuration.costs.spreadPrice + configuration.costs.slippagePrice * 2) / stopDistance;
+  const costsR = priceCostsR + configuration.costs.commissionR;
+  const pnlR = rawPnlR - costsR;
   const outcome = pnlR > 0 ? 'WIN' : pnlR < 0 ? 'LOSS' : 'BREAK_EVEN';
-  return Object.freeze({ signalTimestamp: signal.timestamp, entryTimestamp: entryCandle.timestamp, exitTimestamp: candles[exitIndex]!.timestamp, direction: signal.direction, entryPrice, stopPrice, targetPrice, exitPrice, outcome, pnlR, maximumFavorableExcursionR: maximumFavorable / stopDistance, maximumAdverseExcursionR: maximumAdverse / stopDistance, barsHeld: exitIndex - entryIndex + 1, exitReason });
+  return Object.freeze({ signalTimestamp: signal.timestamp, entryTimestamp: entryCandle.timestamp, exitTimestamp: candles[exitIndex]!.timestamp, direction: signal.direction, entryPrice, stopPrice, targetPrice, exitPrice, outcome, pnlR, rawPnlR, costsR, maximumFavorableExcursionR: maximumFavorable / stopDistance, maximumAdverseExcursionR: maximumAdverse / stopDistance, barsHeld: exitIndex - entryIndex + 1, exitReason });
 }
 export function simulateTrades(signals: readonly Signal[], candles: readonly Candle[], configuration: SimulationConfiguration): readonly SimulatedTrade[] {
+  return simulateTradesWithSkips(signals, candles, configuration).trades;
+}
+
+export function simulateTradesWithSkips(signals: readonly Signal[], candles: readonly Candle[], configuration: SimulationConfiguration): Readonly<{ trades: readonly SimulatedTrade[]; skipped: readonly SkippedSignal[] }> {
   const trades: SimulatedTrade[] = [];
+  const skipped: SkippedSignal[] = [];
   let previousExit = -1;
   const indexByTimestamp = new Map(candles.map((candle, index) => [candle.timestamp, index]));
   for (const signal of signals) {
     const intendedEntry = signal.candleIndex + (configuration.entryTiming === 'NEXT_OPEN' ? 1 : 0);
-    if (!configuration.allowOverlappingTrades && intendedEntry <= previousExit) continue;
+    const skip = (reason: SkippedSignal['reason']) => skipped.push(Object.freeze({ timestamp: signal.timestamp, candleIndex: signal.candleIndex, matchedRules: signal.matchedRules, missingRules: signal.missingRules, blockedRules: signal.blockedRules, reason, evaluations: signal.evaluations }));
+    if (!configuration.allowOverlappingTrades && intendedEntry <= previousExit) { skip('OVERLAPPING_TRADE'); continue; }
     const trade = simulateTrade(signal, candles, configuration);
-    if (!trade) continue;
+    if (!trade) { skip('NO_NEXT_CANDLE'); continue; }
     trades.push(trade);
     previousExit = indexByTimestamp.get(trade.exitTimestamp) ?? intendedEntry;
   }
-  return Object.freeze(trades);
+  return Object.freeze({ trades: Object.freeze(trades), skipped: Object.freeze(skipped) });
 }

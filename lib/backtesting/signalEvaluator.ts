@@ -1,5 +1,5 @@
 import { atr, ema, sma } from './indicators.ts';
-import type { Candle, ExecutableRule, ExecutableStrategy, PriceDistanceRule, RuleEvaluation, Signal, TradeDirection } from './types.ts';
+import type { Candle, ExecutableRule, ExecutableStrategy, PriceDistanceRule, RuleEvaluation, Signal, SkippedSignal, TradeDirection } from './types.ts';
 
 const compare = (left: number, right: number, relation: 'ABOVE' | 'BELOW') => relation === 'ABOVE' ? left > right : left < right;
 
@@ -14,10 +14,22 @@ function evaluateRule(rule: ExecutableRule, candles: readonly Candle[], strategy
       reason = fast === null || slow === null ? 'Insufficient EMA history.' : `EMA(${rule.fastPeriod})=${fast} ${rule.relation} EMA(${rule.slowPeriod})=${slow}.`;
       break;
     }
+    case 'SMA_RELATION': {
+      const fast = sma(candles.map((candle) => candle.close), rule.fastPeriod), slow = sma(candles.map((candle) => candle.close), rule.slowPeriod);
+      passed = fast !== null && slow !== null && compare(fast, slow, rule.relation) && (!rule.closeMustConfirmSlow || compare(current.close, slow, rule.relation));
+      reason = fast === null || slow === null ? 'Insufficient SMA history.' : `SMA(${rule.fastPeriod})=${fast} ${rule.relation} SMA(${rule.slowPeriod})=${slow}; close confirmation=${rule.closeMustConfirmSlow}.`;
+      break;
+    }
     case 'CLOSE_VS_EMA': {
       const value = ema(candles, rule.period);
       passed = value !== null && compare(current.close, value, rule.relation);
       reason = value === null ? 'Insufficient EMA history.' : `Close ${current.close} ${rule.relation} EMA(${rule.period})=${value}.`;
+      break;
+    }
+    case 'CLOSE_VS_SMA': {
+      const value = sma(candles.map((candle) => candle.close), rule.period);
+      passed = value !== null && compare(current.close, value, rule.relation);
+      reason = value === null ? 'Insufficient SMA history.' : `Close ${current.close} ${rule.relation} SMA(${rule.period})=${value}.`;
       break;
     }
     case 'PRICE_CROSS_LEVEL': {
@@ -90,6 +102,25 @@ function evaluateRule(rule: ExecutableRule, candles: readonly Candle[], strategy
       reason = rr === null ? 'Risk/reward is unavailable.' : `Configured risk/reward=${rr}; minimum=${rule.minimum}.`;
       break;
     }
+    case 'LEGACY_RETEST': {
+      const fast = sma(candles.map((candle) => candle.close), rule.trendFastPeriod), slow = sma(candles.map((candle) => candle.close), rule.trendSlowPeriod), value = atr(candles, rule.atrPeriod);
+      const recent = candles.slice(-rule.lookback - 1, -1);
+      if (fast === null || slow === null || value === null || recent.length < rule.lookback) {
+        passed = false; reason = 'Insufficient legacy retest history.';
+      } else {
+        const bullish = fast > slow && current.close > slow, target = bullish ? Math.max(...recent.map((candle) => candle.high)) : Math.min(...recent.map((candle) => candle.low));
+        const tolerance = Math.max(value * rule.toleranceAtrMultiple, current.close * rule.tolerancePriceMultiple);
+        passed = Math.abs(current.close - target) <= tolerance;
+        reason = `Distance=${Math.abs(current.close - target)}; tolerance=${tolerance}; target=${target}.`;
+      }
+      break;
+    }
+    case 'LEGACY_DISPLACEMENT': {
+      const value = atr(candles, rule.atrPeriod), body = Math.abs(current.close - current.open), range = Math.max(current.high - current.low, Number.EPSILON);
+      passed = value !== null && body > Math.max(value * rule.atrMultiple, range * rule.bodyRangeRatio);
+      reason = value === null ? 'Insufficient displacement ATR history.' : `Body=${body}; threshold=${Math.max(value * rule.atrMultiple, range * rule.bodyRangeRatio)}.`;
+      break;
+    }
   }
   return Object.freeze({ ruleId: rule.id, type: rule.type, passed, reason });
 }
@@ -108,8 +139,9 @@ function signalDirection(strategy: ExecutableStrategy, candle: Candle): TradeDir
   return candle.close >= candle.open ? 'LONG' : 'SHORT';
 }
 
-export function evaluateSignal(strategy: ExecutableStrategy, candlesAvailableAtTimestamp: readonly Candle[], candleIndex: number): Signal | null {
-  if (!candlesAvailableAtTimestamp.length) return null;
+export type SignalEvaluationOutcome = Readonly<{ signal: Signal | null; skipped: SkippedSignal | null }>;
+export function evaluateSignalOutcome(strategy: ExecutableStrategy, candlesAvailableAtTimestamp: readonly Candle[], candleIndex: number): SignalEvaluationOutcome {
+  if (!candlesAvailableAtTimestamp.length) return Object.freeze({ signal: null, skipped: null });
   const current = candlesAvailableAtTimestamp.at(-1)!;
   const extraFilters = [strategy.sessionFilter, strategy.volatilityFilter].filter((rule): rule is NonNullable<typeof rule> => rule !== undefined);
   const entryRules = [...strategy.entryRules, ...extraFilters.filter((filter) => !strategy.entryRules.some((rule) => rule.id === filter.id))];
@@ -118,27 +150,41 @@ export function evaluateSignal(strategy: ExecutableStrategy, candlesAvailableAtT
   const required = entryRules.filter((rule) => rule.required !== false);
   const passedRequired = required.filter((rule) => evaluations.find((result) => result.ruleId === rule.id)?.passed).length;
   const blockedRules = forbidden.filter((result) => result.passed).map((result) => result.ruleId);
-  if (passedRequired < Math.min(strategy.minimumRequiredConfirmations, required.length) || blockedRules.length) return null;
+  const matchedRules = evaluations.filter((result) => result.passed).map((result) => result.ruleId), missingRules = evaluations.filter((result) => !result.passed).map((result) => result.ruleId);
+  const skipped = (reason: SkippedSignal['reason']): SignalEvaluationOutcome => Object.freeze({ signal: null, skipped: Object.freeze({ timestamp: current.timestamp, candleIndex, matchedRules: Object.freeze(matchedRules), missingRules: Object.freeze(missingRules), blockedRules: Object.freeze(blockedRules), reason, evaluations: Object.freeze([...evaluations, ...forbidden]) }) });
+  if (blockedRules.length) return skipped('FORBIDDEN_RULE');
+  if (passedRequired < required.length || matchedRules.length < strategy.minimumRequiredConfirmations) return skipped('INSUFFICIENT_CONFIRMATIONS');
   const stopDistance = distance(strategy.stopLossRule, candlesAvailableAtTimestamp);
   const targetDistance = distance(strategy.takeProfitRule, candlesAvailableAtTimestamp);
-  if (stopDistance === null || targetDistance === null || stopDistance <= 0 || targetDistance <= 0) return null;
+  if (stopDistance === null || targetDistance === null || stopDistance <= 0 || targetDistance <= 0) return skipped('UNAVAILABLE_RISK_LEVELS');
   const direction = signalDirection(strategy, current);
-  return Object.freeze({
+  const signal: Signal = Object.freeze({
     timestamp: current.timestamp, candleIndex, direction, entryPrice: current.close,
     stopPrice: direction === 'LONG' ? current.close - stopDistance : current.close + stopDistance,
     targetPrice: direction === 'LONG' ? current.close + targetDistance : current.close - targetDistance,
-    matchedRules: Object.freeze(evaluations.filter((result) => result.passed).map((result) => result.ruleId)),
-    missingRules: Object.freeze(evaluations.filter((result) => !result.passed).map((result) => result.ruleId)),
+    matchedRules: Object.freeze(matchedRules),
+    missingRules: Object.freeze(missingRules),
     blockedRules: Object.freeze(blockedRules),
     evaluations: Object.freeze([...evaluations, ...forbidden]),
   });
+  return Object.freeze({ signal, skipped: null });
+}
+
+export function evaluateSignal(strategy: ExecutableStrategy, candlesAvailableAtTimestamp: readonly Candle[], candleIndex: number): Signal | null {
+  return evaluateSignalOutcome(strategy, candlesAvailableAtTimestamp, candleIndex).signal;
 }
 
 export function findSignals(strategy: ExecutableStrategy, candles: readonly Candle[]): readonly Signal[] {
+  return findSignalEvaluations(strategy, candles).signals;
+}
+
+export function findSignalEvaluations(strategy: ExecutableStrategy, candles: readonly Candle[]): Readonly<{ signals: readonly Signal[]; skipped: readonly SkippedSignal[] }> {
   const signals: Signal[] = [];
+  const skipped: SkippedSignal[] = [];
   for (let index = 0; index < candles.length; index += 1) {
-    const signal = evaluateSignal(strategy, candles.slice(0, index + 1), index);
-    if (signal) signals.push(signal);
+    const outcome = evaluateSignalOutcome(strategy, candles.slice(0, index + 1), index);
+    if (outcome.signal) signals.push(outcome.signal);
+    if (outcome.skipped) skipped.push(outcome.skipped);
   }
-  return Object.freeze(signals);
+  return Object.freeze({ signals: Object.freeze(signals), skipped: Object.freeze(skipped) });
 }

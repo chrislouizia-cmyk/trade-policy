@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  adaptStrategyDna, calculateMetrics, classifySampleSize, createBacktestDataset, evaluateSignal, normalizeCandles,
-  runBacktest, simulateTrade, type Candle, type ExecutableStrategy, type Signal, type SimulatedTrade,
+  adaptStrategyDna, buildResearchBundle, calculateMetrics, classifySampleSize, createBacktestDataset, createStrategyMappingSnapshot, evaluateSignal, importDatasetArtifact, metricsFromLedger, normalizeCandles,
+  runBacktest, simulateTrade, type Candle, type CostScenario, type ExecutableStrategy, type Signal, type SimulatedTrade,
 } from '../lib/backtesting/index.ts';
 
 const candle = (index: number, values: Partial<Omit<Candle, 'timestamp'>> = {}): Candle => Object.freeze({
@@ -21,7 +21,7 @@ const baseStrategy: ExecutableStrategy = {
 const strategy = (patch: Partial<ExecutableStrategy> = {}): ExecutableStrategy => Object.freeze({ ...baseStrategy, ...patch });
 const signal = (patch: Partial<Signal> = {}): Signal => Object.freeze({ timestamp: candle(0).timestamp, candleIndex: 0, direction: 'LONG', entryPrice: 100, stopPrice: 99, targetPrice: 102, matchedRules: [], missingRules: [], blockedRules: [], evaluations: [], ...patch });
 const configuration = Object.freeze({ entryTiming: 'NEXT_OPEN' as const, intrabarConflictPolicy: 'STOP_FIRST' as const, allowOverlappingTrades: false, costs: Object.freeze({ commissionR: 0, spreadPrice: 0, slippagePrice: 0 }), maximumHoldingBars: 10 });
-const trade = (pnlR: number, index: number): SimulatedTrade => Object.freeze({ signalTimestamp: candle(index).timestamp, entryTimestamp: candle(index).timestamp, exitTimestamp: candle(index + 1).timestamp, direction: index % 2 ? 'SHORT' : 'LONG', entryPrice: 100, stopPrice: 99, targetPrice: 102, exitPrice: 100 + pnlR, outcome: pnlR > 0 ? 'WIN' : pnlR < 0 ? 'LOSS' : 'BREAK_EVEN', pnlR, maximumFavorableExcursionR: Math.max(0, pnlR), maximumAdverseExcursionR: Math.max(0, -pnlR), barsHeld: 1, exitReason: pnlR > 0 ? 'TAKE_PROFIT' : 'STOP_LOSS' });
+const trade = (pnlR: number, index: number): SimulatedTrade => Object.freeze({ signalTimestamp: candle(index).timestamp, entryTimestamp: candle(index).timestamp, exitTimestamp: candle(index + 1).timestamp, direction: index % 2 ? 'SHORT' : 'LONG', entryPrice: 100, stopPrice: 99, targetPrice: 102, exitPrice: 100 + pnlR, outcome: pnlR > 0 ? 'WIN' : pnlR < 0 ? 'LOSS' : 'BREAK_EVEN', pnlR, rawPnlR: pnlR, costsR: 0, maximumFavorableExcursionR: Math.max(0, pnlR), maximumAdverseExcursionR: Math.max(0, -pnlR), barsHeld: 1, exitReason: pnlR > 0 ? 'TAKE_PROFIT' : 'STOP_LOSS' });
 
 test('normalization sorts chronologically and converts numeric fields', () => {
   const normalized = normalizeCandles([{ datetime: '2024-01-01 00:15:00', open: '2', high: '3', low: '1', close: '2' }, { datetime: '2024-01-01 00:00:00', open: '1', high: '2', low: '0', close: '1' }]);
@@ -129,4 +129,32 @@ test('forbidden rules block otherwise qualifying signals', () => {
 test('dataset constructor derives immutable metadata boundaries', () => {
   const result = createBacktestDataset({ symbol: 'XAUUSD', timeframe: 'M15', timezone: 'UTC', source: 'fixture', candles: [{ timestamp: '2024-01-01T00:00:00Z', open: 1, high: 2, low: 0, close: 1 }] });
   assert.equal(result.startTime, result.endTime); assert.ok(Object.isFrozen(result.candles));
+});
+
+test('immutable dataset artifact records SHA-256 provenance and quality findings', () => {
+  const bytes = new TextEncoder().encode(JSON.stringify(history(30)));
+  const artifact = importDatasetArtifact({ bytes, format: 'JSON', instrument: 'XAUUSD', provider: 'fixture', providerSymbol: 'XAU/USD', timeframe: 'M15', timezone: 'UTC', pricePrecision: 5, importTimestamp: '2024-02-01T00:00:00.000Z', sourceFilename: 'fixture.json', duplicateTimestampPolicy: 'REJECT', priceRepresentation: 'MIDPOINT', sourceVerificationReference: 'fixture-certification' });
+  assert.equal(artifact.metadata.status, 'VERIFIED_SOURCE'); assert.equal(artifact.metadata.sha256FileHash.length, 64);
+  assert.equal(artifact.validation.valid, true); assert.equal(artifact.metadata.candleCount, 30);
+});
+
+test('CSV artifact import is supported and material defects are never silently repaired', () => {
+  const csv = 'timestamp,open,high,low,close,volume\n2024-01-01T00:00:00Z,1,2,0.5,1.5,10\n';
+  assert.equal(importDatasetArtifact({ bytes: new TextEncoder().encode(csv), format: 'CSV', instrument: 'X', provider: 'user', providerSymbol: 'X', timeframe: 'M15', timezone: 'UTC', pricePrecision: 2, importTimestamp: '2024-01-01T01:00:00Z', sourceFilename: 'x.csv', duplicateTimestampPolicy: 'REJECT', priceRepresentation: 'UNKNOWN', userProvided: true }).metadata.status, 'USER_PROVIDED');
+  const duplicate = `${csv}2024-01-01T00:00:00Z,1,2,0.5,1.5,10\n`;
+  assert.throws(() => importDatasetArtifact({ bytes: new TextEncoder().encode(duplicate), format: 'CSV', instrument: 'X', provider: 'user', providerSymbol: 'X', timeframe: 'M15', timezone: 'UTC', pricePrecision: 2, importTimestamp: '2024-01-01T01:00:00Z', sourceFilename: 'x.csv', duplicateTimestampPolicy: 'REJECT', priceRepresentation: 'UNKNOWN' }), /failed without repair/);
+});
+
+test('required unsupported mapping stops with INVALID_STRATEGY_MAPPING', () => {
+  assert.throws(() => createStrategyMappingSnapshot({ strategyId: 'x', strategyVersion: '1', strategyName: 'x', originalStoredStrategyDna: { requiredRuleIds: ['order-block'] }, mappedExecutableStrategy: strategy(), supportedRules: [], partiallySupportedRules: [], unsupportedRules: ['order-block'], omittedFields: [], interpretationDecisions: [], mappingWarnings: [] }), /INVALID_STRATEGY_MAPPING/);
+});
+
+test('ledger-derived metrics exactly match expected-cost engine metrics', () => {
+  const bytes = new TextEncoder().encode(JSON.stringify(history(140)));
+  const artifact = importDatasetArtifact({ bytes, format: 'JSON', instrument: 'XAUUSD', provider: 'fixture', providerSymbol: 'XAU/USD', timeframe: 'M15', timezone: 'UTC', pricePrecision: 5, importTimestamp: '2024-02-01T00:00:00.000Z', sourceFilename: 'fixture.json', duplicateTimestampPolicy: 'REJECT', priceRepresentation: 'MIDPOINT', sourceVerificationReference: 'fixture-certification' });
+  const mapping = createStrategyMappingSnapshot({ strategyId: 'sample', strategyVersion: '1.0.0', strategyName: 'Sample', originalStoredStrategyDna: { requiredRuleIds: ['bull'] }, mappedExecutableStrategy: strategy(), supportedRules: ['bull'], partiallySupportedRules: [], unsupportedRules: [], omittedFields: [], interpretationDecisions: [], mappingWarnings: [] });
+  const config = Object.freeze({ entryTiming: 'NEXT_OPEN' as const, intrabarConflictPolicy: 'STOP_FIRST' as const, allowOverlappingTrades: false, costs: Object.freeze({ commissionR: 0, spreadPrice: 0, slippagePrice: 0 }), maximumHoldingBars: 10 });
+  const scenarios: readonly CostScenario[] = [{ id: 'IDEALIZED', description: 'i', configuration: config }, { id: 'EXPECTED', description: 'e', configuration: config }, { id: 'CONSERVATIVE', description: 'c', configuration: config }];
+  const bundle = buildResearchBundle(artifact, mapping, scenarios);
+  assert.deepEqual(metricsFromLedger(bundle.ledger), bundle.baseline.metrics);
 });

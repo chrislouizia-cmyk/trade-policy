@@ -1,0 +1,48 @@
+{
+  "artifactVersion": "1.0.0",
+  "programId": "TP-REP-XAUUSD-2026-01",
+  "dataset": {
+    "name": "XAUUSD M15 2023-05-01 to 2023-11-01",
+    "version": "1.0.0",
+    "instrument": "XAUUSD",
+    "assetClass": "METALS",
+    "timeframe": "M15",
+    "provider": "Twelve Data UTC 07da106c86a065fd",
+    "candleCount": 12049,
+    "startAt": "2023-05-01T00:00:00.000Z",
+    "endAt": "2023-11-01T00:00:00.000Z",
+    "contentHash": "ff5020b298d49626",
+    "validationReport": {
+      "valid": true,
+      "candleCount": 12049,
+      "startAt": "2023-05-01T00:00:00.000Z",
+      "endAt": "2023-11-01T00:00:00.000Z",
+      "missingIntervalCount": 5615,
+      "issues": [],
+      "warnings": [
+        "5615 expected interval slots are absent; market closures may be valid but must be reviewed."
+      ]
+    },
+    "createdBy": "trade-police-research",
+    "id": "dataset:ff5020b298d49626",
+    "status": "CERTIFIED",
+    "createdAt": "2026-07-22T02:46:04.236Z",
+    "sealedAt": "2026-07-22T02:46:04.236Z",
+    "validatedAt": "2026-07-22T02:46:04.236Z",
+    "certifiedAt": "2026-07-22T02:46:04.236Z"
+  },
+  "acquisition": {
+    "provider": "Twelve Data",
+    "providerSymbol": "XAU/USD",
+    "timezone": "UTC",
+    "timestampConvention": "BAR_OPEN_UTC",
+    "requestedStartAt": "2023-05-01T00:00:00.000Z",
+    "requestedEndAt": "2023-11-01T00:00:00.000Z",
+    "acquiredAt": "2026-07-22T02:46:04.236Z",
+    "chunkCount": 4,
+    "requestFingerprint": "07da106c86a065fd",
+    "maximumPointsPerRequest": 5000
+  },
+  "certificationHash": "12eab8818982d8c9",
+  "immutable": true
+}

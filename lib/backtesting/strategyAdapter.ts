@@ -13,6 +13,9 @@ export const STRATEGY_RULE_SUPPORT = Object.freeze({
   session: 'SUPPORTED',
   day_of_week: 'SUPPORTED',
   minimum_rr: 'SUPPORTED',
+  legacy_trend_alignment: 'SUPPORTED',
+  legacy_retest: 'SUPPORTED',
+  legacy_displacement: 'SUPPORTED',
   fair_value_gap: 'UNSUPPORTED',
   order_block: 'UNSUPPORTED',
   liquidity_sweep: 'UNSUPPORTED',
@@ -57,6 +60,9 @@ function adaptRule(rule: StrategyDnaRuleInput): ExecutableRule {
       return { ...base, type: 'DAY_OF_WEEK', allowedDaysUtc: days.map(Number) };
     }
     case 'minimum_rr': return { ...base, type: 'MINIMUM_RR', minimum: numberParameter(rule, 'minimum') };
+    case 'legacy_trend_alignment': return { ...base, type: 'SMA_RELATION', fastPeriod: 10, slowPeriod: 24, relation: 'ABOVE', closeMustConfirmSlow: true };
+    case 'legacy_retest': return { ...base, type: 'LEGACY_RETEST', atrPeriod: 14, lookback: 7, toleranceAtrMultiple: .35, tolerancePriceMultiple: .0002, trendFastPeriod: 10, trendSlowPeriod: 24 };
+    case 'legacy_displacement': return { ...base, type: 'LEGACY_DISPLACEMENT', atrPeriod: 14, atrMultiple: 1.1, bodyRangeRatio: .65 };
     default: throw new Error(`Unsupported Strategy DNA concept: ${rule.concept}.`);
   }
 }
