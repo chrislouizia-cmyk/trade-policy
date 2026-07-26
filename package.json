@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "backtest:demo": "node --experimental-strip-types scripts/research/run-backtest-demo.ts",
     "start": "next start",
     "lint": "next lint"
   },
