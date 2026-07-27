@@ -7,7 +7,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Swing high | SUPPORTED | `confirmed-swing@1.0.0` applies configurable left/right confirmation and exposes its replay-safe `confirmedAt`. | None for confirmed swing detection. |
 | Swing low | SUPPORTED | `confirmed-swing@1.0.0` applies configurable left/right confirmation and exposes its replay-safe `confirmedAt`. | None for confirmed swing detection. |
 | Chronological structure state | SUPPORTED | `market-structure-reducer@1.0.0` classifies confirmed swings by `confirmedAt` into HH, HL, LH, LL, EH, and EL with conservative bias snapshots. | None for chronological structure-state reduction. |
-| Break of structure | PARTIALLY_SUPPORTED | `break-of-structure@1.0.0` compares the current close with a seven-candle rolling high/low. | It does not reference a confirmed swing or prevailing structure state. |
+| Break of structure | SUPPORTED | `confirmed-structure-bos@1.0.0` requires a completed close beyond an eligible accepted confirmed swing using a structure snapshot available before the breakout candle. | None for replay-safe confirmed-structure BOS detection. |
 | Market structure shift | UNSUPPORTED | No registered detector. | Prior directional structure and an opposing confirmed swing break are both absent. |
 | Fair value gap | PARTIALLY_SUPPORTED | `fair-value-gap@1.0.0` implements the strict latest-candle legacy three-candle gap. | No minimum-size configuration, event association, mitigation state, or lifecycle. |
 | Liquidity sweep | PARTIALLY_SUPPORTED | `liquidity-sweep@1.0.0` detects wick-through/close-back-inside against a rolling window. | The reference is not confirmed structural liquidity. |

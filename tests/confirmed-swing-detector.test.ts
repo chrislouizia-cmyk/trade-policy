@@ -182,7 +182,7 @@ test('research audit upgrades only confirmed swing high and low support', () => 
   const audit = readFileSync('research/strategies/xauusd-structure-pullback/1.0.0/detector-dependency-audit.md', 'utf8');
   assert.match(audit, /\| Swing high \| SUPPORTED \| `confirmed-swing@1\.0\.0`/);
   assert.match(audit, /\| Swing low \| SUPPORTED \| `confirmed-swing@1\.0\.0`/);
-  assert.match(audit, /\| Break of structure \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Break of structure \| (?:PARTIALLY_)?SUPPORTED \|/);
   assert.match(audit, /\| Market structure shift \| UNSUPPORTED \|/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
 });

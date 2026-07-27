@@ -207,7 +207,7 @@ test('structure reducer has no AI, production route, backtesting, clock, or rand
 test('research audit adds structure state only and leaves downstream capabilities blocked', () => {
   const audit = readFileSync('research/strategies/xauusd-structure-pullback/1.0.0/detector-dependency-audit.md', 'utf8');
   assert.match(audit, /\| Chronological structure state \| SUPPORTED \| `market-structure-reducer@1\.0\.0`/);
-  assert.match(audit, /\| Break of structure \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Break of structure \| (?:PARTIALLY_)?SUPPORTED \|/);
   assert.match(audit, /\| Market structure shift \| UNSUPPORTED \|/);
   assert.match(audit, /\| Fair value gap \| PARTIALLY_SUPPORTED \|/);
   assert.match(audit, /\| Liquidity sweep \| PARTIALLY_SUPPORTED \|/);
