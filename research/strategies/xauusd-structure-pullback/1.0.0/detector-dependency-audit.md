@@ -12,7 +12,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Change of character | SUPPORTED | `market-structure-shift@1.0.0` labels the first accepted protected counter-structure break in a directional regime as CHOCH without claiming reversal certainty. | None for the preregistered transition-risk label. |
 | Fair value gap | SUPPORTED | `fair-value-gap-lifecycle@1.0.0` detects strict completed three-candle wick gaps and maintains deterministic creation, mitigation, invalidation, and expiration history. | None for replay-safe FVG lifecycle detection. |
 | Liquidity sweep | SUPPORTED | `structural-liquidity-sweep@1.0.0` detects deterministic wick excursions and completed-close reclaims against replay-safe confirmed structural highs/lows. | None for confirmed structural sweep detection. |
-| Structural stop placement | UNSUPPORTED | Backtester supports fixed-price, percent, and ATR-multiple distances. | It cannot consume a structural-origin price plus an explicit ATR buffer. |
+| Structural stop placement | SUPPORTED | `structural-stop-candidate@1.0.0` generates replay-safe protected-swing, latest-swing, sweep-extreme, FVG-boundary, and structural-invalidation candidates with explicit optional buffers. | None for objective candidate generation; final stop selection and executable strategy mapping remain composition work. |
 | Liquidity target detection | SUPPORTED | `structural-liquidity-target@1.0.0` registers confirmed structural highs/lows and equal-level clusters with immutable BOS/sweep consumption, lifecycle, and neutral distance ranking. | None for replay-safe objective liquidity target facts; strategy-specific TP selection remains composition work. |
 
 Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created. In particular, EMA rules, generic breakouts, and rolling-window extrema are prohibited substitutes.
@@ -81,15 +81,14 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ### Structural Risk-Level Resolver
 
-- Formal definition: long stop is `min(originSwingLow, zoneLow) - ATR(14)*0.10`; short stop is `max(originSwingHigh, zoneHigh) + ATR(14)*0.10`. No fallback is permitted in version 1.0.0.
-- Inputs: entry candidate, structure event, origin swing, retracement zone, ATR known at decision time.
-- Parameters: ATR period/method/buffer multiple.
-- Output: stop price, structural origin, buffer, invalidation direction, evidence IDs.
-- Invalid states: missing origin/zone/ATR, non-positive risk distance, stop on wrong side of entry.
-- Anti-look-ahead: every referenced observation must be known before the entry order time.
-- Tests: long/short, selected extrema, buffer exactness, missing evidence, wrong-side stop, deterministic replay.
-- Ambiguities: gaps through stop are execution behavior, not detector behavior.
-- Quality: risk distance in price and ATR units.
+- Market-fact generator: `structural-stop-candidate@1.0.0` consumes immutable confirmed swings, structure snapshots, structural sweeps, FVG lifecycle state, BOS, and transition events without recalculating them.
+- Candidate types: protected swing, latest confirmed swing, sweep extreme, FVG far boundary, and explicit structural invalidation level. Direction is supplied by the caller and is never inferred from structure.
+- Historical state: sources must exist by the reference timestamp; FVG terminal changes after that timestamp cannot rewrite earlier output; optional SIMPLE ATR uses completed candles available at the reference only.
+- Buffer policy: none, absolute, relative, ATR, or maximum configured. Long buffers subtract from the raw level and short buffers add. Missing required ATR rejects explicitly and never becomes zero.
+- Validity: under the default policy, long candidates must be strictly below reference price and short candidates strictly above; invalid candidates remain in audited rejection output.
+- Ranking: distance, structural priority, or hybrid ordering is descriptive and never selects or recommends a final stop. Equal effective prices remain separate by default or may merge provenance under explicit deterministic tolerance.
+- APIs: stateless batch generation and stateful immutable-source query ingestion produce byte-identical results for equivalent reference-time information.
+- Remaining composition work: the preregistered strategy's exact `min(originSwingLow, zoneLow) - ATR(14)*0.10` / symmetric short rule still requires an executable strategy mapping to choose among objective candidates. This generator intentionally does not make that strategy decision.
 
 ### Opposing Liquidity Target Resolver
 

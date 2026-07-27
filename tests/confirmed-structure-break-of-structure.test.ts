@@ -298,7 +298,7 @@ test('research audit upgrades only confirmed-structure BOS and remains blocked d
   assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
   assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
   assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
-  assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
+  assert.match(audit, /\| Structural stop placement \| SUPPORTED \| `structural-stop-candidate@1\.0\.0`/);
   assert.match(audit, /\| Liquidity target detection \| SUPPORTED \| `structural-liquidity-target@1\.0\.0`/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
 });

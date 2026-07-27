@@ -174,7 +174,7 @@ test('defaults are conservative and module has no forbidden dependencies', () =>
 test('research audit upgrades only the FVG lifecycle and remains blocked downstream', () => {
   const audit = readFileSync('research/strategies/xauusd-structure-pullback/1.0.0/detector-dependency-audit.md', 'utf8');
   assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
-  assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
+  assert.match(audit, /\| Structural stop placement \| SUPPORTED \| `structural-stop-candidate@1\.0\.0`/);
   assert.match(audit, /\| Liquidity target detection \| SUPPORTED \| `structural-liquidity-target@1\.0\.0`/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
 });
