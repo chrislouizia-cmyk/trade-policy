@@ -179,7 +179,7 @@ test('research audit upgrades MSS and CHOCH only while strategy remains blocked 
   const audit = readFileSync('research/strategies/xauusd-structure-pullback/1.0.0/detector-dependency-audit.md', 'utf8');
   assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
   assert.match(audit, /\| Change of character \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
-  assert.match(audit, /\| Fair value gap \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
   assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
   assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
   assert.match(audit, /\| Liquidity target detection \| UNSUPPORTED \|/);

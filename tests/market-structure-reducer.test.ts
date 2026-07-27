@@ -209,7 +209,7 @@ test('research audit adds structure state only and leaves downstream capabilitie
   assert.match(audit, /\| Chronological structure state \| SUPPORTED \| `market-structure-reducer@1\.0\.0`/);
   assert.match(audit, /\| Break of structure \| (?:PARTIALLY_)?SUPPORTED \|/);
   assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
-  assert.match(audit, /\| Fair value gap \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
   assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
   assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
   assert.match(audit, /\| Liquidity target detection \| UNSUPPORTED \|/);

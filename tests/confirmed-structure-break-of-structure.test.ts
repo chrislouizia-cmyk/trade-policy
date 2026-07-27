@@ -296,7 +296,7 @@ test('research audit upgrades only confirmed-structure BOS and remains blocked d
   const audit = readFileSync('research/strategies/xauusd-structure-pullback/1.0.0/detector-dependency-audit.md', 'utf8');
   assert.match(audit, /\| Break of structure \| SUPPORTED \| `confirmed-structure-bos@1\.0\.0`/);
   assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
-  assert.match(audit, /\| Fair value gap \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
   assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
   assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
   assert.match(audit, /\| Liquidity target detection \| UNSUPPORTED \|/);

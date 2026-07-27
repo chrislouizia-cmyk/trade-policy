@@ -10,7 +10,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Break of structure | SUPPORTED | `confirmed-structure-bos@1.0.0` requires a completed close beyond an eligible accepted confirmed swing using a structure snapshot available before the breakout candle. | None for replay-safe confirmed-structure BOS detection. |
 | Market structure shift | SUPPORTED | `market-structure-shift@1.0.0` classifies immutable confirmed BOS events against their exact prior structure snapshot and protected HL/LH. | None for replay-safe MSS classification. |
 | Change of character | SUPPORTED | `market-structure-shift@1.0.0` labels the first accepted protected counter-structure break in a directional regime as CHOCH without claiming reversal certainty. | None for the preregistered transition-risk label. |
-| Fair value gap | PARTIALLY_SUPPORTED | `fair-value-gap@1.0.0` implements the strict latest-candle legacy three-candle gap. | No minimum-size configuration, event association, mitigation state, or lifecycle. |
+| Fair value gap | SUPPORTED | `fair-value-gap-lifecycle@1.0.0` detects strict completed three-candle wick gaps and maintains deterministic creation, mitigation, invalidation, and expiration history. | None for replay-safe FVG lifecycle detection. |
 | Liquidity sweep | SUPPORTED | `structural-liquidity-sweep@1.0.0` detects deterministic wick excursions and completed-close reclaims against replay-safe confirmed structural highs/lows. | None for confirmed structural sweep detection. |
 | Structural stop placement | UNSUPPORTED | Backtester supports fixed-price, percent, and ATR-multiple distances. | It cannot consume a structural-origin price plus an explicit ATR buffer. |
 | Liquidity target detection | UNSUPPORTED | No registered detector or target selector. | It cannot select nearest opposing confirmed liquidity as known at decision time. |
@@ -57,15 +57,15 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ### Stateful Fair Value Gap Detector
 
-- Formal definition: bullish gap when candle `i.low > candle i-2.high`; bearish when `i.high < i-2.low`, using strict comparison. Gap size must meet configured absolute or ATR-normalized minimum. A gap becomes mitigated when a later completed candle trades to the frozen mitigation threshold.
-- Inputs: immutable snapshot and completed candles; optional shared ATR primitive.
-- Parameters: minimum size mode/value, mitigation threshold (`TOUCH`, `MIDPOINT`, or `FULL_FILL`), maximum age, event association window.
-- Output: gap ID, direction, bounds, size, created/known time, mitigation state/time, age, associated structure event ID when present.
-- Invalid states: fewer than three candles, invalid geometry/timestamps, unavailable ATR when configured.
-- Anti-look-ahead: creation is known only at candle `i` close; mitigation uses subsequent candles only and is reported as of `requestedAt`.
-- Tests: bullish/bearish, equality, size threshold, each mitigation policy, unmitigated lifecycle, incomplete candle, association window.
-- Ambiguities: wick versus close mitigation and overlapping gaps; parameters must freeze the policy.
-- Quality: size in price/ATR and age, without strategy classification.
+- Formal definition: bullish gap when completed candle `i.low > candle i-2.high + tolerance`; bearish when `i.high < candle i-2.low - tolerance`. Bounds are wick-to-wick and the gap is invisible until candle `i` closes.
+- Inputs: completed normalized candles only; optional shared SIMPLE ATR uses history available through creation.
+- Parameters: absolute/relative tolerance and size minima, optional ATR minimum, mitigation thresholds, far-boundary invalidation, candle/time expiration, overlap behavior, and explicit creation-candle lifecycle policy.
+- Output: stable gap identity and bounds, current state, maximum fill, remaining bounds, creation provenance, immutable lifecycle event IDs/timestamps, descriptive C2 displacement metadata, and deterministic evidence.
+- Invalid states: fewer than three completed candles, malformed/duplicate data, below-minimum gap, insufficient configured ATR, nested-gap rejection, and invalid configuration.
+- Anti-look-ahead: C1/C2/C3 must be completed; creation is known only at C3 close; lifecycle normally begins with the next completed candle; ATR and every state transition use only then-available candles.
+- Tests: both directions, equality/tolerances, size and ATR thresholds, first touch, partial/full fill, monotonic maximum fill, invalidation priority, expiration, overlap policies, nested rejection, terminal immutability, batch/incremental parity, stable identities, evidence, and isolation.
+- State machine: `ACTIVE → PARTIALLY_MITIGATED → FULLY_MITIGATED`, or a non-terminal state to `INVALIDATED`/`EXPIRED`; terminal gaps never evolve. Invalidation wins same-candle conflicts without implying intrabar chronology.
+- Quality: absolute/relative/ATR-normalized size, midpoint, C2 body/range, fill percentage, and remaining zone are descriptive metadata only.
 
 ### Confirmed-Liquidity Sweep Detector
 
