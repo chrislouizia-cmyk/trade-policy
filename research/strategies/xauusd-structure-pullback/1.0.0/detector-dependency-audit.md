@@ -11,7 +11,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Market structure shift | SUPPORTED | `market-structure-shift@1.0.0` classifies immutable confirmed BOS events against their exact prior structure snapshot and protected HL/LH. | None for replay-safe MSS classification. |
 | Change of character | SUPPORTED | `market-structure-shift@1.0.0` labels the first accepted protected counter-structure break in a directional regime as CHOCH without claiming reversal certainty. | None for the preregistered transition-risk label. |
 | Fair value gap | PARTIALLY_SUPPORTED | `fair-value-gap@1.0.0` implements the strict latest-candle legacy three-candle gap. | No minimum-size configuration, event association, mitigation state, or lifecycle. |
-| Liquidity sweep | PARTIALLY_SUPPORTED | `liquidity-sweep@1.0.0` detects wick-through/close-back-inside against a rolling window. | The reference is not confirmed structural liquidity. |
+| Liquidity sweep | SUPPORTED | `structural-liquidity-sweep@1.0.0` detects deterministic wick excursions and completed-close reclaims against replay-safe confirmed structural highs/lows. | None for confirmed structural sweep detection. |
 | Structural stop placement | UNSUPPORTED | Backtester supports fixed-price, percent, and ATR-multiple distances. | It cannot consume a structural-origin price plus an explicit ATR buffer. |
 | Liquidity target detection | UNSUPPORTED | No registered detector or target selector. | It cannot select nearest opposing confirmed liquidity as known at decision time. |
 
@@ -69,15 +69,15 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ### Confirmed-Liquidity Sweep Detector
 
-- Formal definition: high-side sweep when a completed candle high is strictly above an eligible confirmed liquidity level and its close is strictly below that level; low-side is symmetric.
-- Inputs: immutable snapshot and confirmed swing/liquidity levels known before the event.
-- Parameters: liquidity-level types, maximum level age, strict comparison, reuse policy.
-- Output: side, level ID/price, excursion, close-return flag, event timestamp, prior-touch count, evidence.
-- Invalid states: no eligible prior level, stale/consumed level, malformed data.
-- Anti-look-ahead: the swept level must have been confirmed before the event candle opened; the event is known at its close.
-- Tests: high, low, both, equality, wick without return, level confirmed too late, consumed level, incomplete event.
-- Ambiguities: level reuse, equal-high liquidity pools, and whether event association is required.
-- Quality: excursion normalized by ATR and level age as metadata.
+- Formal definition: buy-side sweep requires a completed candle high strictly above an eligible confirmed structural high plus tolerance and a close at or inside its configured reclaim boundary; sell-side is symmetric below a confirmed structural low. A sweep is liquidity-removal evidence, not institutional intent or reversal confirmation.
+- Inputs: completed candles, replay-safe confirmed swings, chronological structure snapshots, and optional immutable BOS events for explicit same-level/same-candle conflict handling.
+- Parameters: latest/all accepted source eligibility, allowed structural labels, excursion/reclaim tolerances, optional absolute/relative/ATR excursion minima, close policy, BOS conflict, consumption/reset, gap, and dual-sweep policies.
+- Output: side, immutable source swing/snapshot context, candle OHLC and timestamps, excursion/reclaim metadata, optional ATR multiple and conflicting BOS ID, consumption state, evidence, rejection reason, and stable fingerprint.
+- Invalid states: unconfirmed or late source, unavailable structural snapshot, consumed source, BOS conflict, ambiguous dual sweep, rejected gap, insufficient ATR, malformed data, and retroactive incremental input.
+- Anti-look-ahead: source swing and structural snapshot must predate candle open; the event is visible only at candle close; later BOS, structure, swings, and candles cannot rewrite history.
+- Tests: both sides, reclaim/equality, source policies, multiple levels, BOS conflict modes, consumption/reset, gaps, dual sweep policies, thresholds, ATR safety, batch/incremental parity, time travel, future-data invariance, fingerprints, evidence, and isolation.
+- Ambiguities: equal-high/low clustering remains a future source-level capability; ordered dual policies define serialization only and never infer intrabar chronology.
+- Quality: absolute/relative/ATR-normalized excursion, reclaim distance, wick beyond level, and close position are descriptive metadata only.
 
 ### Structural Risk-Level Resolver
 

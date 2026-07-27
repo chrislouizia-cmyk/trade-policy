@@ -180,7 +180,7 @@ test('research audit upgrades MSS and CHOCH only while strategy remains blocked 
   assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
   assert.match(audit, /\| Change of character \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
   assert.match(audit, /\| Fair value gap \| PARTIALLY_SUPPORTED \|/);
-  assert.match(audit, /\| Liquidity sweep \| PARTIALLY_SUPPORTED \|/);
+  assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
   assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
   assert.match(audit, /\| Liquidity target detection \| UNSUPPORTED \|/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
