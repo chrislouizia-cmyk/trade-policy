@@ -59,6 +59,17 @@ export type ExecutableStrategy = Readonly<{
   volatilityFilter?: Extract<ExecutableRule, { type: 'ATR_THRESHOLD' }>;
   maximumHoldingPeriod?: number;
   minimumRequiredConfirmations: number;
+  executionDefinition?: Readonly<{
+    entry: EntryTiming;
+    invalidation: 'STOP_PRICE';
+    exit: 'TARGET_OR_MAX_HOLDING';
+    maximumHoldingBars: number;
+    assumptionsVersion: string;
+    intrabarConflictPolicy: IntrabarConflictPolicy;
+    allowOverlappingTrades: boolean;
+    costs: BacktestCosts;
+    source: 'EXPLICIT_STRATEGY' | 'EXPLICIT_IMMUTABLE_MAPPING' | 'DEMONSTRATION_DEFAULT';
+  }>;
 }>;
 
 export type RuleEvaluation = Readonly<{
@@ -153,13 +164,21 @@ export type BacktestMetrics = Readonly<{
   sampleSizeQuality: SampleSizeQuality;
 }>;
 
-export type ResearchClassification = 'INSUFFICIENT_DATA' | 'UNSTABLE' | 'NEGATIVE_EXPECTANCY' | 'PROMISING' | 'ROBUST_CANDIDATE';
+export type BacktestValidationState = 'VALID' | 'INCOMPLETE_STRATEGY';
+export type ResearchClassification = 'INCOMPLETE_STRATEGY' | 'INSUFFICIENT_DATA' | 'NEGATIVE_EXPECTANCY' | 'NO_MEANINGFUL_EDGE' | 'COST_SENSITIVE' | 'UNSTABLE' | 'PROMISING' | 'ROBUST_CANDIDATE';
 export type ClassificationCriteria = Readonly<{
   robustMinimumTrades: number;
+  robustMinimumOutOfSampleTrades: number;
+  robustMinimumOutOfSampleExpectancyR: number;
   robustMinimumOutOfSampleProfitFactor: number;
-  maximumDrawdownR: number;
+  robustMinimumConservativeExpectancyR: number;
+  robustMinimumIndependentPeriods: number;
   maximumProfitConcentration: number;
-  minimumOutOfSampleTrades: number;
+  minimumResearchTrades: number;
+  minimumResearchOutOfSampleTrades: number;
+  meaningfulEdgeExpectancyR: number;
+  meaningfulEdgeProfitFactorMargin: number;
+  costSensitivityIdealizedExpectancyR: number;
   substantialProfitFactorChange: number;
 }>;
 
@@ -191,6 +210,8 @@ export type BacktestResult = Readonly<{
   trades: readonly SimulatedTrade[];
   metrics: BacktestMetrics;
   warnings: readonly string[];
+  validationState: BacktestValidationState;
+  validationIssues: readonly string[];
   classification: ResearchClassification;
   reproducibility: ReproducibilityMetadata;
   walkForwardSupported: true;

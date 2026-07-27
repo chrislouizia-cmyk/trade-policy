@@ -26,6 +26,7 @@ const executable = Object.freeze({
   stopLossRule: { type: 'ATR_MULTIPLE', period: 14, multiple: 1 },
   takeProfitRule: { type: 'ATR_MULTIPLE', period: 14, multiple: 2 },
   maximumHoldingPeriod: 20, minimumRequiredConfirmations: 2,
+  executionDefinition: { entry: 'NEXT_OPEN', invalidation: 'STOP_PRICE', exit: 'TARGET_OR_MAX_HOLDING', maximumHoldingBars: 20, assumptionsVersion: 'gold-intraday-research-execution@1.0.0', intrabarConflictPolicy: 'STOP_FIRST', allowOverlappingTrades: false, costs: { commissionR: .02, spreadPrice: .2, slippagePrice: .05 }, source: 'EXPLICIT_IMMUTABLE_MAPPING' },
 } satisfies ExecutableStrategy);
 const original = structuredClone(GOLD_INTRADAY_RESEARCH_V1) as unknown as Readonly<Record<string, unknown>>;
 const mapping = createStrategyMappingSnapshot({

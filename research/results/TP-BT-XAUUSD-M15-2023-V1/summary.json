@@ -184,7 +184,7 @@
         "shortTradePercent": 0,
         "sampleSizeQuality": "MODERATE"
       },
-      "classification": "ROBUST_CANDIDATE"
+      "classification": "NO_MEANINGFUL_EDGE"
     },
     {
       "id": "EXPECTED",

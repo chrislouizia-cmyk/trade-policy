@@ -14,6 +14,7 @@ const strategy = Object.freeze({
   ] as const),
   forbiddenRules: Object.freeze([]), stopLossRule: { type: 'ATR_MULTIPLE', period: 14, multiple: 1 },
   takeProfitRule: { type: 'ATR_MULTIPLE', period: 14, multiple: 2 }, maximumHoldingPeriod: 20, minimumRequiredConfirmations: 2,
+  executionDefinition: { entry: 'NEXT_OPEN', invalidation: 'STOP_PRICE', exit: 'TARGET_OR_MAX_HOLDING', maximumHoldingBars: 20, assumptionsVersion: 'demo@1.0.0', intrabarConflictPolicy: 'STOP_FIRST', allowOverlappingTrades: false, costs: { commissionR: .02, spreadPrice: .2, slippagePrice: .05 }, source: 'DEMONSTRATION_DEFAULT' },
 } satisfies ExecutableStrategy);
 const result = runBacktest(dataset, strategy, { configuration: { maximumHoldingBars: 20, costs: { commissionR: .02, spreadPrice: .2, slippagePrice: .05 } } });
 console.log(JSON.stringify({

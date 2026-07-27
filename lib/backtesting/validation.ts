@@ -1,13 +1,42 @@
-import type { BacktestDataset, ClassificationCriteria, ExecutableRule, ExecutableStrategy, SimulationConfiguration } from './types.ts';
+import type { BacktestDataset, BacktestValidationState, ClassificationCriteria, ExecutableRule, ExecutableStrategy, SimulationConfiguration } from './types.ts';
 
 export const DEFAULT_CLASSIFICATION_CRITERIA: ClassificationCriteria = Object.freeze({
-  robustMinimumTrades: 500,
-  robustMinimumOutOfSampleProfitFactor: 1.1,
-  maximumDrawdownR: 25,
+  robustMinimumTrades: 1_000,
+  robustMinimumOutOfSampleTrades: 300,
+  robustMinimumOutOfSampleExpectancyR: .10,
+  robustMinimumOutOfSampleProfitFactor: 1.20,
+  robustMinimumConservativeExpectancyR: 0,
+  robustMinimumIndependentPeriods: 2,
   maximumProfitConcentration: .5,
-  minimumOutOfSampleTrades: 100,
+  minimumResearchTrades: 100,
+  minimumResearchOutOfSampleTrades: 30,
+  meaningfulEdgeExpectancyR: .02,
+  meaningfulEdgeProfitFactorMargin: .02,
+  costSensitivityIdealizedExpectancyR: .05,
   substantialProfitFactorChange: .5,
 });
+
+export type StrategyCompletenessAssessment = Readonly<{ state: BacktestValidationState; complete: boolean; issues: readonly string[] }>;
+export function assessStrategyCompleteness(strategy: ExecutableStrategy, configuration: SimulationConfiguration, official: boolean): StrategyCompletenessAssessment {
+  const issues: string[] = [];
+  if (!strategy.entryRules?.length || strategy.minimumRequiredConfirmations < 1) issues.push('A deterministic entry definition is required.');
+  if (!strategy.stopLossRule) issues.push('A deterministic stop rule is required.');
+  if (!strategy.takeProfitRule) issues.push('A deterministic target or exit rule is required.');
+  if (!strategy.direction || !['LONG', 'SHORT', 'BOTH'].includes(strategy.direction)) issues.push('A deterministic direction is required.');
+  if (official && (!strategy.maximumHoldingPeriod || strategy.maximumHoldingPeriod < 1)) issues.push('A strategy maximum holding rule is required.');
+  if (official && !strategy.executionDefinition?.invalidation) issues.push('An explicit invalidation rule is required.');
+  if (official && !strategy.executionDefinition?.exit) issues.push('An explicit deterministic exit definition is required.');
+  if (official && !strategy.executionDefinition?.assumptionsVersion) issues.push('Versioned execution assumptions are required.');
+  if (strategy.executionDefinition && strategy.executionDefinition.entry !== configuration.entryTiming) issues.push('Strategy entry timing and simulation entry timing do not match.');
+  if (strategy.executionDefinition && strategy.executionDefinition.maximumHoldingBars !== configuration.maximumHoldingBars) issues.push('Strategy and simulation maximum holding rules do not match.');
+  if (strategy.executionDefinition && strategy.executionDefinition.intrabarConflictPolicy !== configuration.intrabarConflictPolicy) issues.push('Strategy and simulation intrabar conflict assumptions do not match.');
+  if (strategy.executionDefinition && strategy.executionDefinition.allowOverlappingTrades !== configuration.allowOverlappingTrades) issues.push('Strategy and simulation overlapping-trade assumptions do not match.');
+  if (official && !strategy.executionDefinition?.costs) issues.push('Explicit execution cost assumptions are required.');
+  if (strategy.executionDefinition?.costs && [strategy.executionDefinition.costs.commissionR, strategy.executionDefinition.costs.spreadPrice, strategy.executionDefinition.costs.slippagePrice].some((value) => !Number.isFinite(value) || value < 0)) issues.push('Strategy execution cost assumptions must be explicit non-negative finite values.');
+  if (official && strategy.executionDefinition?.source === 'DEMONSTRATION_DEFAULT') issues.push('Demonstration defaults are prohibited in official immutable strategy validation.');
+  if (official && !strategy.executionDefinition) issues.push('Official backtests require an explicit immutable execution definition.');
+  return Object.freeze({ state: issues.length ? 'INCOMPLETE_STRATEGY' : 'VALID', complete: issues.length === 0, issues: Object.freeze([...new Set(issues)]) });
+}
 
 function positiveInteger(value: number, label: string, issues: string[]): void {
   if (!Number.isInteger(value) || value < 1) issues.push(`${label} must be a positive integer.`);
@@ -34,10 +63,10 @@ export function validateBacktestInputs(dataset: BacktestDataset, strategy: Execu
     previous = timestamp;
   }
   if (!strategy.id || !strategy.name || !strategy.version) issues.push('Strategy identity is incomplete.');
-  if (!strategy.entryRules.length) issues.push('Strategy requires at least one entry rule.');
+  if (!strategy.entryRules?.length) issues.push('Strategy requires at least one entry rule.');
   const ids = [...strategy.entryRules, ...strategy.forbiddenRules].map((rule) => rule.id);
   if (new Set(ids).size !== ids.length) issues.push('Strategy rule IDs must be unique.');
-  for (const rule of [...strategy.entryRules, ...strategy.forbiddenRules]) validateRule(rule, issues);
+  for (const rule of [...(strategy.entryRules ?? []), ...(strategy.forbiddenRules ?? [])]) validateRule(rule, issues);
   if (!Number.isInteger(strategy.minimumRequiredConfirmations) || strategy.minimumRequiredConfirmations < 0) issues.push('minimumRequiredConfirmations must be a non-negative integer.');
   if (splitFraction <= 0 || splitFraction >= 1) issues.push('In-sample fraction must be between zero and one.');
   if (configuration.costs.commissionR < 0 || configuration.costs.spreadPrice < 0 || configuration.costs.slippagePrice < 0) issues.push('Costs cannot be negative.');

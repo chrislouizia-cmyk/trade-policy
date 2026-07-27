@@ -39,7 +39,7 @@
 +
 +| Scenario | Trades | Net R | Expectancy | Profit factor | Max drawdown R | Classification |
 +|---|---:|---:|---:|---:|---:|---|
-+| IDEALIZED | 610 | 0.569 | 0.0009 | 1.001 | 35.953 | ROBUST_CANDIDATE |
++| IDEALIZED | 610 | 0.569 | 0.0009 | 1.001 | 35.953 | NO_MEANINGFUL_EDGE |
 | EXPECTED | 610 | -142.442 | -0.2335 | 0.706 | 160.518 | NEGATIVE_EXPECTANCY |
 | CONSERVATIVE | 610 | -285.454 | -0.4680 | 0.506 | 292.281 | NEGATIVE_EXPECTANCY |
 +

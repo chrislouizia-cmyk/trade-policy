@@ -1,0 +1,29 @@
+{
+  "amendmentVersion": "1.0.0",
+  "experimentId": "TP-BT-XAUUSD-M15-2023-V1",
+  "scope": "CLASSIFICATION_ONLY",
+  "reason": "The original mechanical threshold incorrectly treated a frictionless expectancy of 0.0009331321805995825R and profit factor of 1.0014573200534305 as robust. The strengthened research policy requires meaningful expected-cost out-of-sample performance, cost resilience, stability, low profit concentration, sufficient sample size, and at least two independent historical periods.",
+  "originalArtifacts": {
+    "summarySha256": "09b511d33fd6ddda2cf65274fea62cd94316c571aaab8869be3127abb593df18",
+    "reportSha256": "ccbbd6fa5b1505a00885b908a203d310defbc7af92180199fb589bffa05b2742"
+  },
+  "immutableTradeArtifacts": {
+    "tradeLedgerJsonSha256": "27422da81cb0f188502ad640dd35718b3ac0ae0f5354f417a15a1a35a963888e",
+    "tradeLedgerCsvSha256": "dbf73496485d9b0387c99e0912a82e31e895275c3809994d9be32accc46060f5",
+    "tradesChanged": false,
+    "strategyChanged": false,
+    "parametersOptimized": false
+  },
+  "classificationChanges": [
+    {
+      "scope": "OVERALL_EXPECTED_COST",
+      "previous": "NEGATIVE_EXPECTANCY",
+      "corrected": "NEGATIVE_EXPECTANCY"
+    },
+    {
+      "scope": "IDEALIZED_FRICTIONLESS",
+      "previous": "ROBUST_CANDIDATE",
+      "corrected": "NO_MEANINGFUL_EDGE"
+    }
+  ]
+}

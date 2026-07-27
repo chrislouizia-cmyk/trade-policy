@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  adaptStrategyDna, buildResearchBundle, calculateMetrics, classifySampleSize, createBacktestDataset, createStrategyMappingSnapshot, evaluateSignal, importDatasetArtifact, metricsFromLedger, normalizeCandles,
+  adaptStrategyDna, buildResearchBundle, calculateMetrics, classifyResearchEvidence, classifySampleSize, createBacktestDataset, createStrategyMappingSnapshot, evaluateSignal, importDatasetArtifact, metricsFromLedger, normalizeCandles,
   runBacktest, simulateTrade, type Candle, type CostScenario, type ExecutableStrategy, type Signal, type SimulatedTrade,
 } from '../lib/backtesting/index.ts';
 
@@ -17,6 +17,7 @@ const baseStrategy: ExecutableStrategy = {
   entryRules: defaultEntryRules,
   forbiddenRules: Object.freeze([]), stopLossRule: { type: 'FIXED_PRICE', distance: 1 }, takeProfitRule: { type: 'FIXED_PRICE', distance: 2 },
   minimumRequiredConfirmations: 1, maximumHoldingPeriod: 10,
+  executionDefinition: { entry: 'NEXT_OPEN', invalidation: 'STOP_PRICE', exit: 'TARGET_OR_MAX_HOLDING', maximumHoldingBars: 10, assumptionsVersion: 'fixture@1', intrabarConflictPolicy: 'STOP_FIRST', allowOverlappingTrades: false, costs: { commissionR: 0, spreadPrice: 0, slippagePrice: 0 }, source: 'EXPLICIT_STRATEGY' },
 };
 const strategy = (patch: Partial<ExecutableStrategy> = {}): ExecutableStrategy => Object.freeze({ ...baseStrategy, ...patch });
 const signal = (patch: Partial<Signal> = {}): Signal => Object.freeze({ timestamp: candle(0).timestamp, candleIndex: 0, direction: 'LONG', entryPrice: 100, stopPrice: 99, targetPrice: 102, matchedRules: [], missingRules: [], blockedRules: [], evaluations: [], ...patch });
@@ -157,4 +158,40 @@ test('ledger-derived metrics exactly match expected-cost engine metrics', () => 
   const scenarios: readonly CostScenario[] = [{ id: 'IDEALIZED', description: 'i', configuration: config }, { id: 'EXPECTED', description: 'e', configuration: config }, { id: 'CONSERVATIVE', description: 'c', configuration: config }];
   const bundle = buildResearchBundle(artifact, mapping, scenarios);
   assert.deepEqual(metricsFromLedger(bundle.ledger), bundle.baseline.metrics);
+});
+
+const classificationMetrics = (trades: number, expectancyR: number, profitFactor: number) => ({ ...calculateMetrics([]), totalSignals: trades, totalExecutedTrades: trades, expectancyR, profitFactor });
+
+test('PF 1.001 and expectancy 0.0009R is NO_MEANINGFUL_EDGE', () => {
+  const metrics = classificationMetrics(1_000, .0009, 1.001), oos = classificationMetrics(300, .0009, 1.001);
+  assert.equal(classifyResearchEvidence({ completeStrategy: true, total: metrics, inSample: metrics, outOfSample: oos, expectedExpectancyR: .0009, conservativeExpectancyR: 0, criticalStabilityWarnings: [], profitConcentration: .1, independentHistoricalPeriods: 2 }), 'NO_MEANINGFUL_EDGE');
+});
+
+test('meaningfully positive idealized but negative expected costs is COST_SENSITIVE', () => {
+  const total = classificationMetrics(1_000, -.1, .9), oos = classificationMetrics(300, -.1, .9);
+  assert.equal(classifyResearchEvidence({ completeStrategy: true, total, inSample: total, outOfSample: oos, idealizedExpectancyR: .2, expectedExpectancyR: -.1, conservativeExpectancyR: -.2, criticalStabilityWarnings: [], profitConcentration: .1, independentHistoricalPeriods: 2 }), 'COST_SENSITIVE');
+});
+
+test('official strategy with incomplete exits is INCOMPLETE_STRATEGY', () => {
+  const incomplete = { ...strategy(), takeProfitRule: undefined } as unknown as ExecutableStrategy;
+  const result = runBacktest(dataset(), incomplete, { official: true, configuration });
+  assert.equal(result.validationState, 'INCOMPLETE_STRATEGY'); assert.equal(result.classification, 'INCOMPLETE_STRATEGY'); assert.equal(result.trades.length, 0);
+});
+
+test('demonstration execution defaults are prohibited in official immutable validation', () => {
+  const demonstration = strategy({ executionDefinition: { ...baseStrategy.executionDefinition!, source: 'DEMONSTRATION_DEFAULT' } });
+  const result = runBacktest(dataset(), demonstration, { official: true, configuration });
+  assert.equal(result.validationState, 'INCOMPLETE_STRATEGY');
+  assert.match(result.validationIssues.join(' '), /Demonstration defaults are prohibited/);
+});
+
+test('positive IS but negative OOS is UNSTABLE', () => {
+  const total = classificationMetrics(1_000, .05, 1.1), ins = classificationMetrics(700, .2, 1.3), oos = classificationMetrics(300, -.1, .8);
+  assert.equal(classifyResearchEvidence({ completeStrategy: true, total, inSample: ins, outOfSample: oos, expectedExpectancyR: .05, conservativeExpectancyR: 0, criticalStabilityWarnings: [], profitConcentration: .1, independentHistoricalPeriods: 2 }), 'UNSTABLE');
+});
+
+test('ROBUST_CANDIDATE requires every strengthened criterion', () => {
+  const total = classificationMetrics(1_000, .15, 1.3), oos = classificationMetrics(300, .1, 1.2);
+  assert.equal(classifyResearchEvidence({ completeStrategy: true, total, inSample: total, outOfSample: oos, idealizedExpectancyR: .2, expectedExpectancyR: .15, conservativeExpectancyR: 0, criticalStabilityWarnings: [], profitConcentration: .2, independentHistoricalPeriods: 2 }), 'ROBUST_CANDIDATE');
+  assert.notEqual(classifyResearchEvidence({ completeStrategy: true, total, inSample: total, outOfSample: oos, idealizedExpectancyR: .2, expectedExpectancyR: .15, conservativeExpectancyR: 0, criticalStabilityWarnings: [], profitConcentration: .2, independentHistoricalPeriods: 1 }), 'ROBUST_CANDIDATE');
 });

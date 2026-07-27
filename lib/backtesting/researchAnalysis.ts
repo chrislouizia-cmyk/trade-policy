@@ -1,7 +1,7 @@
 import { stableFingerprint } from '../market-intelligence/serialization/stable-fingerprint.ts';
 import { atr, sma } from './indicators.ts';
 import { calculateMetrics } from './metrics.ts';
-import { runBacktest } from './runBacktest.ts';
+import { classifyResearchEvidence, profitConcentration, runBacktest } from './runBacktest.ts';
 import type { ImmutableDatasetArtifact } from './datasetArtifact.ts';
 import type { BacktestMetrics, BacktestResult, ExecutableStrategy, SimulatedTrade, SimulationConfiguration, SkippedSignal } from './types.ts';
 
@@ -97,8 +97,12 @@ export function buildResearchBundle(artifact: ImmutableDatasetArtifact, mapping:
   if (mapping.unsupportedRules.length) throw new Error('INVALID_STRATEGY_MAPPING: unsupported mapped rules remain.');
   const expected = scenarios.find((scenario) => scenario.id === 'EXPECTED');
   if (!expected) throw new Error('Expected-cost baseline scenario is required.');
-  const sensitivity = scenarios.map((scenario) => Object.freeze({ scenario, result: runBacktest(artifact.dataset, mapping.mappedExecutableStrategy, { configuration: scenario.configuration, runTimestamp: artifact.metadata.datasetEnd }) }));
-  const baseline = sensitivity.find((item) => item.scenario.id === 'EXPECTED')!.result;
+  const initialSensitivity = scenarios.map((scenario) => Object.freeze({ scenario, result: runBacktest(artifact.dataset, mapping.mappedExecutableStrategy, { configuration: scenario.configuration, runTimestamp: artifact.metadata.datasetEnd, official: true, independentHistoricalPeriods: 1 }) }));
+  if (initialSensitivity.some((item) => item.result.validationState !== 'VALID')) throw new Error(`INCOMPLETE_STRATEGY: ${initialSensitivity.flatMap((item) => item.result.validationIssues).join(' ')}`);
+  const idealized = initialSensitivity.find((item) => item.scenario.id === 'IDEALIZED')!.result, expectedResult = initialSensitivity.find((item) => item.scenario.id === 'EXPECTED')!.result, conservative = initialSensitivity.find((item) => item.scenario.id === 'CONSERVATIVE')!.result;
+  const overallClassification = classifyResearchEvidence({ completeStrategy: true, total: expectedResult.metrics, inSample: expectedResult.inSample.metrics, outOfSample: expectedResult.outOfSample.metrics, idealizedExpectancyR: idealized.metrics.expectancyR, expectedExpectancyR: expectedResult.metrics.expectancyR, conservativeExpectancyR: conservative.metrics.expectancyR, criticalStabilityWarnings: expectedResult.warnings.filter((warning) => warning.startsWith('Critical:')), profitConcentration: profitConcentration(expectedResult.trades), independentHistoricalPeriods: 1 });
+  const baseline: BacktestResult = Object.freeze({ ...expectedResult, classification: overallClassification });
+  const sensitivity = initialSensitivity.map((item) => Object.freeze({ scenario: item.scenario, result: item.scenario.id === 'EXPECTED' ? baseline : item.result }));
   const years = [...new Set(baseline.trades.map((trade) => String(new Date(trade.signalTimestamp).getUTCFullYear())))];
   const quarters = [...new Set(baseline.trades.map((trade) => { const date = new Date(trade.signalTimestamp); return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`; }))];
   const yearly = years.map((key) => metricsSegment(key, baseline.trades.filter((trade) => String(new Date(trade.signalTimestamp).getUTCFullYear()) === key)));
