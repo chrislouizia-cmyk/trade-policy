@@ -183,6 +183,6 @@ test('research audit upgrades only confirmed swing high and low support', () => 
   assert.match(audit, /\| Swing high \| SUPPORTED \| `confirmed-swing@1\.0\.0`/);
   assert.match(audit, /\| Swing low \| SUPPORTED \| `confirmed-swing@1\.0\.0`/);
   assert.match(audit, /\| Break of structure \| (?:PARTIALLY_)?SUPPORTED \|/);
-  assert.match(audit, /\| Market structure shift \| UNSUPPORTED \|/);
+  assert.match(audit, /\| Market structure shift \| SUPPORTED \| `market-structure-shift@1\.0\.0`/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
 });

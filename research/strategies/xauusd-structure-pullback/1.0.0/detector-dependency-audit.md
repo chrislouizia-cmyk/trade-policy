@@ -8,7 +8,8 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Swing low | SUPPORTED | `confirmed-swing@1.0.0` applies configurable left/right confirmation and exposes its replay-safe `confirmedAt`. | None for confirmed swing detection. |
 | Chronological structure state | SUPPORTED | `market-structure-reducer@1.0.0` classifies confirmed swings by `confirmedAt` into HH, HL, LH, LL, EH, and EL with conservative bias snapshots. | None for chronological structure-state reduction. |
 | Break of structure | SUPPORTED | `confirmed-structure-bos@1.0.0` requires a completed close beyond an eligible accepted confirmed swing using a structure snapshot available before the breakout candle. | None for replay-safe confirmed-structure BOS detection. |
-| Market structure shift | UNSUPPORTED | No registered detector. | Prior directional structure and an opposing confirmed swing break are both absent. |
+| Market structure shift | SUPPORTED | `market-structure-shift@1.0.0` classifies immutable confirmed BOS events against their exact prior structure snapshot and protected HL/LH. | None for replay-safe MSS classification. |
+| Change of character | SUPPORTED | `market-structure-shift@1.0.0` labels the first accepted protected counter-structure break in a directional regime as CHOCH without claiming reversal certainty. | None for the preregistered transition-risk label. |
 | Fair value gap | PARTIALLY_SUPPORTED | `fair-value-gap@1.0.0` implements the strict latest-candle legacy three-candle gap. | No minimum-size configuration, event association, mitigation state, or lifecycle. |
 | Liquidity sweep | PARTIALLY_SUPPORTED | `liquidity-sweep@1.0.0` detects wick-through/close-back-inside against a rolling window. | The reference is not confirmed structural liquidity. |
 | Structural stop placement | UNSUPPORTED | Backtester supports fixed-price, percent, and ATR-multiple distances. | It cannot consume a structural-origin price plus an explicit ATR buffer. |
@@ -44,15 +45,15 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ### Market Structure Shift Detector
 
-- Formal definition: after an established bullish structure state, the first completed close strictly below the latest eligible confirmed opposing swing low is bearish MSS; after bearish structure, a close strictly above the opposing confirmed swing high is bullish MSS.
-- Inputs: immutable snapshot, confirmed swing stream, deterministic structure-state reducer.
-- Parameters: structure tier, initialization rule, strict close comparison, one-event-per-level.
-- Output: shift direction, prior state, new provisional state, broken opposing swing, origin swing, event timestamp, evidence.
-- Invalid states: uninitialized structure, missing opposing swing, ambiguous simultaneous state events, malformed data.
-- Anti-look-ahead: state is reduced chronologically from confirmed-at events and completed closes only.
-- Tests: both directions, no prior state, equality, wick-only, delayed swing confirmation, nested structures, serialization.
-- Ambiguities: continuation versus reversal hierarchy and state initialization; resolve by preregistered state-machine specification.
-- Quality: number of prior same-direction structure confirmations and normalized break distance.
+- Formal definition: an aligned confirmed BOS is `CONTINUATION_BREAK`. A confirmed BOS against established bullish/bearish bias qualifies only when it breaks the latest protected HL/LH respectively. In `CHOCH_FIRST_THEN_MSS`, the first accepted counter break in that immutable bias regime is `CHOCH`; a later qualifying break of a new protected swing is `MARKET_STRUCTURE_SHIFT`. CHOCH indicates transition risk, not a confirmed reversal.
+- Inputs: immutable `BreakOfStructureEvent`, its exact prior `StructureSnapshot`, and already-confirmed swings. Optional completed candles are used only by the disabled-by-default ATR displacement filter.
+- Parameters: terminology, minimum directional snapshots, protected-swing policy, duplicate policy, transition reset policy, and optional absolute/relative/ATR displacement thresholds.
+- Output: continuation/CHOCH/MSS/unclassified label, source BOS and protected swing identities, prior bias, distances, transition regime hash, deterministic evidence, acceptance state, and rejection reason.
+- Invalid states: uninitialized or mixed structure, missing/late protected swing, mismatched source level, insufficient directional history, duplicate protected-level shift, or insufficient ATR history.
+- Anti-look-ahead: the exact source snapshot and protected swing must exist no later than breakout open; `detectedAt` is copied from the immutable BOS; later swings and snapshots cannot rewrite the event.
+- Tests: both continuation directions, both transition directions, mixed/undefined state, missing/non-protected level, terminology modes, regime progression, future leakage, displacement equality, duplicate policies, batch/incremental parity, stable serialization, and reset.
+- State machine: regime identity is a stable hash of the first contiguous snapshot in the prior directional bias. Opposite directional structure starts a new regime; historical classifications are never renamed.
+- Quality: prior directional snapshot count and absolute, relative, and optional ATR-normalized break distance.
 
 ### Stateful Fair Value Gap Detector
 

@@ -11,7 +11,7 @@
   "artifacts": {
     "hypothesisSha256": "9261556d465b59582fec866fa60484c5765b3d59a5d0e83a0e0541d1a887017c",
     "preregistrationSha256": "3c72f88c7512f8bb154edc7c495b8a3deb38d477029c4cdd1e895426f915cb97",
-    "detectorDependencyAuditSha256": "07dd8426eefa0649bb09b24460f66bf8056f366483f4ae868b701856c3a7fbb3"
+    "detectorDependencyAuditSha256": "39c380fb2e9edfa635634b95d2991e9653ab56c2b3ed98ddda6f1a20d29d6bee"
   },
   "governance": {
     "immutable": true,
