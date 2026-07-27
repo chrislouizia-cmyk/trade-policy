@@ -13,7 +13,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Fair value gap | SUPPORTED | `fair-value-gap-lifecycle@1.0.0` detects strict completed three-candle wick gaps and maintains deterministic creation, mitigation, invalidation, and expiration history. | None for replay-safe FVG lifecycle detection. |
 | Liquidity sweep | SUPPORTED | `structural-liquidity-sweep@1.0.0` detects deterministic wick excursions and completed-close reclaims against replay-safe confirmed structural highs/lows. | None for confirmed structural sweep detection. |
 | Structural stop placement | UNSUPPORTED | Backtester supports fixed-price, percent, and ATR-multiple distances. | It cannot consume a structural-origin price plus an explicit ATR buffer. |
-| Liquidity target detection | UNSUPPORTED | No registered detector or target selector. | It cannot select nearest opposing confirmed liquidity as known at decision time. |
+| Liquidity target detection | SUPPORTED | `structural-liquidity-target@1.0.0` registers confirmed structural highs/lows and equal-level clusters with immutable BOS/sweep consumption, lifecycle, and neutral distance ranking. | None for replay-safe objective liquidity target facts; strategy-specific TP selection remains composition work. |
 
 Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created. In particular, EMA rules, generic breakouts, and rolling-window extrema are prohibited substitutes.
 
@@ -93,15 +93,14 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ### Opposing Liquidity Target Resolver
 
-- Formal definition: from eligible confirmed opposing swing levels known before entry, select the nearest price beyond entry in the trade direction whose reward-to-structural-risk ratio is at least 2.0. If none exists, reject the setup; no fallback target.
-- Inputs: entry price/time, direction, structural stop, confirmed liquidity levels.
-- Parameters: eligible level types, minimum RR, tie-breaker (`EARLIEST_CONFIRMED_THEN_ID`), consumed-level policy.
-- Output: target level ID/price, reward, risk, RR, known-at time, evidence.
-- Invalid states: no eligible target, zero/non-positive risk, target on wrong side, level known after entry.
-- Anti-look-ahead: only levels with `confirmedAt <= entryDecisionTime` are eligible.
-- Tests: long/short, nearest selection, RR rejection, deterministic tie, late-known level, consumed level, no fallback.
-- Ambiguities: pool versus individual swing targets and level consumption must be frozen.
-- Quality: RR and level prominence as descriptive metadata.
+- Market-fact detector: `structural-liquidity-target@1.0.0` creates BUY_SIDE facts from accepted confirmed structural highs and SELL_SIDE facts from accepted confirmed structural lows. It also creates equal-high/low clusters only when the configured minimum membership is chronologically confirmed.
+- Cluster policy: member prices are combined by arithmetic mean. The first minimum-membership set freezes the cluster ID and creation event; later members update current provenance through immutable `MEMBER_ADDED` events. A member sweep consumes the full cluster only when its excursion crosses the complete cluster boundary.
+- Lifecycle: `AVAILABLE → TESTED`, or a non-terminal state to `SWEPT`, `BROKEN`, `INVALIDATED`, or `EXPIRED`. BOS wins equal-timestamp conflicts, and terminal targets never evolve.
+- Inputs: confirmed swings, accepted chronological structure classifications, completed candles, and existing immutable BOS and structural-sweep events. No source event is recalculated.
+- Ranking: neutral absolute, relative, or caller-supplied ATR-normalized distance with deterministic time/ID tie-breakers; it does not select a trade direction, take-profit, reward-to-risk, or reach probability.
+- Anti-look-ahead: targets appear at classification confirmation, clusters only at minimum membership, candle events only at close, and BOS/sweep consumption only at immutable event time. Incremental input rejects retroactive structure.
+- Deferred: previous-day/week levels are intentionally absent because no broker-session/calendar convention is frozen for this research module.
+- Remaining composition work: selecting the nearest opposing target beyond a proposed entry and enforcing minimum 2.0 reward-to-structural-risk remains strategy-specific and is not performed by the detector.
 
 ## Composition and execution work
 

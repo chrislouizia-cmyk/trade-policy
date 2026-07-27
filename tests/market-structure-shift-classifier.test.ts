@@ -182,6 +182,6 @@ test('research audit upgrades MSS and CHOCH only while strategy remains blocked 
   assert.match(audit, /\| Fair value gap \| SUPPORTED \| `fair-value-gap-lifecycle@1\.0\.0`/);
   assert.match(audit, /\| Liquidity sweep \| SUPPORTED \| `structural-liquidity-sweep@1\.0\.0`/);
   assert.match(audit, /\| Structural stop placement \| UNSUPPORTED \|/);
-  assert.match(audit, /\| Liquidity target detection \| UNSUPPORTED \|/);
+  assert.match(audit, /\| Liquidity target detection \| SUPPORTED \| `structural-liquidity-target@1\.0\.0`/);
   assert.match(audit, /Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`/);
 });
