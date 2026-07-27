@@ -4,8 +4,8 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 
 | Required concept | Status | Existing capability | Blocking gap |
 |---|---|---|---|
-| Swing high | UNSUPPORTED | `range-levels@1.0.0` calculates rolling maxima. | No left/right pivot confirmation or known-at timestamp. |
-| Swing low | UNSUPPORTED | `range-levels@1.0.0` calculates rolling minima. | No left/right pivot confirmation or known-at timestamp. |
+| Swing high | SUPPORTED | `confirmed-swing@1.0.0` applies configurable left/right confirmation and exposes its replay-safe `confirmedAt`. | None for confirmed swing detection. |
+| Swing low | SUPPORTED | `confirmed-swing@1.0.0` applies configurable left/right confirmation and exposes its replay-safe `confirmedAt`. | None for confirmed swing detection. |
 | Break of structure | PARTIALLY_SUPPORTED | `break-of-structure@1.0.0` compares the current close with a seven-candle rolling high/low. | It does not reference a confirmed swing or prevailing structure state. |
 | Market structure shift | UNSUPPORTED | No registered detector. | Prior directional structure and an opposing confirmed swing break are both absent. |
 | Fair value gap | PARTIALLY_SUPPORTED | `fair-value-gap@1.0.0` implements the strict latest-candle legacy three-candle gap. | No minimum-size configuration, event association, mitigation state, or lifecycle. |
