@@ -14,6 +14,7 @@ Audit scope: the registered Market Intelligence detectors and executable backtes
 | Liquidity sweep | SUPPORTED | `structural-liquidity-sweep@1.0.0` detects deterministic wick excursions and completed-close reclaims against replay-safe confirmed structural highs/lows. | None for confirmed structural sweep detection. |
 | Structural stop placement | SUPPORTED | `structural-stop-candidate@1.0.0` generates replay-safe protected-swing, latest-swing, sweep-extreme, FVG-boundary, and structural-invalidation candidates with explicit optional buffers. | None for objective candidate generation; final stop selection and executable strategy mapping remain composition work. |
 | Liquidity target detection | SUPPORTED | `structural-liquidity-target@1.0.0` registers confirmed structural highs/lows and equal-level clusters with immutable BOS/sweep consumption, lifecycle, and neutral distance ranking. | None for replay-safe objective liquidity target facts; strategy-specific TP selection remains composition work. |
+| Executable strategy composition | PARTIALLY_SUPPORTED | `xauusd-structure-pullback-composer@1.0.0` verifies the frozen DNA hash, evaluates every rule, binds exact immutable facts, preserves historical state, and blocks unresolved semantics. | Required sweep binding, FVG-to-shift association, rejection geometry, combined stop construction, and entry-dependent RR remain unspecified or unavailable. |
 
 Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created. In particular, EMA rules, generic breakouts, and rolling-window extrema are prohibited substitutes.
 
@@ -103,4 +104,15 @@ Conclusion: `DETECTOR_IMPLEMENTATION_REQUIRED`. No executable mapping is created
 
 ## Composition and execution work
 
-After the detectors exist, a versioned structure-state reducer and composition rules must bind MSS, displacement, FVG retracement, session, rejection trigger, structural risk, and liquidity target without recalculation. The backtester must then support structural close invalidation and the frozen exit precedence. These are implementation dependencies, not permission to weaken the hypothesis.
+`xauusd-structure-pullback-composer@1.0.0` now provides deterministic batch and stateful reference-time composition without recalculating detectors. It verifies the exact raw Strategy DNA SHA-256, emits one evaluation for every frozen condition, produces an immutable provenance graph, and never selects a stop or target without exact semantics.
+
+The audit found mandatory unresolved semantics that prevent executable mapping:
+
+- Liquidity sweep is a required dependency, but the long/short entry rules define no required side, relationship, or event ordering.
+- The originating FVG must be “created by or immediately following” the shift, but no exact source relationship or maximum candle/event separation is defined.
+- The trigger says a candle “rejects the zone,” but wick, close, penetration, and invalidation geometry are not formally specified.
+- Session windows are exact, but trigger and next-open timestamps cannot be bound until the trigger is executable.
+- The stop requires the minimum/maximum of structural origin and retracement-zone boundary plus ATR; current objective candidates expose those facts separately and may not be silently substituted for the combined formula.
+- Nearest opposing liquidity and minimum 2.0 RR are exact only after deterministic entry and stop prices exist.
+
+Therefore the conclusion remains `DETECTOR_IMPLEMENTATION_REQUIRED`, the immutable strategy and manifest research status remain unchanged, no executable mapping is created, and no official backtest is authorized. Resolving these rules requires a new explicitly governed Strategy DNA version or a preregistration clarification process; the composer cannot invent them.
