@@ -7,7 +7,7 @@ import type { MarketStructureShiftEvent } from '../../structure/market-structure
 import type { StructureSnapshot, SwingStructureLabel } from '../../structure/structure-types.ts';
 
 export type StopCandidateDirection = 'FOR_LONG' | 'FOR_SHORT';
-export type StructuralStopCandidateType = 'PROTECTED_SWING' | 'LATEST_CONFIRMED_SWING' | 'SWEEP_EXTREME' | 'FVG_FAR_BOUNDARY' | 'STRUCTURAL_INVALIDATION_LEVEL';
+export type StructuralStopCandidateType = 'PROTECTED_SWING' | 'LATEST_CONFIRMED_SWING' | 'SWEEP_EXTREME' | 'FVG_FAR_BOUNDARY' | 'STRUCTURAL_INVALIDATION_LEVEL' | 'COMBINED_STRUCTURAL_ORIGIN_FVG';
 export type StopCandidateRejectionReason = 'STOP_NOT_BELOW_REFERENCE_FOR_LONG' | 'STOP_NOT_ABOVE_REFERENCE_FOR_SHORT' | 'SOURCE_NOT_AVAILABLE_AT_REFERENCE_TIME' | 'ATR_UNAVAILABLE' | 'SOURCE_TERMINAL_OR_INELIGIBLE' | 'EXPLICIT_SOURCE_NOT_FOUND' | 'STRUCTURAL_CONTEXT_UNAVAILABLE';
 
 export type StructuralStopCandidateConfig = JsonObject & {

@@ -1,0 +1,22 @@
+{
+  "strategyId": "xauusd-structure-pullback",
+  "strategyVersion": "1.1.0",
+  "parentStrategyVersion": "1.0.0",
+  "researchStatus": "PREREGISTERED",
+  "strategyArtifactSha256": "8c2816f316bf0db4b17f2bd7ad5fbe2ce2cbad9570b153958dc7d77de6281de7",
+  "canonicalSerialization": "UTF8_FILE_BYTES_WITH_LF_AND_STABLE_JSON_PROPERTY_ORDER",
+  "mappingStatus": "COMPOSITION_SUPPORTED_EXECUTION_ADAPTER_REQUIRED",
+  "officialBacktestAuthorized": false,
+  "artifacts": {
+    "governanceSha256": "2d863874382bac6b120b30096d5d2759ac8e7d00d1fa02e60afbbfcd1c33bfc0"
+  },
+  "governance": {
+    "immutable": true,
+    "semanticClarificationBeforeOfficialBacktest": true,
+    "performanceEquivalentToParentClaim": false,
+    "parameterOptimizationPerformed": false,
+    "backtestResultsExamined": false,
+    "officialBacktestExecuted": false,
+    "createdAt": "2026-07-28T00:00:00.000Z"
+  }
+}

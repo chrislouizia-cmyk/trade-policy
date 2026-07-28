@@ -7,7 +7,7 @@ import type { ClassifiedSwing, StructureSnapshot } from '../../structure/structu
 import type { StructuralStopCandidate, StructuralStopCandidateConfig, StructuralStopCandidateGenerator, StructuralStopCandidateInput, StructuralStopCandidateRequest, StructuralStopCandidateResult, StructuralStopCandidateType, StopCandidateRejectionReason } from './structural-stop-candidate-types.ts';
 
 export const STRUCTURAL_STOP_CANDIDATE_VERSION = '1.0.0';
-const PRIORITY: Record<StructuralStopCandidateType, number> = { PROTECTED_SWING: 1, STRUCTURAL_INVALIDATION_LEVEL: 2, SWEEP_EXTREME: 3, FVG_FAR_BOUNDARY: 4, LATEST_CONFIRMED_SWING: 5 };
+const PRIORITY: Record<StructuralStopCandidateType, number> = { COMBINED_STRUCTURAL_ORIGIN_FVG: 1, PROTECTED_SWING: 2, STRUCTURAL_INVALIDATION_LEVEL: 3, SWEEP_EXTREME: 4, FVG_FAR_BOUNDARY: 5, LATEST_CONFIRMED_SWING: 6 };
 export const DEFAULT_STRUCTURAL_STOP_CANDIDATE_CONFIG: StructuralStopCandidateConfig = Object.freeze({
   enabledCandidateTypes: Object.freeze(['PROTECTED_SWING', 'LATEST_CONFIRMED_SWING', 'SWEEP_EXTREME', 'FVG_FAR_BOUNDARY']),
   protectedSwingPolicy: 'ACTIVE_PROTECTED_SWING', latestSwingPolicy: 'LATEST_ACCEPTED_STRUCTURE',
@@ -125,7 +125,19 @@ export function generateStructuralStopCandidates(input: StructuralStopCandidateI
     if (input.request.sourceFvgId && !eligible.length) { const found = fvgs.find((v) => v.id === input.request.sourceFvgId); warnings.push('FVG_FAR_BOUNDARY: EXPLICIT_SOURCE_NOT_FOUND_OR_INELIGIBLE'); sources.push({ type: 'FVG_FAR_BOUNDARY', raw: input.request.referencePrice, detectedAt: input.request.referenceTimestamp, fvgId: input.request.sourceFvgId, rejectionReason: !found ? 'EXPLICIT_SOURCE_NOT_FOUND' : time(found.detectedAt) > reference ? 'SOURCE_NOT_AVAILABLE_AT_REFERENCE_TIME' : 'SOURCE_TERMINAL_OR_INELIGIBLE', description: 'The explicit FVG source was unavailable or ineligible at the reference timestamp.' }); }
     for (const gap of eligible) sources.push({ type: 'FVG_FAR_BOUNDARY', raw: direction === 'FOR_LONG' ? gap.lowerBound : gap.upperBound, detectedAt: gap.detectedAt, fvgId: gap.id, description: `${gap.direction === 'BULLISH' ? 'Bullish FVG lower' : 'Bearish FVG upper'} boundary at ${direction === 'FOR_LONG' ? gap.lowerBound : gap.upperBound} was eligible at the reference timestamp.` });
   }
-  let generated = sources.map((v) => makeCandidate(v, input.request, c, atr)), rejected = generated.filter((v) => !v.valid), accepted = generated.filter((v) => v.valid);
+  if (c.enabledCandidateTypes.includes('COMBINED_STRUCTURAL_ORIGIN_FVG')) {
+    const gap = input.request.sourceFvgId ? fvgs.find((v) => v.id === input.request.sourceFvgId && time(v.detectedAt) <= reference && c.eligibleFvgStatuses.includes(fvgStatusAt(v, reference)!)) : undefined;
+    const origin = snapshot ? classified(snapshot).filter((v) => v.swing.direction === wantedDirection && time(v.swing.confirmedAt) <= reference).at(-1) : undefined;
+    if (!gap || !origin) {
+      warnings.push('COMBINED_STRUCTURAL_ORIGIN_FVG: EXPLICIT_SOURCE_NOT_FOUND_OR_INELIGIBLE');
+      sources.push({ type: 'COMBINED_STRUCTURAL_ORIGIN_FVG', raw: input.request.referencePrice, detectedAt: input.request.referenceTimestamp, fvgId: input.request.sourceFvgId, snapshot, rejectionReason: !gap ? 'EXPLICIT_SOURCE_NOT_FOUND' : 'STRUCTURAL_CONTEXT_UNAVAILABLE', description: 'The governed structural-origin/FVG stop requires both an explicit eligible FVG and an accepted adverse-side origin swing.' });
+    } else {
+      const boundary = direction === 'FOR_LONG' ? gap.lowerBound : gap.upperBound;
+      const raw = direction === 'FOR_LONG' ? Math.min(origin.swing.price, boundary) : Math.max(origin.swing.price, boundary);
+      sources.push({ type: 'COMBINED_STRUCTURAL_ORIGIN_FVG', raw, detectedAt: [origin.swing.confirmedAt, gap.detectedAt].sort((a, b) => time(a) - time(b)).at(-1)!, classifiedSwing: origin, snapshot, fvgId: gap.id, transitionId: input.request.sourceTransitionEventId, description: `Governed ${direction === 'FOR_LONG' ? 'minimum' : 'maximum'} of structural origin ${origin.swing.price} and original FVG far boundary ${boundary} is ${raw}.` });
+    }
+  }
+  let generated = sources.map((v) => { const candidate = makeCandidate(v, input.request, c, atr); return v.type === 'COMBINED_STRUCTURAL_ORIGIN_FVG' ? freeze({ ...candidate, sourceCandidateTypes: ['PROTECTED_SWING', 'FVG_FAR_BOUNDARY', 'COMBINED_STRUCTURAL_ORIGIN_FVG'] as StructuralStopCandidateType[] }) : candidate; }), rejected = generated.filter((v) => !v.valid), accepted = generated.filter((v) => v.valid);
   if (c.deduplicationPolicy === 'MERGE_SAME_EFFECTIVE_PRICE') accepted = mergeCandidates(accepted, c.deduplicationTolerance);
   accepted = ranked(accepted, c); rejected = [...rejected].sort((a, b) => a.id.localeCompare(b.id));
   return freeze({ generatorVersion: STRUCTURAL_STOP_CANDIDATE_VERSION, candidates: accepted, rejectedCandidates: rejected, warnings: [...new Set(warnings)].sort(), request: structuredClone(input.request), configuration: c });
