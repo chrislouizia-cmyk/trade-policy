@@ -10,7 +10,9 @@
 - [ ] Apply all Supabase migrations in order and verify RLS, authenticated redirect URLs, and the production Site URL.
 - [ ] Add `${NEXT_PUBLIC_APP_URL}/auth/callback` to Supabase Auth redirect URLs.
 - [ ] Configure a production SMTP provider, sender domain, confirmation template, recovery template, SPF, DKIM, and DMARC; test confirmation and password reset delivery.
-- [ ] Apply migration 039, create the Stripe Pro monthly price, configure the Customer Portal and webhook events, and complete the test-mode procedure in `docs/STRIPE_SETUP.md`.
+- [ ] Apply migrations 039 and 041, verify the active $29 USD monthly Test Price, configure the Customer Portal and webhook events, and complete the test-mode procedure in `docs/STRIPE_SETUP.md`.
+- [ ] Confirm Checkout rejects an inactive, wrong-currency, wrong-amount, non-monthly, or mode-mismatched Price before creating a Session.
+- [ ] Replay concurrent, failed, duplicate, and out-of-order webhooks; confirm customer-binding conflicts and unexpected Prices never grant Pro and logs contain no payment or secret data.
 - [ ] Link the Vercel project, select the production Supabase environment, add every variable separately for Preview and Production, and leave secrets unexposed.
 - [ ] Add the production domain in Vercel, configure DNS, confirm TLS, set `NEXT_PUBLIC_APP_URL`, and update Supabase URL allowlists.
 
