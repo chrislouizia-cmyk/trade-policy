@@ -1,0 +1,1 @@
+export default function Loading(){return <main className="login-shell" aria-live="polite" aria-busy="true"><section className="card login-card"><p className="eyebrow">TRADE POLICE</p><h1>Loading your workspace…</h1><p className="muted">Your saved data is unchanged while this page loads.</p></section></main>}

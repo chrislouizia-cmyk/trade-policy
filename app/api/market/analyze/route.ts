@@ -14,6 +14,8 @@ import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+async function bestEffort(work:()=>PromiseLike<unknown>){try{await work()}catch(error){console.error('Non-critical analysis telemetry failed',error)}}
+
 export async function POST(req: Request) {
   const startedAt=Date.now();
   let supabase: Awaited<ReturnType<typeof createClient>> | null=null;
@@ -27,7 +29,8 @@ export async function POST(req: Request) {
     const reservation=await reserveAnalysis(user.id,requestKey);
     if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED','Your monthly Free analysis limit has been reached. Upgrade to Pro to continue.',429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage});
     usage={userId:user.id,requestKey};
-    const { instrument } = await req.json() as { instrument: Instrument };
+    const body=await req.json().catch(()=>null) as {instrument?:Instrument}|null;
+    const instrument=body?.instrument;
     if (!instrument) return apiError('INSTRUMENT_REQUIRED','An instrument is required.',400);
     const strategy = await loadActiveStrategy(supabase,user.id);
     if (!strategy.instruments.includes(instrument)) return apiError('INSTRUMENT_DISABLED','Instrument is disabled in this strategy.',400,{instrument});
@@ -42,19 +45,19 @@ export async function POST(req: Request) {
     const enrichedAnalysis = {...analysis, aiCommentary};
     const {data:scan,error:scanError}=await supabase.from('market_scans').insert({ user_id: user.id, instrument, strategy_profile_id: strategy.id || null, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
     if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
-    await supabase.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}});
-    await finalizeAnalysis(user.id,requestKey,true);
+    await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}}));
+    await bestEffort(()=>finalizeAnalysis(user.id,requestKey,true));
     const diagnostics=process.env.NODE_ENV==='development'?{strategyId:analysis.strategyId,strategyName:strategy.name,evaluationSource:'TRADING_DNA_RUNTIME',strategySchemaVersion:analysis.strategySchemaVersion,methodologyIds:analysis.methodologyIds,instrument,providerSymbol:analysis.providerSymbol,timeframes,candleCounts:Object.fromEntries(timeframes.map((frame,index)=>[frame,values[index].length])),latestCandleTimestamp:analysis.latestCandleTimestamp,totalRequiredWeight:analysis.setupReadiness.totalRequiredWeight,passingRequiredWeight:analysis.setupReadiness.passingRequiredWeight,requiredCounts:analysis.setupReadiness.required,optionalCounts:analysis.setupReadiness.optional,readinessFormula:analysis.setupReadiness.formula,contributingRules:analysis.tradingDnaReport.conditions.map(condition=>({id:condition.ruleId,status:condition.status,weight:condition.weight,evidenceSource:analysis.setupReadiness.conditions.find(item=>item.label===condition.label)?.evidenceSource})),timeframeAligned:analysis.timeframeAligned,finalState:analysis.setupReadiness.state,finalConfidence:analysis.liveAnalysisConfidence,calculationTimestamp:analysis.calculatedAt,cache:'MISS'}:undefined;
     return NextResponse.json({...enrichedAnalysis,analysisId:scan.id,strategyApplied:{id:strategy.id,name:strategy.name},diagnostics},{headers:{'Cache-Control':'no-store, max-age=0'}});
   } catch (error) {
-    if(usage)await finalizeAnalysis(usage.userId,usage.requestKey,false);
+    if(usage)try{await finalizeAnalysis(usage.userId,usage.requestKey,false)}catch(finalizeError){console.error('Analysis usage release failed',finalizeError)}
     if(error instanceof StrategyConfigurationError)return apiError('STRATEGY_INCOMPLETE','Strategy configuration incomplete.',409,{missingFields:error.missingFields});
     if(error instanceof MarketAnalysisError){
       const code=error.status==='INSUFFICIENT_DATA'?'INSUFFICIENT_MARKET_DATA':error.status==='ANALYSIS_FAILED'?'STRATEGY_CONFIGURATION_INCOMPLETE':'MARKET_DATA_UNAVAILABLE';
       const message=error.status==='INSUFFICIENT_DATA'?'Insufficient market data.':error.status==='ANALYSIS_FAILED'?'Strategy configuration incomplete.':'Market analysis unavailable.';
       return apiError(code,message,422,{analysisStatus:error.status});
     }
-    if(supabase){await supabase.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}});await supabase.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}})}
+    if(supabase){await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}}));await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}}))}
     return publicApiError({message:'Market analysis unavailable.',code:'MARKET_ANALYSIS_UNAVAILABLE',internalCode:'LIVE_MARKET_ANALYSIS_FAILED',provider:'twelvedata',endpoint:'/api/market/analyze',error});
   }
 }

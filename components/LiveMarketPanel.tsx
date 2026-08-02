@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
-import {apiErrorMessage} from '@/lib/api-error';
+import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 import SetupReadiness from './SetupReadiness';
 import MarketIntelligenceBetaResult from './MarketIntelligenceBetaResult';
 
@@ -61,25 +61,32 @@ export default function LiveMarketPanel({
     setError('');
     setAnalysis(null);
 
+    const controller=new AbortController();
+    const timeout=window.setTimeout(()=>controller.abort(),25_000);
     try {
       const requestKey=crypto.randomUUID();
       const response = await fetch('/api/market/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json','Idempotency-Key':requestKey },
         body: JSON.stringify({ instrument }),
+        signal:controller.signal,
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
+
+      if(redirectExpiredSession(response,'/validate'))return;
 
       if (!response.ok) {
         setError(apiErrorMessage(result,'Market analysis is temporarily unavailable. Please try again shortly.'));
         return;
       }
 
+      if(!result||typeof result!=='object')throw new Error('invalid-response');
       setAnalysis(result);
       onApply(result as ChartAnalysis);
-    } catch {
-      setError('Market analysis is temporarily unavailable. Please try again shortly.');
+    } catch(error) {
+      setError(error instanceof Error&&error.name==='AbortError'?'Market analysis timed out. Your trade data was not changed. Please try again.':'Market analysis is temporarily unavailable. Your trade data was not changed.');
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
       onLoadingChange?.(false);
     }

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       return apiError('UNAUTHORIZED','Unauthorized.',401);
     }
 
-    const parsed = schema.safeParse(await request.json());
+    const parsed = schema.safeParse(await request.json().catch(()=>null));
     if (!parsed.success) {
       return apiError('INVALID_TRADE','Some trade values are invalid.',400,parsed.error.flatten());
     }
@@ -104,6 +104,6 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error('Validation error:', error);
-    return apiError('VALIDATION_FAILED',error instanceof Error?error.message:'Trade authorization could not be completed.',500);
+    return apiError('VALIDATION_FAILED','Trade authorization could not be completed. Your trade data was not changed.',503);
   }
 }

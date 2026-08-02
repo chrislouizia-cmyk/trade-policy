@@ -11,11 +11,11 @@ import TradingDnaEvidenceReportView from '@/components/TradingDnaEvidenceReport'
 import SetupReadiness from '@/components/SetupReadiness';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
-import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmation, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
 import type { TradingDnaEvidenceReport } from '@/lib/trading-dna/runtime';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
-import {apiErrorMessage} from '@/lib/api-error';
+import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
 
@@ -90,10 +90,11 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   async function loadStrategy(){
     try{
       const response=await fetch('/api/strategies/active',{cache:'no-store'});
-      const data=await response.json();
+      const data=await readApiResponse(response);
+      if(redirectExpiredSession(response,'/validate'))return;
       if(!response.ok)throw new Error(apiErrorMessage(data,'Could not load the active strategy.'));
-      if (!data.strategy) throw new Error('No active strategy was returned.');
-      setStrategy(data.strategy);setManualEvidence(initialManualConfirmations(data.strategy.rules??[]));
+      if (!data||typeof data!=='object'||!('strategy' in data)||(data as any).strategy==null) throw new Error('No active strategy was returned.');
+      const active=(data as any).strategy;setStrategy(active);setManualEvidence(initialManualConfirmations(active.rules??[]));
     }catch(e:any){
       setError(e.message||'Could not load the active strategy.');
     }
@@ -187,8 +188,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
       const res=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const data=await res.json();
-      if(res.ok){setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current);await trackBetaEvent('ANALYSIS_COMPLETED',strategy.id);if(analysis?.analysisId){const eligibility=await fetch(`/api/beta-intelligence/feedback?analysisId=${encodeURIComponent(analysis.analysisId)}`,{cache:'no-store'});if(eligibility.ok){const feedback=await eligibility.json();if(feedback.eligible)setFeedbackAnalysisId(analysis.analysisId)}}}else setError(apiErrorMessage(data,'Please review the form values.'));
+      const data:any=await readApiResponse(res);
+      if(redirectExpiredSession(res,'/validate'))return;
+      if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response. Your trade was not recorded.');
+      if(res.ok){setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data.manualConfirmations??[]) as ManualConfirmation[]}:current);await trackBetaEvent('ANALYSIS_COMPLETED',strategy.id);if(analysis?.analysisId){const eligibility=await fetch(`/api/beta-intelligence/feedback?analysisId=${encodeURIComponent(analysis.analysisId)}`,{cache:'no-store'});if(eligibility.ok){const feedback=await eligibility.json();if(feedback.eligible)setFeedbackAnalysisId(analysis.analysisId)}}}else setError(apiErrorMessage(data,'Please review the form values.'));
     }catch(e:any){
       setError(e.message||'Could not request authorization.');
     }finally{
@@ -200,7 +203,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   async function updateManualConfirmation(ruleKey:string,state:ManualConfirmationState){
     const next={...manualEvidence,[ruleKey]:state};setManualEvidence(next);if(!lastAnalysisInput)return;
     const body={...lastAnalysisInput,manualConfirmations:confirmationList(next)};setReevaluatingManual(true);setError('');
-    try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
+    try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response.');setResult(data as ValidationResult);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data as any).manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
   }
 
   function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; const instrument=document.querySelector('[name=instrument]') as HTMLSelectElement|null;if(instrument)instrument.value=analysis.instrument;set('entry',c.entryLow??c.entryHigh);set('stopLoss',c.stopLoss);set('takeProfit',c.takeProfit);const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction;setCandidateApplied('Candidate applied.');}
@@ -228,7 +231,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       const {data:record,error:recordError}=await createClient().from('trade_records').insert({user_id:userId,account_id:accountId||null,balance_at_entry:balanceAtEntry,risk_amount:riskAmount,strategy_profile_id:strategy.id||null,strategy_name_at_entry:strategy.name,source:'EXECUTED',status:'OPEN',instrument:get('instrument'),direction:get('direction'),setup_type:analysis?.setupType||'Manual',session:get('session'),entry:Number(get('entry')),stop_loss:Number(get('stopLoss')),take_profit:Number(get('takeProfit')),rr:result.rr,score:result.score,verdict:result.verdict,chart_analysis:analysis,rule_snapshot:{...strategy,riskPercent:Number(get('riskPercent')),accountBalance:Number(get('accountBalance')),highImpactNews:Boolean(autoChecks.highImpactNews),takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason}}).select().single();
       if(recordError)throw recordError;
       const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,highImpactNews:Boolean(autoChecks.highImpactNews),tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not start Active Trade Monitor.');
+      const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not start Active Trade Monitor.'));if(!data||typeof data!=='object'||!('trade' in data))throw new Error('The trade response was incomplete. Refresh History before trying again.');
       await loadHistory();
       if(againstVerdict){setOverrideConfirmation('Recorded as taken against the Police Verdict.');window.setTimeout(()=>{window.location.href='/active-trade'},900);}
       else window.location.href='/active-trade';

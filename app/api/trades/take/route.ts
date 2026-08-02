@@ -3,6 +3,7 @@ import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
+  let cleanup:{supabase:Awaited<ReturnType<typeof createClient>>;userId:string;tradeRecordId:string}|null=null;
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -13,9 +14,13 @@ export async function POST(request: Request) {
     if (!body.instrument || !['BUY','SELL'].includes(body.direction) || typeof body.highImpactNews !== 'boolean' || ![entry,stopLoss,takeProfit,riskPercent,initialRR].every(Number.isFinite)) {
       return NextResponse.json({ error: 'Missing or invalid trade information.' }, { status: 400 });
     }
+    if(body.tradeRecordId&&typeof body.tradeRecordId==='string')cleanup={supabase,userId:user.id,tradeRecordId:body.tradeRecordId};
     const { data: existing, error: existingError } = await supabase.from('active_trades').select('id').eq('user_id', user.id).eq('instrument', body.instrument).eq('status','OPEN').maybeSingle();
     if (existingError) throw existingError;
-    if (existing) return NextResponse.json({ error: 'You already have an open trade for this instrument.' }, { status: 409 });
+    if (existing) {
+      if(cleanup)await cleanup.supabase.from('trade_records').delete().eq('id',cleanup.tradeRecordId).eq('user_id',cleanup.userId).eq('source','EXECUTED').eq('status','OPEN');
+      return NextResponse.json({ error: 'You already have an open trade for this instrument.' }, { status: 409 });
+    }
     const { data: trade, error } = await supabase.from('active_trades').insert({
       user_id:user.id, account_id:body.accountId ?? null, balance_at_entry:body.balanceAtEntry ?? null, risk_amount:body.riskAmount ?? null, strategy_profile_id:body.strategyProfileId ?? null, strategy_name_at_entry:body.strategyNameAtEntry ?? null, strategy_snapshot:{...(body.strategySnapshot ?? {}),tradeContext:{highImpactNews:body.highImpactNews}}, trade_record_id:body.tradeRecordId ?? null,
       instrument:body.instrument, direction:body.direction, entry, stop_loss:stopLoss, take_profit:takeProfit,
@@ -25,13 +30,18 @@ export async function POST(request: Request) {
       original_verdict_reason:body.originalVerdictReason ?? null, override_reason:body.overrideReason ?? null,
     }).select().single();
     if (error) throw error;
-    await supabase.from('active_trade_events').insert({ user_id:user.id, trade_id:trade.id,
+    const {error:eventError}=await supabase.from('active_trade_events').insert({ user_id:user.id, trade_id:trade.id,
       event_type: body.takenAgainstVerdict ? 'TRADE_TAKEN_AGAINST_VERDICT' : 'TRADE_TAKEN',
       verdict: body.takenAgainstVerdict ? `OPEN — AGAINST ${body.originalVerdict ?? 'VERDICT'}` : 'OPEN',
       current_price:entry, current_r:0, analysis:{ original_analysis:body.initialAnalysis ?? null, original_verdict:body.originalVerdict ?? null, original_verdict_reason:body.originalVerdictReason ?? null, override_reason:body.overrideReason ?? null }
     });
-    return NextResponse.json({ trade });
+    if(eventError)console.error('[ACTIVE_TRADE_EVENT_FAILED]',{tradeId:trade.id,message:eventError.message});
+    return NextResponse.json({ trade, auditEventRecorded:!eventError });
   } catch (error) {
+    if(cleanup&&error&&typeof error==='object'&&'code' in error&&(error as {code?:string}).code==='23505'){
+      await cleanup.supabase.from('trade_records').delete().eq('id',cleanup.tradeRecordId).eq('user_id',cleanup.userId).eq('source','EXECUTED').eq('status','OPEN');
+      return NextResponse.json({error:'This trade is already open. The duplicate request was not recorded.'},{status:409});
+    }
     return publicApiError({message:'We could not record this trade. Please try again.',code:'TRADE_SAVE_FAILED',internalCode:'TRADE_SAVE_FAILED',endpoint:'/app/api/trades/take',error});
   }
 }
