@@ -8,8 +8,8 @@ const profile = readFileSync(new URL('../app/profile/page.tsx', import.meta.url)
 const saveRoute = readFileSync(new URL('../app/api/strategies/save/route.ts', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/029_external_strategy_rule_mode.sql', import.meta.url), 'utf8');
 
-test('Strategy Builder is framed as a conversation that teaches Trade Police', () => {
-  assert.match(profile, /Teach Trade Police How You Trade/);
+test('Strategy Builder is framed as a plain-language conversation', () => {
+  assert.match(profile, /Define what Trade Police must check before you risk money/);
   assert.match(builder, /What do you call the way you trade\?/);
   assert.match(builder, /What do you trade\?/);
   assert.match(builder, /What must you see before taking the trade\?/);

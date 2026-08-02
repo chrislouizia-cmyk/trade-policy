@@ -8,7 +8,8 @@ type Props = {
   todayPnl: number;
   wins: number;
   losses: number;
-  discipline: number;
+  discipline: number | null;
+  closedTradesToday: number;
   hasTrade: boolean;
 };
 
@@ -19,11 +20,11 @@ export default function Dashboard(p: Props) {
       <section className="dashboard-hero card command-center-hero">
         <div className="dashboard-hero-copy">
           <span className="eyebrow">TRADE POLICE COMMAND CENTER</span>
-          <h1>Institutional trading discipline.</h1>
-          <p>Review the market, validate the setup, and keep the process consistent before any order is sent.</p>
+          <h1>Make the next decision with your rules in view.</h1>
+          <p>Check current market evidence, run the final risk check, and understand exactly why the result passed or stopped.</p>
           <small>Every trade remains under review until the evidence is clear.</small>
         </div>
-        <a className="button-link primary dashboard-primary-action" href="/validate">Open validator</a>
+        <a className="button-link primary dashboard-primary-action" href="/validate">Check a setup</a>
       </section>
 
       {!setupComplete&&<OnboardingChecklist
@@ -44,15 +45,11 @@ export default function Dashboard(p: Props) {
         <Card
           label="Active strategy"
           value={p.strategy?.name ?? 'Not configured'}
-          sub={p.strategy ? 'Controls new validations' : 'Build or activate a strategy'}
+          sub={p.strategy ? 'Rules used for every new decision' : 'Choose or create your trading rules'}
           href="/profile"
         />
         <Card label="Open trades" value={String(p.openTrades)} sub="Under active supervision" href="/active-trade" />
-        <Card
-          label="Today"
-          value={`${p.todayPnl >= 0 ? '+' : ''}$${p.todayPnl.toFixed(2)}`}
-          sub={`${p.wins} wins · ${p.losses} losses · ${p.discipline}% discipline`}
-        />
+        {p.closedTradesToday>0?<Card label="Today" value={`${p.todayPnl >= 0 ? '+' : ''}$${p.todayPnl.toFixed(2)}`} sub={`${p.wins} wins · ${p.losses} losses · ${p.discipline}% rules followed`}/>:<Card label="Today" value="No closed trades" sub="Results appear after you close a recorded trade"/>}
       </div>
 
       <div className="card quick-actions">
@@ -63,9 +60,9 @@ export default function Dashboard(p: Props) {
           </div>
         </div>
         <div className="button-row">
-          <a className="button-link secondary" href="/validate">Analyze market</a>
+          <a className="button-link secondary" href="/validate">Check a setup</a>
           <a className="button-link secondary" href="/active-trade">Review open trades</a>
-          <a className="button-link secondary" href="/profile">Adjust strategy</a>
+          <a className="button-link secondary" href="/profile">Edit trading rules</a>
           <a className="button-link secondary" href="/analytics">Review analytics</a>
         </div>
       </div>

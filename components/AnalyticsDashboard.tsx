@@ -35,17 +35,21 @@ export default function AnalyticsDashboard({account,trades}:{account:Account;tra
   const filtered=useMemo(()=>filterRange(trades,range),[trades,range]);
   const analytics=useMemo(()=>calculateAnalytics(filtered,account.startingBalance),[filtered,account.startingBalance]);
 
+  if(trades.length===0)return <div className="stack"><section className="card analytics-hero"><div><span className="eyebrow">YOUR EVIDENCE BASE</span><h1>Analytics begin after your first closed trade.</h1><p className="muted">Trade Police will not turn an empty history into percentages, streaks, or performance claims.</p></div></section><section className="card empty-state analytics-empty"><h2>Build a trustworthy sample</h2><p>Check a setup, record the trade only if you take it, then close it with the actual outcome. Your first real result will appear here.</p><div className="button-row"><a className="button-link primary" href="/validate">Check a setup</a><a className="button-link secondary" href="/history">Review decision history</a></div></section></div>;
+
   return <div className="stack">
     <section className="card analytics-hero">
       <div>
-        <span className="eyebrow">PERFORMANCE INTELLIGENCE</span>
-        <h1>Your trading, explained.</h1>
-        <p className="muted">Understand where, when and why this account makes or loses money.</p>
+        <span className="eyebrow">RECORDED OUTCOMES</span>
+        <h1>Your actual trading evidence.</h1>
+        <p className="muted">Patterns are calculated only from closed trades recorded on this account.</p>
       </div>
       <div className="range-tabs" aria-label="Analytics period">
         {ranges.map(item=><button className={range===item?'active':''} onClick={()=>setRange(item)} key={item}>{item}</button>)}
       </div>
     </section>
+
+    {filtered.length>0&&filtered.length<10?<p className="warning sample-warning">Early sample: {filtered.length} closed {filtered.length===1?'trade':'trades'} in this period. Treat percentages and streaks as descriptive, not predictive.</p>:null}
 
     <EquityChart
       startingBalance={account.startingBalance}

@@ -32,9 +32,8 @@ test('legacy rules remain learned and existing playbooks are ready for live anal
 });
 
 test('review UI uses human labels and preserves the save action',()=>{
-  for(const label of ["Here&apos;s what I learned about your methodology",'Trading DNA','Rules Learned','Automatic','Manual','External','Minimum Approval Score','Complete Training','Trading DNA learned'])assert.match(builder,new RegExp(label));
+  for(const label of ["Here&apos;s what Trade Police will check",'Trading rules','rules configured','checked by Trade Police','confirmed by you','cannot be verified here','Required readiness','Save strategy','Rules captured'])assert.match(builder,new RegExp(label,'i'));
   assert.match(builder,/onClick=\{\(\) => void save\(\)\}/);
   assert.doesNotMatch(builder,/Methodology rules/);
   assert.doesNotMatch(builder,/>Authorization</);
-  assert.doesNotMatch(builder,/Save Strategy/);
 });

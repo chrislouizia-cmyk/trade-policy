@@ -77,7 +77,7 @@ test('live summary follows nested tree state',()=>{
   const lines=summarizeComposerTree(tree);
   assert.ok(lines.some(line=>line.includes('BOS')));
   assert.ok(lines.some(line=>line.includes('Any of')));
-  assert.match(component,/My Trading DNA/);
+  assert.match(component,/My trading rules/);
   assert.match(component,/updates|summarizeComposerTree\(tree\)/);
 });
 

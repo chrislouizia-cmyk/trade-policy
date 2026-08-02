@@ -57,6 +57,10 @@ export default function DecisionHero({
       : verdictVariant(heroState.verdict);
   const currentReadiness = narrative?.readiness.currentScore ?? heroState.readinessPercent;
   const requiredReadiness = narrative?.readiness.requiredScore ?? threshold;
+  const marketTimestamp=analysis?.latestCandleTimestamp;
+  const marketDate=marketTimestamp?new Date(marketTimestamp):null;
+  const marketAgeMinutes=marketDate&&Number.isFinite(marketDate.getTime())?Math.max(0,Math.round((Date.now()-marketDate.getTime())/60_000)):null;
+  const marketFreshness=marketAgeMinutes==null?'Not checked':marketAgeMinutes<2?'Latest candle just received':`Latest candle ${marketAgeMinutes} min old`;
 
   return (
     <section className="card decision-hero" aria-labelledby="decision-hero-title">
@@ -84,6 +88,11 @@ export default function DecisionHero({
             View Decision Report
           </button>
         </div>
+      </div>
+
+      <div className={`decision-data-trust ${analysis?'available':'idle'}`} role="status">
+        <strong>{analysis?`Market data · ${analysis.provider}`:'Market data not checked'}</strong>
+        <span>{marketFreshness}{analysis?.calculatedAt?` · decision calculated ${new Date(analysis.calculatedAt).toLocaleTimeString()}`:''}</span>
       </div>
 
       <div className="decision-hero-metrics">

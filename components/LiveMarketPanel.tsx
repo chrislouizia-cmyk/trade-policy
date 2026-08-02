@@ -96,9 +96,9 @@ export default function LiveMarketPanel({
     <section className="card live-panel">
       <div className="live-head">
         <div>
-          <p className="brand">LIVE DATA MODE</p>
-          <h2>Analyze configured timeframes automatically</h2>
-          <p className="muted">Trade Police reads {strategyTimeframeLayers(strategy).map(layer=>`${layer.role.toLowerCase()} ${layer.timeframe}`).join(' · ')} from live market data.</p>
+          <p className="brand">STEP 1 · CHECK CURRENT MARKET</p>
+          <h2>Read the evidence for this strategy</h2>
+          <p className="muted">Trade Police checks {strategyTimeframeLayers(strategy).map(layer=>`${layer.role.toLowerCase()} ${layer.timeframe}`).join(' · ')} against your saved rules.</p>
         </div>
         <div>
           <label>
@@ -111,7 +111,7 @@ export default function LiveMarketPanel({
             </select>
           </label>
           <button className="primary" onClick={scan} disabled={loading}>
-            {loading ? scanStages[stageIndex] : analysis ? 'Refresh analysis' : 'Analyze live market'}
+            {loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
           </button>
         </div>
       </div>
@@ -131,7 +131,7 @@ export default function LiveMarketPanel({
         <>{analysis.intelligenceV2 && <MarketIntelligenceBetaResult result={analysis.intelligenceV2} diagnostics={analysis.adminDiagnostics}/>}<SetupReadiness analysis={analysis}/><div className="analysis-strip">
           <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.status==='INSUFFICIENT_DATA'?'Insufficient market data':analysis.status==='ANALYSIS_FAILED'?'Analysis unavailable':analysis.setupType}</strong>
           {analysis.status==='VALID_ANALYSIS'&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span><span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets required readiness':'Below required readiness'}</span></>}
-          <span>Last analyzed: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
+          <span>Checked: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
           <span>{analysis.instrument} · {analysis.timeframe}</span>
           <span>Market data: {analysis.provider} · latest candle {analysis.latestCandleTimestamp}</span>
         </div><div className="grid grid-3 layer-analysis-grid">{analysis.layerAnalysis?.map((layer:any)=><div className="card inset-card" key={`${layer.role}-${layer.timeframe}`}><strong>{layer.role} · {layer.timeframe}</strong><span>{layer.bias}</span><small>{layer.confidence==null?'Context only':`${layer.confidence}% automatic confirmations`}</small>{layer.missingEvidence?.length>0&&<small>Pending: {layer.missingEvidence.join(', ')}</small>}</div>)}</div></>
