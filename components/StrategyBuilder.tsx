@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import InstrumentSelector, { CatalogInstrument } from '@/components/InstrumentSelector';
 import SessionSelector, { PRESET_SESSIONS } from '@/components/SessionSelector';
@@ -96,6 +97,7 @@ function profileFromRow(row: any): StrategyProfile {
 }
 
 export default function StrategyBuilder({ userId }: { userId: string }) {
+  const searchParams = useSearchParams();
   const [profiles, setProfiles] = useState<StrategyProfile[]>([]);
   const [profile, setProfile] = useState<StrategyProfile>(cloneDefault());
   const [catalog, setCatalog] = useState<CatalogInstrument[]>(FALLBACK_CATALOG);
@@ -113,6 +115,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
+  const quickstartRequested = searchParams.get('quickstart') === '1';
 
   useEffect(() => {
     const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Monterrey';
@@ -125,6 +128,16 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   useEffect(() => {
     if (typeof window !== 'undefined') window.localStorage.setItem('trade-police-strategy-draft', JSON.stringify({ profile, sessions, rules, stopLimits }));
   }, [profile, sessions, rules, stopLimits]);
+
+  useEffect(() => {
+    if (!quickstartRequested || loading) return;
+    useStarterRules();
+    if (typeof window !== 'undefined') {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('quickstart');
+      window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    }
+  }, [quickstartRequested, loading]);
 
   useEffect(() => {
     setStopLimits((current) => {
