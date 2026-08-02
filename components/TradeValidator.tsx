@@ -355,7 +355,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         explanation={explanation}
         narrative={narrative}
         onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(explanation?.verdict==='READY'){document.getElementById('final-risk-check')?.scrollIntoView({behavior:'smooth',block:'start'});return}(document.querySelector('[data-market-check]') as HTMLButtonElement|null)?.click()}}
-        onViewReport={() => setShowReasoning(true)}
+        onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
         reportButtonRef={reasoningButtonRef}
       />
 

@@ -15,6 +15,7 @@ import { buildDecisionExplanation } from '@/lib/intelligence/decision-explanatio
 import { buildHistoricalDecisionSnapshot } from '@/lib/historical-decisions/build';
 import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/schema';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
+import { recordReportFailure } from '@/lib/historical-decisions/operations';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const requestId=crypto.randomUUID();
   try {
     const supabase = await createClient();
     const {
@@ -65,7 +67,7 @@ export async function POST(request: Request) {
     const strategy = await loadActiveStrategy(supabase, user.id);
     const {data:scan,error:scanError}=await supabase.from('market_scans').select('id,user_id,strategy_profile_id,strategy_revision_id,instrument,analysis,server_created').eq('id',parsed.data.analysisId).eq('user_id',user.id).maybeSingle();
     if(scanError||!scan||!scan.server_created)return apiError('ANALYSIS_NOT_FOUND','The verified market analysis could not be found. Run the market check again.',409);
-    if(scan.strategy_profile_id!==strategy.id||scan.strategy_revision_id!==strategyRevisionId(strategy)||scan.instrument!==parsed.data.instrument)return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis no longer matches the active trading rules. Run the market check again.',409);
+    if(scan.strategy_profile_id!==strategy.id||scan.strategy_revision_id!==strategyRevisionId(strategy)||scan.instrument!==parsed.data.instrument){await recordReportFailure({reasonCode:'STRATEGY_REVISION_MISMATCH',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis no longer matches the active trading rules. Run the market check again.',409)}
     const authoritativeAnalysis=scan.analysis as ChartAnalysis;
     if(!authoritativeAnalysis||!['VALID_ANALYSIS','NO_RELEVANT_EVIDENCE'].includes(authoritativeAnalysis.analysisStatus)||authoritativeAnalysis.instrument!==parsed.data.instrument)return apiError('ANALYSIS_NOT_VALID','A completed verified market analysis is required.',409);
     const dailyContext = await loadDailyTradeContext({
@@ -101,8 +103,8 @@ export async function POST(request: Request) {
     }
 
     const explanation=buildDecisionExplanation({analysis:authoritativeAnalysis,result,narrative:decisionNarrative,evidenceReport,strategy});
-    const snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});
-    const validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot);
+    let snapshot:ReturnType<typeof buildHistoricalDecisionSnapshot>,validatedSnapshot:ReturnType<typeof historicalDecisionSnapshotV1Schema.parse>;
+    try{snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot)}catch{await recordReportFailure({reasonCode:'FINGERPRINT_FAILURE',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('REPORT_SNAPSHOT_FAILED','The decision was completed but its historical snapshot could not be prepared. No report was saved.',503)}
     const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
     const aiExplanation=aiParts.length?{reportId:snapshot.reportId,explanationVersion:'1',provider:'OpenAI',...(process.env.OPENAI_MODEL?{model:process.env.OPENAI_MODEL}:{}),prose:aiParts.join('\n\n'),createdAt:new Date().toISOString(),sourceVerdict:snapshot.verdict,sourceDeterministicFingerprint:snapshot.deterministicFingerprint,authoritative:false}:null;
     const {data:source,error:sourceError}=await createAdminClient().from('decision_report_sources').insert({user_id:user.id,source_analysis_id:scan.id,strategy_id:strategy.id,schema_version:snapshot.schemaVersion,deterministic_fingerprint:snapshot.deterministicFingerprint,snapshot_json:validatedSnapshot,ai_explanation_json:aiExplanation}).select('id,expires_at').single();

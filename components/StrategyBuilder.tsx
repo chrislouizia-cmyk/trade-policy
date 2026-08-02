@@ -285,7 +285,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setMessage('');
     if(refinementRequested){setVerification({profile:savedProfile,rules:[...rules]});setLearningConfirmation(null);setRefinementRequested(false)}
     else setLearningConfirmation({profile:savedProfile,rules:[...rules]});
-    void trackBetaEvent(updatingExisting?'PLAYBOOK_UPDATED':'PLAYBOOK_CREATED',result.strategyId);
+    void trackBetaEvent(updatingExisting?'PLAYBOOK_UPDATED':'PLAYBOOK_CREATED',result.strategyId);void trackBetaEvent('STRATEGY_SAVED',result.strategyId);
     window.dispatchEvent(new CustomEvent('trade-police:strategy-changed',{detail:{strategyId:result.strategyId}}));
     } catch (error) {
       setMessage(error instanceof Error&&error.message.startsWith('Could not save strategy:')?error.message:`Could not save strategy: ${error instanceof Error?error.message:'Unknown persistence error.'}`);

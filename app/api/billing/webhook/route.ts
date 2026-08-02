@@ -7,6 +7,7 @@ import {getValidatedProPrice} from '@/lib/billing/validated-config';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {resolveCustomerBinding,type CustomerBinding} from '@/lib/billing/webhook-security';
 import {isUuid,safeStripeReason,stripeOperationalLog,StripeBillingError,validateSubscriptionPrice,type StripeBillingReason} from '@/lib/billing/stripe-verification';
+import {recordServerBetaEvent} from '@/lib/server/beta-events';
 
 export const runtime='nodejs';export const dynamic='force-dynamic';
 type Admin=ReturnType<typeof createAdminClient>;
@@ -81,7 +82,7 @@ export async function POST(request:Request){
   const admin=createAdminClient();
   try{
     const claim=await claimEvent(admin,event);if(claim==='PROCESSED')return NextResponse.json({received:true,duplicate:true});if(claim==='PROCESSING')return apiError('WEBHOOK_IN_PROGRESS','Webhook is already processing.',409);
-    try{await processEvent(admin,event);await finishEvent(admin,event.id,'PROCESSED',null);return NextResponse.json({received:true})}catch(error){
+    try{await processEvent(admin,event);await finishEvent(admin,event.id,'PROCESSED',null);if(event.type==='checkout.session.completed'){const candidate=(event.data.object as {client_reference_id?:unknown}).client_reference_id;if(typeof candidate==='string'&&isUuid(candidate))await recordServerBetaEvent(candidate,'CHECKOUT_COMPLETED')}return NextResponse.json({received:true})}catch(error){
       const reason=safeStripeReason(error),acknowledge=!reason.retryable;await finishEvent(admin,event.id,acknowledge?'PROCESSED':'FAILED',reason.code);stripeOperationalLog('webhook incident',{requestId,eventId:event.id,eventType:event.type,code:reason.code,retryable:reason.retryable});
       return acknowledge?NextResponse.json({received:true,quarantined:true}):apiError('WEBHOOK_PROCESSING_FAILED','Webhook could not be processed.',500);
     }

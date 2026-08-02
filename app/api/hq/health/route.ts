@@ -1,10 +1,12 @@
 import {NextResponse} from 'next/server';
 import {createClient} from '@/lib/supabase/server';
+import {createAdminClient} from '@/lib/supabase/admin';
+import {billingConfig,billingEnabled} from '@/lib/billing/config';
 
 export const runtime='nodejs';
 type Status='operational'|'degraded'|'unavailable'|'not_configured'|'not_monitored';
-type Service={status:Status;latencyMs?:number;message:string};
-let cached:{expires:number;payload:{checkedAt:string;services:Record<string,Service>}}|null=null;
+type Service={status:Status;latencyMs?:number;message:string};type OperationalStatus='HEALTHY'|'DEGRADED'|'UNAVAILABLE';type OperationalCheck={status:OperationalStatus;count?:number;counts?:Record<string,number>;message:string};
+let cached:{expires:number;payload:{checkedAt:string;services:Record<string,Service>;privateBeta:Record<string,OperationalCheck>}}|null=null;
 const CACHE_MS=45_000,DEGRADED_MS=2_000,TIMEOUT_MS=5_000;
 
 async function timed<T>(work:(signal:AbortSignal)=>Promise<T>){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);const started=performance.now();try{return{value:await work(controller.signal),latencyMs:Math.round(performance.now()-started)}}finally{clearTimeout(timer)}}
@@ -27,6 +29,12 @@ export async function GET(){
   try{const check=await timed(async()=>{const {runDeterministicEngineHealthCheck}=await import('@/lib/server/engine-health-check');return runDeterministicEngineHealthCheck()});services.tradingEngine={...success(check.latencyMs,'Deterministic self-check passed'),status:'operational'}}catch{services.tradingEngine={status:'unavailable',message:'Deterministic self-check failed'}}
   services.email={status:'not_configured',message:'No email provider connected'};
   await Promise.all(Object.entries(services).map(([service,value])=>supabase.rpc('staff_record_service_health',{p_service:service,p_status:value.status,p_latency_ms:value.latencyMs??null,p_message:value.message}))).catch(()=>undefined);
-  const payload={checkedAt:new Date().toISOString(),services};cached={expires:Date.now()+CACHE_MS,payload};
+  const privateBeta:Record<string,OperationalCheck>={
+    supabase:{status:services.supabase.status==='unavailable'?'UNAVAILABLE':services.supabase.status==='degraded'?'DEGRADED':'HEALTHY',message:'Authenticated database health probe'},
+    marketDataProvider:{status:services.twelveData.status==='unavailable'?'UNAVAILABLE':services.twelveData.status==='degraded'||services.twelveData.status==='not_configured'?'DEGRADED':'HEALTHY',message:'Twelve Data availability probe'},
+  };
+  try{if(!billingEnabled())privateBeta.billingConfiguration={status:'DEGRADED',message:'Billing is disabled'};else{billingConfig();privateBeta.billingConfiguration={status:'HEALTHY',message:'Required server-side billing configuration is present'}}}catch{privateBeta.billingConfiguration={status:'UNAVAILABLE',message:'Required billing configuration is incomplete'}}
+  try{const {data,error}=await createAdminClient().rpc('private_beta_report_operations_summary');if(error)throw error;const backlog=Number(data?.expiredSourceBacklog??0),failures=Number(data?.recentFailureCount??0);privateBeta.historicalReportPersistence={status:'HEALTHY',count:Number(data?.reportCount??0),message:'Historical report storage is available'};privateBeta.expiredSourceBacklog={status:backlog>100?'DEGRADED':'HEALTHY',count:backlog,message:'Expired unsaved sources awaiting cleanup'};privateBeta.recentSanitizedIncidents={status:failures>0?'DEGRADED':'HEALTHY',count:failures,counts:data?.recentFailures??{},message:'Sanitized report incidents in the last 24 hours'}}catch{privateBeta.historicalReportPersistence={status:'UNAVAILABLE',message:'Historical report storage could not be verified'};privateBeta.expiredSourceBacklog={status:'UNAVAILABLE',message:'Expired source backlog could not be read'};privateBeta.recentSanitizedIncidents={status:'UNAVAILABLE',message:'Recent incident counts could not be read'}}
+  const payload={checkedAt:new Date().toISOString(),services,privateBeta};cached={expires:Date.now()+CACHE_MS,payload};
   return NextResponse.json(payload,{headers:{'Cache-Control':'private, max-age=45'}});
 }

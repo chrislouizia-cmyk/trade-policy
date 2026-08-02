@@ -1,5 +1,8 @@
 # Private Beta Launch Checklist
 
+- [ ] Apply `043_private_beta_operational_observability.sql`, set server-only `CRON_SECRET`, run cleanup in dry-run mode, then verify the scheduled deletion count.
+- [ ] Confirm `/api/hq/health` and `/api/hq/historical-reports/audit` reject clients and return no secrets or raw errors.
+
 - [ ] Apply `042_historical_decision_reports.sql`; verify browsers can read only their own reports and cannot write reports or market scans.
 - [ ] Verify the server-only Supabase key supports analysis capture and atomic report promotion.
 - [ ] Smoke-test save, duplicate save, owner reopen, cross-user denial, unknown schema handling, and AI-unavailable save.

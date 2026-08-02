@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { HISTORICAL_DECISION_SCHEMA_VERSION, type HistoricalDecisionReportSnapshot } from '@/types/historical-decision';
+import { isSupportedHistoricalReportVersion } from './version-registry';
 
 const optionalText=z.string().min(1).optional();
 const evidence=z.object({id:z.string().min(1),ruleId:optionalText,title:z.string().min(1),description:z.string().min(1),state:z.enum(['CONFIRMED','MISSING','BLOCKED','NOT_AVAILABLE','NOT_REQUIRED']),required:z.boolean(),supported:z.boolean(),observedValue:optionalText,expectedValue:optionalText,detectedAt:optionalText,source:optionalText,nextAction:optionalText,evidenceIds:z.array(z.string().min(1)),deterministic:z.literal(true)}).strict();
@@ -8,7 +9,7 @@ export const historicalDecisionSnapshotV1Schema=z.object({reportId:z.string().uu
 export type HistoricalSnapshotParseResult={ok:true;snapshot:HistoricalDecisionReportSnapshot}|{ok:false;reason:'INVALID'|'UNSUPPORTED_VERSION';version?:string};
 export function parseHistoricalDecisionSnapshot(value:unknown):HistoricalSnapshotParseResult{
   const version=value&&typeof value==='object'&&'schemaVersion' in value?String((value as {schemaVersion?:unknown}).schemaVersion):undefined;
-  if(version!==HISTORICAL_DECISION_SCHEMA_VERSION)return {ok:false,reason:'UNSUPPORTED_VERSION',version};
+  if(!isSupportedHistoricalReportVersion(version))return {ok:false,reason:'UNSUPPORTED_VERSION',version};
   const parsed=historicalDecisionSnapshotV1Schema.safeParse(value);
   return parsed.success?{ok:true,snapshot:parsed.data}:{ok:false,reason:'INVALID',version};
 }

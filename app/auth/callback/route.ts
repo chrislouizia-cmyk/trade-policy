@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { recordServerBetaEvent } from '@/lib/server/beta-events';
 
 function safeNext(value: string | null) {
   return value && value.startsWith('/') && !value.startsWith('//')
@@ -38,5 +39,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(target);
   }
 
+  const {data:{user}}=await supabase.auth.getUser();
+  const recentlyCreated=user?.created_at&&Date.now()-new Date(user.created_at).getTime()<10*60_000;
+  if(user&&(type==='signup'||(next==='/onboarding'&&recentlyCreated)))await recordServerBetaEvent(user.id,'SIGNUP_COMPLETED');
   return NextResponse.redirect(new URL(next, url.origin));
 }

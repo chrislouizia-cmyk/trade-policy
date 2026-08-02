@@ -1,5 +1,8 @@
 # Known Private Beta Limitations
 
+- Expired report-source cleanup depends on Vercel Cron and a correctly configured server-only `CRON_SECRET`; monitor the HQ backlog after deployments.
+- Schema tooling audits versions but intentionally does not migrate historical report contents in Sprint 4A.
+
 - Authoritative historical reports are available only for decisions completed after migration 042. Earlier browser-writable trade activity cannot be safely converted.
 - Unsaved completed-decision sources expire after 24 hours. Saved reports are immutable and currently have no customer delete control.
 - History displays at most the 50 most recent reports matching the selected filters.
