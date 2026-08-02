@@ -18,6 +18,7 @@ import { normalizeStrategyProfile } from '@/lib/strategy-policy';
 import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
+import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -36,6 +37,17 @@ const FALLBACK_CATALOG: CatalogInstrument[] = [
 
 function cloneDefault(): StrategyProfile {
   return JSON.parse(JSON.stringify(DEFAULT_STRATEGY_PROFILE));
+}
+
+function createEmptyStrategyProfile(): StrategyProfile {
+  const next = cloneDefault();
+  next.id = undefined;
+  next.name = 'New Strategy';
+  next.instruments = [];
+  next.instrumentTradeLimits = {};
+  next.stopLimits = {};
+  next.stopLimitSettings = [];
+  return next;
 }
 
 function profileFromRow(row: any): StrategyProfile {
@@ -99,11 +111,11 @@ function profileFromRow(row: any): StrategyProfile {
 export default function StrategyBuilder({ userId }: { userId: string }) {
   const searchParams = useSearchParams();
   const [profiles, setProfiles] = useState<StrategyProfile[]>([]);
-  const [profile, setProfile] = useState<StrategyProfile>(cloneDefault());
+  const [profile, setProfile] = useState<StrategyProfile>(createEmptyStrategyProfile);
   const [catalog, setCatalog] = useState<CatalogInstrument[]>(FALLBACK_CATALOG);
   const [sessions, setSessions] = useState<StrategySession[]>(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
   const [rules, setRules] = useState<StrategyRule[]>(DEFAULT_RULES);
-  const [stopLimits, setStopLimits] = useState<StopLimit[]>(cloneDefault().stopLimitSettings ?? []);
+  const [stopLimits, setStopLimits] = useState<StopLimit[]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,7 +143,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (!quickstartRequested || loading) return;
-    useStarterRules();
+    setMessage('Starter template includes XAUUSD. Review the template and choose Use starter rules to apply it explicitly.');
     if (typeof window !== 'undefined') {
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.delete('quickstart');
@@ -140,10 +152,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   }, [quickstartRequested, loading]);
 
   useEffect(() => {
-    setStopLimits((current) => {
-      const bySymbol = new Map(current.map((limit) => [limit.instrument, limit]));
-      return profile.instruments.map((symbol) => bySymbol.get(symbol) ?? { instrument: symbol, method: symbol.startsWith('XAU') || symbol.startsWith('XAG') ? 'POINTS' : 'PIPS', minimumValue: symbol.startsWith('XAU') ? 80 : 10, preferredValue: symbol.startsWith('XAU') ? 180 : 18, maximumValue: symbol.startsWith('XAU') ? 300 : 25 });
-    });
+    setStopLimits((current) => deriveStopLimitsForInstruments(profile.instruments, current));
   }, [profile.instruments]);
 
   function updateUserTimezone(timezone: string) {
@@ -186,29 +195,48 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       supabase.from('strategy_instruments').select('*').eq('strategy_id', target.id).eq('enabled', true).order('sort_order'),
     ]);
 
-    if (instrumentRows?.length) setProfile((current) => ({ ...current, instruments: instrumentRows.map((row: any) => row.symbol) }));
+    const savedInstruments = instrumentRows?.length ? instrumentRows.map((row: any) => row.symbol) : target.instruments;
+    const hydrated = hydrateDraftFromSavedProfile({
+      id: target.id,
+      name: target.name,
+      description: target.description ?? '',
+      isDefault: target.isDefault,
+      instruments: savedInstruments,
+    }, stopRows?.length ? stopRows.map((row: any) => ({ instrument: row.instrument, method: row.method, minimumValue: Number(row.minimum_value ?? 0), preferredValue: Number(row.preferred_value ?? row.maximum_value), maximumValue: Number(row.maximum_value), atrMultiplier: row.atr_multiplier === null ? undefined : Number(row.atr_multiplier) })) : []);
+    setProfile({ ...target, instruments: hydrated.profile.instruments });
     setSessions(sessionRows?.length ? sessionRows.map((row: any) => ({ id: row.id, sessionCode: row.session_code, name: row.name, timezone: row.timezone, startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), days: row.days, allowOpenOutside: row.allow_open_outside, allowHoldOutside: row.allow_hold_outside, isCustom: row.is_custom })) : PRESET_SESSIONS.filter((item) => target.allowedSessions.includes(item.sessionCode)));
     setRules(ruleRows?.length ? ruleRows.map((row: any) => ({ ruleKey: row.rule_key, label: row.label, enabled: row.enabled, mandatory: row.mandatory, weight: Number(row.weight), minimumConfidence: row.minimum_confidence, timeframeRole: row.timeframe_role, evaluationMode:row.evaluation_mode??'AUTOMATIC' })) : DEFAULT_RULES.map((rule) => ({ ...rule, mandatory: target.requiredEvidence.includes(rule.ruleKey as EvidenceKey), weight: target.evidenceWeights[rule.ruleKey as EvidenceKey] ?? rule.weight })));
-    setStopLimits(stopRows?.length ? stopRows.map((row: any) => ({ instrument: row.instrument, method: row.method, minimumValue: Number(row.minimum_value ?? 0), preferredValue: Number(row.preferred_value ?? row.maximum_value), maximumValue: Number(row.maximum_value), atrMultiplier: row.atr_multiplier === null ? undefined : Number(row.atr_multiplier) })) : target.instruments.map((symbol) => ({ instrument: symbol, method: 'PIPS', minimumValue: 10, preferredValue: 18, maximumValue: 25 })));
+    setStopLimits(hydrated.stopLimits);
     setMessage('');
   }
 
   function startNew() {
+    const draft = createNewStrategyDraft();
     const next = cloneDefault();
     next.id = undefined;
-    next.name = 'New Strategy';
+    next.name = draft.profile.name;
     next.isDefault = profiles.length === 0;
+    next.instruments = draft.profile.instruments;
     setProfile(next);
     setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
     setRules(DEFAULT_RULES);
-    setStopLimits(next.stopLimitSettings ?? []);
+    setStopLimits([]);
     setMessage('Creating a new strategy profile.');
   }
 
-  function useStarterRules(){
+  function useStarterRules(confirmed = false){
+    const selection = createStarterTemplateSelection();
+    if (!confirmed) {
+      const shouldApply = typeof window !== 'undefined' ? window.confirm(`This starter template includes: ${selection.instruments.join(', ')}. Apply it now?`) : true;
+      if (!shouldApply) {
+        setMessage('Starter template not applied. You can continue building from scratch.');
+        return;
+      }
+    }
+    const draft = createStarterStrategyDraft();
     const next=cloneDefault();
-    next.id=undefined;next.name='My Starter Strategy';next.description='A transparent starting point. Review every rule before using it with real risk.';next.isDefault=true;next.instruments=['XAUUSD'];next.instrumentTradeLimits={XAUUSD:2};
-    setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits((next.stopLimitSettings??[]).filter(item=>item.instrument==='XAUUSD'));setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
+    next.id=undefined;next.name=draft.profile.name;next.description=draft.profile.description;next.isDefault=true;next.instruments=selection.instruments;next.instrumentTradeLimits={};
+    setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits([]);setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
   }
 
   async function save() {
@@ -285,10 +313,10 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     };
     const response=await fetch('/api/strategies/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       strategyId:profile.id??null,activate:Boolean(profile.isDefault),profile:row,
-      instruments:profile.instruments.map((symbol,index)=>({symbol,market_type:symbol.startsWith('XAU')||symbol.startsWith('XAG')?'METALS':'FOREX',provider_symbol:null,sort_order:index,enabled:true})),
+      instruments:buildPayloadInstruments(profile.instruments),
       sessions:sessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})),
       rules:rules.map((rule,index)=>({rule_key:rule.ruleKey,label:rule.label,enabled:rule.enabled,mandatory:rule.mandatory,weight:rule.weight,minimum_confidence:rule.minimumConfidence,timeframe_role:rule.timeframeRole,evaluation_mode:rule.evaluationMode??'AUTOMATIC',sort_order:index})),
-      stopLimits:stopLimits.filter(limit=>limit.maximumValue>0).map(limit=>({instrument:limit.instrument,method:limit.method,minimum_value:limit.minimumValue??0,preferred_value:limit.preferredValue??limit.maximumValue,maximum_value:limit.maximumValue,atr_multiplier:limit.atrMultiplier??null})),
+      stopLimits:buildPayloadStopLimits(profile.instruments, stopLimits),
     })});
     const result=await response.json();
     if(!response.ok)throw new Error(apiErrorMessage(result,'Could not save strategy.'));
@@ -391,7 +419,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
-        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">FASTEST PATH TO A FIRST DECISION</p><h2>Start with transparent starter rules</h2><p>Load a conservative example for XAUUSD, review every rule, then save it as your own. The template does not bypass confirmation and never changes how verdicts are calculated.</p><div className="button-row"><button className="primary" type="button" onClick={useStarterRules}>Use starter rules</button><button type="button" onClick={startNew}>Build from scratch</button></div></section>}
+        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">FASTEST PATH TO A FIRST DECISION</p><h2>Start with transparent starter rules</h2><p>Load a conservative example for XAUUSD, review every rule, then save it as your own. The template does not bypass confirmation and never changes how verdicts are calculated.</p><div className="button-row"><button className="primary" type="button" onClick={() => useStarterRules()}>Use starter rules</button><button type="button" onClick={startNew}>Build from scratch</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">
           <div className="conversation-prompt"><span aria-hidden="true">TP</span><div><p className="muted">LET'S START WITH YOUR APPROACH</p><h2>What do you call the way you trade?</h2><p>Describe it in your own terms. I’ll turn your answers into rules I can check consistently.</p></div>{profile.isDefault && <strong className="badge authorized">ACTIVE</strong>}</div>
