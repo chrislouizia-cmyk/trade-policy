@@ -64,7 +64,7 @@ export default function DecisionHero({
       <span className="sr-only">View Decision Report</span>
       <div className="decision-hero-head">
         <div className="decision-hero-primary">
-          <p className="brand">SHOULD I TAKE THIS TRADE?</p>
+          <p className="brand">SHOULD I RISK MY MONEY RIGHT NOW?</p>
           <h1 id="decision-hero-title" className="decision-hero-verdict">
             <span className="sr-only">Decision verdict: </span>
             <span className={answerVariant}>{answer}</span>
@@ -95,6 +95,7 @@ export default function DecisionHero({
             </strong>
           </div>
           <p className="decision-hero-metric-copy">{narrative?.readiness.label ?? readinessInterpretation}</p>
+          <p className="decision-hero-metric-copy">Readiness summarizes confirmed strategy evidence. Mandatory rules still control the final decision.</p>
           {heroState.showReadiness && (
             <div className="copilot-confidence-bar" aria-hidden="true">
               <span className={`copilot-confidence-fill ${dockStatus.variant}`} style={{ width: readinessFill }} />

@@ -34,7 +34,7 @@ export default function AppHeader({
         </div>
 
         <div className="app-brand-row">
-          <a href="/" className="app-brand">
+          <a href="/dashboard" className="app-brand">
             <span className="brand-mark">TP</span>
             <span>
               <strong>Trade Police</strong>
@@ -47,10 +47,10 @@ export default function AppHeader({
         </div>
 
         <nav className="primary-nav" aria-label="Primary navigation">
-          <a href="/">Dashboard</a>
-          <a href="/validate">Validate</a>
-          <a href="/active-trade">Active trades</a>
-          <a href="/accounts">Accounts</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/validate">Decision</a>
+          <a href="/history">History</a>
+          <a href="/account">Account</a>
           <a href="/profile">Strategies</a>
           <a href="/analytics">Analytics</a>
         </nav>

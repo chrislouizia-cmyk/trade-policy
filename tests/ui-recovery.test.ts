@@ -7,7 +7,7 @@ function source(path:string){
 }
 
 test('dashboard completion uses account, active strategy, and prior market analysis',()=>{
-  const page=source('app/page.tsx');
+  const page=source('app/dashboard/page.tsx');
   const dashboard=source('components/Dashboard.tsx');
 
   assert.match(page,/from\('market_scans'\).*count:'exact'.*head:true/);

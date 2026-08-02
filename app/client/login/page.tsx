@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 export default async function ClientLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; mode?: string }>;
 }) {
   const params = await searchParams;
   const next = params.next?.startsWith('/') && !params.next.startsWith('/hq') ? params.next : '/validate';
@@ -25,7 +25,7 @@ export default async function ClientLoginPage({
         <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
         <h1>Trader sign in</h1>
         <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
-        <ClientLoginForm next={next} />
+        <ClientLoginForm next={next} initialMode={params.mode==='signup'?'signup':'login'} />
       </section>
     </main>
   );

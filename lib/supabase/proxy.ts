@@ -31,7 +31,10 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   const publicPaths = new Set([
+    '/',
     '/access',
+    '/pricing',
+    '/legal',
     '/client/login',
     '/hq/login',
     '/forgot-password',

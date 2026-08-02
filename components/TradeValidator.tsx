@@ -296,7 +296,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
     <div className="validate-workspace-grid">
     <section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title">
-      <p className="brand">SHOULD I TAKE THIS TRADE?</p>
+      <p className="brand">SHOULD I RISK MY MONEY RIGHT NOW?</p>
       <h2 id="mobile-decision-title">{narrative?.recommendation??aiStatus.label}</h2>
       <strong>{narrative?.headline??aiStatus.detail}</strong>
       {narrative?.explanation?<p>{narrative.explanation}</p>:null}
@@ -388,6 +388,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
       <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
       <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
+      <p className="decision-integrity">Decision status is determined by your configured rules and detected evidence. AI explanation cannot override the result.</p>
       <div className="reasoning-modal-body"><div className="trade-reasoning-grid">
         <ReasoningSection label="Decision" value={decisionLabel} tone={result?.verdict === 'AUTHORIZED' ? 'positive' : result?.verdict === 'REJECTED' || result?.verdict === 'WAIT' ? 'warning' : 'neutral'} support={decisionCopy} />
         <ReasoningSection label="Readiness" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Required readiness ${threshold}%` : readinessInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>

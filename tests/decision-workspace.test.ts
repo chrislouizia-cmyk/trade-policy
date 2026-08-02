@@ -176,7 +176,7 @@ test('Analyze consumes the additive Decision Narrative contract without recreati
   assert.match(tradeValidator, /optionalMissing\.map/);
   assert.match(tradeValidator, /narrative\.nextActions\.map/);
   assert.match(tradeValidator, /educationalExplanation/);
-  assert.match(decisionHero, /SHOULD I TAKE THIS TRADE\?/);
+  assert.match(decisionHero, /SHOULD I RISK MY MONEY RIGHT NOW\?/);
   assert.match(decisionHero, /narrative\?\.recommendation/);
   assert.doesNotMatch(tradeValidator, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(decisionHero, /dangerouslySetInnerHTML/);

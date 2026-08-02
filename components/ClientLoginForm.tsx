@@ -4,8 +4,8 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
-export default function ClientLoginForm({ next }: { next: string }) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+export default function ClientLoginForm({ next, initialMode='login' }: { next: string; initialMode?:'login'|'signup' }) {
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +24,7 @@ export default function ClientLoginForm({ next }: { next: string }) {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/complete-profile`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
           data: { account_type: 'customer' },
         },
       });

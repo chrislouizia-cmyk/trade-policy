@@ -111,7 +111,7 @@ export function getDecisionHeroState({
   ) {
     return {
       verdict: 'DATA UNAVAILABLE',
-      instruction: 'Current market data is unavailable.',
+      instruction: 'Current market data could not be verified. Do not use this result to make a trading decision.',
       marketState,
       showReadiness: false,
       readinessPercent: null,
@@ -133,7 +133,7 @@ export function getDecisionHeroState({
   if (result?.verdict === 'REJECTED' || dockStatus.label === 'BLOCKED') {
     return {
       verdict: 'BLOCKED',
-      instruction: 'This trade conflicts with your rules.',
+      instruction: 'This setup conflicts with one or more mandatory strategy rules.',
       marketState,
       showReadiness,
       readinessPercent,
@@ -143,7 +143,7 @@ export function getDecisionHeroState({
   if (result?.verdict === 'AUTHORIZED' || dockStatus.label === 'READY') {
     return {
       verdict: 'READY',
-      instruction: 'The setup is ready for final review.',
+      instruction: 'The required conditions are present. Complete your final risk review before acting.',
       marketState,
       showReadiness,
       readinessPercent,
