@@ -21,6 +21,17 @@ test('pricing states the real Pro price and exact plan limits',()=>{
   assert.match(pricing,/same deterministic decision logic/);
 });
 
+test('pricing cards keep aligned CTAs and equal desktop card height',()=>{
+  const pricing=read('app/pricing/page.tsx');
+  const styles=read('app/trade-police.css');
+  assert.match(pricing,/Join the waitlist/);
+  assert.match(pricing,/plan-cta/);
+  assert.match(styles,/\.plan-card\{[^}]*display:flex;[^}]*flex-direction:column/);
+  assert.match(styles,/\.plan-card \.plan-cta-wrap\{[^}]*margin-top:auto/);
+  assert.match(styles,/\.plan-card \.plan-features\{[^}]*min-height:220px/);
+  assert.match(styles,/\.plan-card \.plan-cta\{[^}]*height:48px;[^}]*min-height:48px/);
+});
+
 test('starter rules accelerate activation without bypassing review or save',()=>{
   const builder=read('components/StrategyBuilder.tsx');
   assert.match(builder,/Use starter rules/);
