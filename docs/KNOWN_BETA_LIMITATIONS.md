@@ -1,8 +1,11 @@
 # Known Private Beta Limitations
 
+- Authoritative historical reports are available only for decisions completed after migration 042. Earlier browser-writable trade activity cannot be safely converted.
+- Unsaved completed-decision sources expire after 24 hours. Saved reports are immutable and currently have no customer delete control.
+- History displays at most the 50 most recent reports matching the selected filters.
+
 - Stripe Checkout, verified webhooks, and the Customer Portal are implemented but require migrations 039 and 041, an account-verified $29 USD monthly Test Price, Portal and webhook configuration, and an end-to-end Test Mode Vercel Preview checkout before activation. Live Mode remains disabled.
 - Onboarding captures identity, experience, and trading style, then guides the customer to Strategy DNA. Instrument and risk preferences live in the Strategy Builder rather than a separate onboarding wizard.
-- Decision history is a minimal read-only view of saved trade records. Dedicated permalink reports, outcome editing, and rich journal notes are not yet available.
 - Market availability depends on the configured Twelve Data plan, quotas, supported symbols, and candle freshness. The product must be treated as unavailable when current data cannot be verified.
 - Some Strategy DNA rules require manual or external confirmation. Unsupported mandatory rules remain pending/blocking and cannot produce READY.
 - AI explanation is optional and may be unavailable. It cannot alter deterministic status, authorization, mandatory rules, or risk limits.

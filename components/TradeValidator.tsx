@@ -31,7 +31,8 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
-type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string };
+type ReportSaveState={status:'idle'|'saving'|'saved'|'error';message?:string;reportId?:string;reportUrl?:string;savedAt?:string};
 
 type SavedSetup = {
   id:string; createdAt:string; source:'SUGGESTED'|'EXECUTED'; instrument:string; direction:string; setupType:string;
@@ -61,6 +62,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [loading,setLoading]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
   const [savingTrade,setSavingTrade]=useState(false);
+  const [reportSave,setReportSave]=useState<ReportSaveState>({status:'idle'});
   const [error,setError]=useState('');
   const [autoChecks,setAutoChecks]=useState<Record<string,boolean>>({});
   const [manualEvidence,setManualEvidence]=useState<Record<string,ManualConfirmationState>>(()=>initialManualConfirmations(initialStrategy.rules??[]));
@@ -81,6 +83,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const reasoningButtonRef=useRef<HTMLButtonElement>(null);
   const reasoningCloseRef=useRef<HTMLButtonElement>(null);
   const analysisAttemptActive=useRef(false);
+  const reportSaveStatusRef=useRef<HTMLDivElement>(null);
+  const reportIdempotencyRef=useRef<string>('');
 
   useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
@@ -176,6 +180,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   }
 
   function applyLiveAnalysis(data: ChartAnalysis){
+    setReportSave({status:'idle'});reportIdempotencyRef.current='';
     setAnalysis(data);
     syncEvidenceState(data);
   }
@@ -185,7 +190,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
+    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;body.analysisId=analysis?.analysisId;
     analysisAttemptActive.current=true;
     void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
@@ -200,6 +205,13 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       analysisAttemptActive.current=false;
       setLoading(false);
     }
+  }
+
+  async function saveDecisionReport(){
+    if(!result?.reportSourceId)return;
+    if(!reportIdempotencyRef.current)reportIdempotencyRef.current=crypto.randomUUID();
+    setReportSave({status:'saving',message:'Saving Decision Report…'});
+    try{const response=await fetch('/api/decisions/save-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceDecisionId:result.reportSourceId,idempotencyKey:reportIdempotencyRef.current})});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,"We couldn't save this report. Your decision is still visible and no additional analysis was used."));if(!data||typeof data!=='object')throw new Error('The report save response was invalid.');const saved=data as {reportId:string;reportUrl:string;savedAt:string;duplicate:boolean};setReportSave({status:'saved',message:saved.duplicate?'This Decision Report was already saved. Opening the existing copy is safe.':'Decision Report saved.',reportId:saved.reportId,reportUrl:saved.reportUrl,savedAt:saved.savedAt});requestAnimationFrame(()=>reportSaveStatusRef.current?.focus())}catch(value){setReportSave({status:'error',message:value instanceof Error?value.message:"We couldn't save this report. Your decision is still visible and no additional analysis was used. Try again."});requestAnimationFrame(()=>reportSaveStatusRef.current?.focus())}
   }
 
   async function updateManualConfirmation(ruleKey:string,state:ManualConfirmationState){
@@ -361,6 +373,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       </>}
 
       <section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Rule score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}<div className="discipline-action-row">{result.verdict==='AUTHORIZED'?<button type="button" onClick={()=>saveTakenTrade(false)} disabled={savingTrade}>{savingTrade?'Saving trade…':'Record trade taken'}</button>:result.overrideAllowed!==false?<details className="override-disclosure"><summary>Advanced: record against this result</summary><p className="muted">This preserves the original verdict and requires your reason. It does not change or approve the decision.</p><button type="button" onClick={()=>saveTakenTrade(true)} disabled={savingTrade}>{savingTrade?'Saving trade…':'Record against verdict'}</button></details>:null}<button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View active trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
+      <section className="workspace-section save-report-card"><h3>Historical Decision Report</h3><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section>
     </div>
       </div>
     </aside>

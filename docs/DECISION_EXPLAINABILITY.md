@@ -1,5 +1,7 @@
 # Decision Explainability
 
+Completed explanations can be saved as schema-versioned historical snapshots. The deterministic snapshot and optional AI educational prose are persisted separately; reopening uses saved content only and never recalculates the verdict, evidence, or readiness. See `HISTORICAL_DECISION_REPORTS.md`.
+
 Trade Police presents decisions in this order:
 
 1. Market and data state.

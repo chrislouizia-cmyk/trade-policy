@@ -1,5 +1,9 @@
 # Private Beta Launch Checklist
 
+- [ ] Apply `042_historical_decision_reports.sql`; verify browsers can read only their own reports and cannot write reports or market scans.
+- [ ] Verify the server-only Supabase key supports analysis capture and atomic report promotion.
+- [ ] Smoke-test save, duplicate save, owner reopen, cross-user denial, unknown schema handling, and AI-unavailable save.
+
 ## Configuration
 
 - [ ] Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the production Supabase project.

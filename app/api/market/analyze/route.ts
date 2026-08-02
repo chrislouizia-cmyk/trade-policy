@@ -11,6 +11,8 @@ import { explainDeterministicAnalysis } from '@/lib/server/openai-commentary';
 import { StrategyConfigurationError } from '@/lib/strategy-policy';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
+import {createAdminClient} from '@/lib/supabase/admin';
+import {strategyRevisionId} from '@/lib/historical-decisions/strategy-revision';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -43,7 +45,7 @@ export async function POST(req: Request) {
     const deterministicCommentary = buildAICommentary(structuredAnalysis, strategy, displayName);
     const aiCommentary = await explainDeterministicAnalysis(structuredAnalysis, deterministicCommentary);
     const enrichedAnalysis = {...analysis, aiCommentary};
-    const {data:scan,error:scanError}=await supabase.from('market_scans').insert({ user_id: user.id, instrument, strategy_profile_id: strategy.id || null, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
+    const {data:scan,error:scanError}=await createAdminClient().from('market_scans').insert({ user_id: user.id, server_created:true, instrument, strategy_profile_id: strategy.id || null, strategy_revision_id:strategyRevisionId(strategy), provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
     if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
     await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}}));
     await bestEffort(()=>finalizeAnalysis(user.id,requestKey,true));
