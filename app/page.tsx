@@ -7,20 +7,38 @@ const steps = [
   ['3', 'Review the decision', 'See what is confirmed, missing, blocked, or unavailable before risking money.'],
 ];
 
+const featureCards = [
+  {
+    eyebrow: 'EXPLAINABILITY',
+    title: 'Understand why',
+    copy: 'The Decision Report separates confirmed, missing, blocking, and unavailable evidence. AI may explain the deterministic result; it cannot override it.',
+  },
+  {
+    eyebrow: 'DISCIPLINE & JOURNALING',
+    title: 'Build a decision record',
+    copy: 'Save decisions, note whether you proceeded, and review patterns supported by your own activity—without invented performance metrics.',
+  },
+  {
+    eyebrow: 'PROFESSIONAL WORKFLOW',
+    title: 'Keep the review consistent',
+    copy: 'Use a repeatable decision workflow for setups, reviews, and team handoffs so every call stays grounded in the same rules.',
+  },
+];
+
 export default function LandingPage() {
   return <main className="marketing-page">
-    <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/"><span>TP</span> Trade Police</Link><div><a href="#how">How it works</a><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary" href="/client/login">Sign in</Link></div></nav>
-    <section className="marketing-hero"><p className="eyebrow">RULE-BASED DECISION SUPPORT</p><h1>Know whether the trade fits your strategy before you risk your money.</h1><p>Trade Police compares current market evidence with your trading rules and explains what is confirmed, what is missing, and what you should do next.</p><div className="marketing-actions hero-actions"><Link className="button-link primary hero-cta" href="/client/login?mode=signup&next=/onboarding">Check your first setup free</Link><a className="button-link secondary hero-cta" href="#example">See a real decision</a></div><small>Decision support, not financial advice. No result guarantees an outcome.</small></section>
+    <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/"><span>TP</span> Trade Police</Link><div><a href="#how">How it works</a><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link></div></nav>
+    <section className="marketing-hero"><p className="eyebrow">RULE-BASED DECISION SUPPORT</p><h1>Know whether the trade fits your strategy before you risk your money.</h1><p>Trade Police compares current market evidence with your trading rules and explains what is confirmed, what is missing, and what you should do next.</p><div className="marketing-actions hero-actions"><Link className="button-link primary marketing-cta hero-cta" href="/client/login?mode=signup&next=/onboarding">Check your first setup free</Link><a className="button-link secondary marketing-cta hero-cta" href="#example">See a real decision</a></div><small>Decision support, not financial advice. No result guarantees an outcome.</small></section>
     <LandingProductDemo />
     <section className="marketing-section problem"><p className="eyebrow">THE CORE PROBLEM</p><h2>A chart can look compelling while your own rules say wait.</h2><p>Trade Police creates a deliberate pause between opportunity and risk. It gives you a consistent answer grounded in the strategy you configured—not a prediction or a signal to copy.</p></section>
     <section id="how" className="marketing-section"><p className="eyebrow">HOW TRADE POLICE WORKS</p><h2>Evidence first. Rules second. Explanation last.</h2><div className="marketing-grid">{steps.map(([n,title,copy])=><article className="marketing-card" key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
     <section id="example" className="marketing-section decision-example"><div><p className="eyebrow">EXAMPLE DECISION</p><h2>The answer comes first. The evidence stays attached.</h2><p>This example shows the shape of a real Trade Police result. It is an explanation of configured rules—not a market prediction.</p></div><article className="marketing-card example-report"><span className="badge wait">WAIT</span><h3>Two required confirmations are still missing.</h3><div><strong>Readiness</strong><span>68% · required 75%</span></div><div><strong>Confirmed</strong><span>Trend alignment · structure</span></div><div><strong>Missing</strong><span>Liquidity sweep · retest</span></div><div><strong>Next</strong><span>Wait for the required evidence or skip the setup.</span></div><small>Illustrative result · not live market data</small></article></section>
     <section className="marketing-section split"><article><p className="eyebrow">YOUR TRADING RULES</p><h2>Your rules remain the authority.</h2><p>Create and activate the strategy Trade Police must evaluate. Required, helpful, and unsupported conditions stay visible; unsupported required rules never silently pass.</p></article><article className="marketing-card"><p className="eyebrow">DECISION WORKSPACE</p><h3>READY. WAIT. BLOCKED. NO SETUP.</h3><p>A calm hierarchy answers the decision first, then shows readiness, evidence, data freshness, and the next action.</p></article></section>
-    <section className="marketing-section marketing-grid"><article className="marketing-card"><p className="eyebrow">EXPLAINABILITY</p><h3>Understand why</h3><p>The Decision Report separates confirmed, missing, blocking, and unavailable evidence. AI may explain the deterministic result; it cannot override it.</p></article><article className="marketing-card"><p className="eyebrow">DISCIPLINE & JOURNALING</p><h3>Build a decision record</h3><p>Save decisions, note whether you proceeded, and review patterns supported by your own activity—without invented performance metrics.</p></article></section>
-    <section className="marketing-section pricing-preview"><p className="eyebrow">PRIVATE BETA PLANS</p><h2>Start with the workflow. Upgrade when you need more depth.</h2><div className="marketing-actions"><Link className="button-link primary" href="/pricing">Compare plans</Link></div></section>
+    <section className="marketing-section marketing-grid">{featureCards.map((card)=><article className="marketing-card" key={card.eyebrow}><p className="eyebrow">{card.eyebrow}</p><h3>{card.title}</h3><p>{card.copy}</p></article>)}</section>
+    <section className="marketing-section pricing-preview"><p className="eyebrow">PRIVATE BETA PLANS</p><h2>Start with the workflow. Upgrade when you need more depth.</h2><div className="marketing-actions"><Link className="button-link primary marketing-cta" href="/pricing">Compare plans</Link></div></section>
     <section className="marketing-section"><p className="eyebrow">FAQ</p><div className="faq-list"><details><summary>Does Trade Police predict the market?</summary><p>No. It compares observed evidence with your configured rules.</p></details><details><summary>Can AI change a decision?</summary><p>No. READY, WAIT, BLOCKED, and NO SETUP are controlled by deterministic logic.</p></details><details><summary>Can I place trades from Trade Police?</summary><p>No. The private beta does not execute orders or connect to a broker.</p></details></div></section>
     <section className="marketing-section risk-callout"><p className="eyebrow">RISK DISCLAIMER</p><h2>Every trade can lose money.</h2><p>Trade Police is a decision-support and discipline tool. It does not provide financial advice or guarantee trading results. Market data can be delayed, incomplete, or unavailable.</p></section>
-    <section className="marketing-final"><h2>Put your rules between the idea and the risk.</h2><Link className="button-link primary" href="/client/login?mode=signup&next=/onboarding">Start private beta</Link></section>
+    <section className="marketing-final"><h2>Put your rules between the idea and the risk.</h2><Link className="button-link primary marketing-cta" href="/client/login?mode=signup&next=/onboarding">Start private beta</Link></section>
     <footer className="marketing-footer"><span>© 2026 Trade Police</span><Link href="/legal">Legal & risk</Link><Link href="/pricing">Pricing</Link></footer>
   </main>;
 }
