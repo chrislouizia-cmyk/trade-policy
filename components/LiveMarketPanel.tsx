@@ -7,22 +7,25 @@ import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 import SetupReadiness from './SetupReadiness';
 import MarketIntelligenceBetaResult from './MarketIntelligenceBetaResult';
+import type {AdminPipelineDiagnostics,BetaIntelligenceView} from '@/lib/market-intelligence/beta/beta-integration';
+
+type DisplayAnalysis=ChartAnalysis&{intelligenceV2?:BetaIntelligenceView;adminDiagnostics?:AdminPipelineDiagnostics|null};
 
 const scanStages = [
-  'Connecting to market…',
-  'Reading trend structure…',
-  'Checking liquidity and confirmation…',
-  'Applying strategy rules…',
-  'Preparing police verdict…',
+  'Requesting market data',
+  'Checking your required rules',
+  'Preparing your Decision Report',
 ];
 
 export default function LiveMarketPanel({
   strategy,
   onApply,
+  onReset,
   onLoadingChange,
 }: {
   strategy: StrategyProfile;
   onApply: (analysis: ChartAnalysis) => void;
+  onReset?: () => void;
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const [instrument, setInstrument] = useState<Instrument>(
@@ -31,7 +34,7 @@ export default function LiveMarketPanel({
   const [loading, setLoading] = useState(false);
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysis, setAnalysis] = useState<DisplayAnalysis|null>(null);
 
   useEffect(()=>{setAnalysis(null);setError('');},[instrument,strategy.id]);
 
@@ -60,6 +63,7 @@ export default function LiveMarketPanel({
     setStageIndex(0);
     setError('');
     setAnalysis(null);
+    onReset?.();
 
     const controller=new AbortController();
     const timeout=window.setTimeout(()=>controller.abort(),25_000);
@@ -81,7 +85,7 @@ export default function LiveMarketPanel({
       }
 
       if(!result||typeof result!=='object')throw new Error('invalid-response');
-      setAnalysis(result);
+      setAnalysis(result as DisplayAnalysis);
       onApply(result as ChartAnalysis);
     } catch(error) {
       setError(error instanceof Error&&error.name==='AbortError'?'Market analysis timed out. Your trade data was not changed. Please try again.':'Market analysis is temporarily unavailable. Your trade data was not changed.');
@@ -110,7 +114,7 @@ export default function LiveMarketPanel({
               {strategy.instruments.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
-          <button className="primary" onClick={scan} disabled={loading}>
+          <button className="primary" data-market-check type="button" onClick={scan} disabled={loading}>
             {loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
           </button>
         </div>
@@ -127,11 +131,12 @@ export default function LiveMarketPanel({
       )}
 
       <TradingViewChart instrument={instrument} />
-      {error && <p className="error">{error}</p>}
+      <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
+      {error && <div className="error analysis-error" role="alert"><strong>No decision was produced.</strong><p>{error}</p><small>Failed market-analysis attempts are released and do not consume monthly usage. Your selected instrument and trading rules are unchanged.</small><button type="button" onClick={scan}>Retry analysis</button></div>}
       {analysis && (
         <>{analysis.intelligenceV2 && <MarketIntelligenceBetaResult result={analysis.intelligenceV2} diagnostics={analysis.adminDiagnostics}/>}<SetupReadiness analysis={analysis}/><div className="analysis-strip">
           <strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.status==='INSUFFICIENT_DATA'?'Insufficient market data':analysis.status==='ANALYSIS_FAILED'?'Analysis unavailable':analysis.setupType}</strong>
-          {analysis.status==='VALID_ANALYSIS'&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span><span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets required readiness':'Below required readiness'}</span></>}
+          {analysis.status==='VALID_ANALYSIS'&&analysis.liveAnalysisConfidence!=null&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span><span>{analysis.liveAnalysisConfidence>=analysis.strategyConfidenceThreshold?'Meets required readiness':'Below required readiness'}</span></>}
           <span>Checked: {new Date(analysis.calculatedAt).toLocaleTimeString()}</span>
           <span>{analysis.instrument} · {analysis.timeframe}</span>
           <span>Market data: {analysis.provider} · latest candle {analysis.latestCandleTimestamp}</span>

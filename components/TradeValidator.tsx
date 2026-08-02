@@ -4,6 +4,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'reac
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
+import DecisionReport from '@/components/decision/DecisionReport';
 import MethodologyAudit from '@/components/MethodologyAudit';
 import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
 import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
@@ -18,6 +19,7 @@ import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
+import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation';
 
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
@@ -287,6 +289,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
   const narrative=result?.decisionNarrative;
+  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative,evidenceReport:result?.evidenceReport,strategy}):null,[analysis,narrative,result,strategy]);
   const manualRules=useMemo(()=>(strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL'),[strategy.rules]);
   const pendingManualRules=manualRules.filter(rule=>(manualEvidence[rule.ruleKey]??'PENDING')==='PENDING');
   const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];
@@ -295,21 +298,11 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onLoadingChange={setAnalyzing}/>
+    <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing}/>
 
     <div className="validate-workspace-grid">
-    <section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title">
-      <p className="brand">SHOULD I RISK MY MONEY RIGHT NOW?</p>
-      <h2 id="mobile-decision-title">{narrative?.recommendation??aiStatus.label}</h2>
-      <strong>{narrative?.headline??aiStatus.detail}</strong>
-      {narrative?.explanation?<p>{narrative.explanation}</p>:null}
-      <div className="mobile-decision-facts">
-        <span><small>Readiness</small><strong>{narrative?.readiness.currentScore==null?confidenceValue:`${narrative.readiness.currentScore}%`}</strong></span>
-        <span><small>Missing</small><strong>{narrative?.missingEvidence[0]?.label??primaryMissingCondition}</strong></span>
-        <span><small>Next</small><strong>{narrative?.nextActions[0]?.label??nextActionValue}</strong></span>
-      </div>
-    </section>
-    <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
+    {explanation&&<section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title"><p className="brand">DECISION</p><h2 id="mobile-decision-title">{explanation.verdict.replaceAll('_',' ')}</h2><strong>{explanation.headline}</strong><p className="decision-primary-reason">{explanation.primaryReason}</p><div className="mobile-decision-facts"><span><small>Required rules</small><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} confirmed</strong></span><span><small>Next</small><strong>{explanation.nextAction}</strong></span></div></section>}
+    <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <h2 className="workspace-title">STEP 2 · REVIEW TRADE DETAILS</h2>
         <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
@@ -347,14 +340,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <div className="decision-workspace-sticky">
       <DecisionHero
         analyzing={analyzing}
-        analysis={analysis}
-        result={result}
+        explanation={explanation}
         narrative={narrative}
-        strategy={strategy}
-        threshold={threshold}
-        primaryMissingCondition={primaryMissingCondition}
-        nextActionValue={nextActionValue}
-        readinessInterpretation={readinessInterpretation}
+        onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(explanation?.verdict==='READY'){document.getElementById('final-risk-check')?.scrollIntoView({behavior:'smooth',block:'start'});return}(document.querySelector('[data-market-check]') as HTMLButtonElement|null)?.click()}}
         onViewReport={() => setShowReasoning(true)}
         reportButtonRef={reasoningButtonRef}
       />
@@ -391,16 +379,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
       <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
       <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
-      <p className="decision-integrity">Decision status is determined by your configured rules and detected evidence. AI explanation cannot override the result.</p>
-      <div className="reasoning-modal-body"><div className="trade-reasoning-grid">
-        <ReasoningSection label="Decision" value={decisionLabel} tone={result?.verdict === 'AUTHORIZED' ? 'positive' : result?.verdict === 'REJECTED' || result?.verdict === 'WAIT' ? 'warning' : 'neutral'} support={decisionCopy} />
-        <ReasoningSection label="Readiness" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Required readiness ${threshold}%` : readinessInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
-        <ReasoningSection label="Missing confirmation" value={missingRules.length ? `${missingRules.length} pending` : 'Clear'} tone={missingRules.length ? 'warning' : 'positive'} support={missingRules.length ? undefined : 'No missing confirmation.'}>{missingRules.length?<div className="reasoning-list">{missingRules.map((item,index)=><span className="reasoning-pill" key={`missing-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Evidence" value={inspectorHighlights[0]?.label ? 'Recent signals' : 'No evidence yet'} tone={inspectorHighlights.length ? 'neutral' : 'info'} support={inspectorHighlights.length ? 'The latest read is carrying the following signals.' : 'No evidence yet.'}>{inspectorHighlights.length?<div className="reasoning-list">{inspectorHighlights.map((item,index)=><div className="reasoning-row" key={`evidence-${index}-${item.key??'unknown'}`}><div><strong>{item.label}</strong><small>{item.reason}</small></div><span>{item.passed?'✓':'•'} {item.confidence}%</span></div>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Satisfied rules" value={satisfiedRules.length ? `${satisfiedRules.length} met` : 'None yet'} tone={satisfiedRules.length ? 'positive' : 'neutral'} support={satisfiedRules.length ? undefined : 'No rules have been satisfied yet.'}>{satisfiedRules.length?<div className="reasoning-list">{satisfiedRules.map((item,index)=><span className="reasoning-pill positive" key={`satisfied-${index}-${item??'unknown'}`}>✓ {item}</span>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Risk checks" value={riskChecks.length ? `${riskChecks.length} active` : 'Clear'} tone={riskChecks.length ? 'warning' : 'positive'} support={riskChecks.length ? undefined : 'No risk checks are currently blocking the setup.'}>{riskChecks.length?<div className="reasoning-list">{riskChecks.map((item,index)=><span className="reasoning-pill" key={`risk-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
-        <div className="timeline-section"><ReasoningSection label="Timeline" value={sessionHistory.length ? 'Recent reads' : 'No updates'} tone={sessionHistory.length ? 'neutral' : 'info'} support={sessionHistory.length ? 'The latest market updates are listed below.' : 'No timeline updates yet.'}>{sessionHistory.length?<div className="ai-history-list">{sessionHistory.map((entry,index)=><div className="ai-history-item" key={`history-${index}-${entry.time}-${entry.headline}`}><div className="ai-history-marker"/><div><strong>{entry.time}</strong><span>{entry.headline}</span><small>{entry.detail}</small></div></div>)}</div>:null}</ReasoningSection></div>
-      </div></div>
+      <span className="sr-only">AI explanation cannot override the result.</span>
+      <div className="reasoning-modal-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
       </section>
     </div>}
 
