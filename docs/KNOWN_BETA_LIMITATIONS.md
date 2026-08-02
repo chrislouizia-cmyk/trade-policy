@@ -1,5 +1,7 @@
 # Known Private Beta Limitations
 
+- Decision timelines omit setup detection, final risk completion, report save, or rule events whenever the immutable source lacks a dedicated recorded timestamp. Missing chronology is never reconstructed.
+
 - Expired report-source cleanup depends on Vercel Cron and a correctly configured server-only `CRON_SECRET`; monitor the HQ backlog after deployments.
 - Schema tooling audits versions but intentionally does not migrate historical report contents in Sprint 4A.
 

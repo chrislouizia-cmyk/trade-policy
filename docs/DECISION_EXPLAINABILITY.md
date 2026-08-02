@@ -1,5 +1,7 @@
 # Decision Explainability
 
+The Decision Report includes a deterministic timeline derived only from recorded timestamps. Untimed evidence stays outside the timeline, and AI prose cannot create or order events. See `DECISION_TIMELINE.md`.
+
 Completed explanations can be saved as schema-versioned historical snapshots. The deterministic snapshot and optional AI educational prose are persisted separately; reopening uses saved content only and never recalculates the verdict, evidence, or readiness. See `HISTORICAL_DECISION_REPORTS.md`.
 
 Trade Police presents decisions in this order:

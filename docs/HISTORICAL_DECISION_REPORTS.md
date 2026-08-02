@@ -1,5 +1,7 @@
 # Historical Decision Reports
 
+Historical timelines are derived at render time only from immutable schema `1.0.0` snapshot fields. No timeline data is persisted, no report is migrated, and deterministic fingerprints remain unchanged.
+
 Historical Decision Reports are immutable, server-owned snapshots of completed decisions. Schema `1.0.0` stores only the customer-facing deterministic explanation, evidence states, final risk check, strategy identity, and market provenance needed to explain the original result.
 
 ## Ownership and save path

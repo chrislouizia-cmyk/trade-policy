@@ -1,5 +1,7 @@
 import type {DecisionExplanationItem,DecisionExplanationState,DecisionExplanationSummary,DecisionNarrative} from '@/types/intelligence';
 import type {ChartAnalysis,StrategyProfile,TradeResult} from '@/types/trade';
+import DecisionTimeline from './DecisionTimeline';
+import {buildDecisionTimeline} from '@/lib/intelligence/decision-timeline';
 
 const stateLabel:Record<DecisionExplanationState,string>={CONFIRMED:'Confirmed',MISSING:'Still needed',BLOCKED:'Rule violated',NOT_AVAILABLE:'Could not verify',NOT_REQUIRED:'Not required'};
 const stateIcon:Record<DecisionExplanationState,string>={CONFIRMED:'✓',MISSING:'○',BLOCKED:'!',NOT_AVAILABLE:'?',NOT_REQUIRED:'–'};
@@ -14,8 +16,11 @@ export default function DecisionReport({explanation,analysis,result,narrative,st
   const helpful=explanation.items.filter(item=>!item.required&&!['BLOCKED','NOT_AVAILABLE'].includes(item.state));
   const blocking=explanation.items.filter(item=>item.state==='BLOCKED');
   const unavailable=explanation.items.filter(item=>item.state==='NOT_AVAILABLE');
+  const finalStatus=result?(result.verdict==='AUTHORIZED'?'PASSED':result.verdict==='REJECTED'?'FAILED':'INCOMPLETE'):undefined;
+  const timeline=buildDecisionTimeline({marketCalculationCompletedAt:explanation.dataStatus.calculationCompletedAt,marketProvider:explanation.dataStatus.provider,evidence:explanation.items.map(item=>({...item,description:item.plainLanguageDescription})),verdict:explanation.verdict,verdictTimestamp:narrative?.generatedAt??analysis.calculatedAt,finalRiskCheckTimestamp:result?narrative?.generatedAt:undefined,finalRiskCheckStatus:finalStatus});
   return <div className="decision-report-content">
     <section className="decision-report-summary"><p className="eyebrow">EXECUTIVE SUMMARY</p><h2>{explanation.verdict.replaceAll('_',' ')}</h2><h3>{explanation.headline}</h3><p>{explanation.explanation}</p><p className="decision-primary-reason">{explanation.primaryReason}</p></section>
+    <DecisionTimeline timeline={timeline}/>
     <dl className="decision-report-metadata"><div><dt>Report ID</dt><dd>{analysis.analysisId??'Not assigned'}</dd></div><div><dt>Instrument</dt><dd>{analysis.instrument}</dd></div><div><dt>Timeframe</dt><dd>{analysis.timeframe}</dd></div><div><dt>Trading rules</dt><dd>{strategy.name}</dd></div><div><dt>Saved revision</dt><dd>{strategy.engineVersion??'Not available'}</dd></div><div><dt>Verdict</dt><dd>{explanation.verdict.replaceAll('_',' ')}</dd></div><div><dt>Generated</dt><dd>{new Date(analysis.calculatedAt).toLocaleString()}</dd></div><div><dt>Provider</dt><dd>{explanation.dataStatus.provider}</dd></div><div><dt>Required rules</dt><dd>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} confirmed</dd></div></dl>
     <section className="decision-report-section"><h3>Current market and data status</h3><p><strong>{explanation.dataStatus.freshness.replaceAll('_',' ')}</strong> · {explanation.dataStatus.provider}</p><p>{explanation.dataStatus.lastVerifiedCandleAt?`Last verified completed candle: ${new Date(explanation.dataStatus.lastVerifiedCandleAt).toLocaleString()}`:'A verified completed-candle time is unavailable.'}</p><details><summary>How Trade Police reads the chart</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details></section>
     <EvidenceRows title="Required rules" items={required}/><EvidenceRows title="Helpful confirmations" items={helpful}/><EvidenceRows title="Blocking conditions" items={blocking}/><EvidenceRows title="Unavailable evidence" items={unavailable}/>
