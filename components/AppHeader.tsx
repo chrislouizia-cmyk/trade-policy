@@ -3,6 +3,8 @@ import ActiveAccountSwitcher from '@/components/ActiveAccountSwitcher';
 import FeedbackWidget from '@/components/FeedbackWidget';
 import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import Link from 'next/link';
 
 function greeting() {
   const hour = new Date().getHours();
@@ -34,25 +36,26 @@ export default function AppHeader({
         </div>
 
         <div className="app-brand-row">
-          <a href="/dashboard" className="app-brand">
+          <Link href="/dashboard" className="app-brand">
             <span className="brand-mark">TP</span>
             <span>
               <strong>Trade Police</strong>
               <small>No trade without evidence.</small>
             </span>
-          </a>
+          </Link>
           <div className="app-user">
+            <KeyboardShortcuts />
             <SignOutButton />
           </div>
         </div>
 
         <nav className="primary-nav" aria-label="Primary navigation">
-          <a href="/dashboard">Dashboard</a>
-          <a href="/validate">Decision</a>
-          <a href="/history">History</a>
-          <a href="/account">Account</a>
-          <a href="/profile">Strategies</a>
-          <a href="/analytics">Analytics</a>
+          <Link href="/dashboard">Dashboard</Link>
+          <Link href="/validate">Decision</Link>
+          <Link href="/history">History</Link>
+          <Link href="/account">Account</Link>
+          <Link href="/profile">Strategies</Link>
+          <Link href="/analytics">Analytics</Link>
         </nav>
 
         <div className="context-bar compact-context-bar">

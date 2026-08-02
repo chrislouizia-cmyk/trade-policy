@@ -117,10 +117,11 @@ export default function LiveMarketPanel({
       </div>
 
       {loading && (
-        <div className="analysis-progress" aria-live="polite">
+        <div className="analysis-progress" aria-live="polite" aria-busy="true">
           <div className="analysis-progress-track">
             <span style={{ width: `${((stageIndex + 1) / scanStages.length) * 100}%` }} />
           </div>
+          <div className="analysis-progress-stages" aria-hidden="true">{scanStages.map((stage,index)=><i className={index<stageIndex?'complete':index===stageIndex?'current':''} key={stage}/>)}</div>
           <small>{scanStages[stageIndex]}</small>
         </div>
       )}
