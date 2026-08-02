@@ -10,7 +10,7 @@
 - [ ] Apply all Supabase migrations in order and verify RLS, authenticated redirect URLs, and the production Site URL.
 - [ ] Add `${NEXT_PUBLIC_APP_URL}/auth/callback` to Supabase Auth redirect URLs.
 - [ ] Configure a production SMTP provider, sender domain, confirmation template, recovery template, SPF, DKIM, and DMARC; test confirmation and password reset delivery.
-- [ ] Billing: Stripe is not implemented. Keep Pro grants server-authoritative and controlled by beta operations. Do not advertise self-service checkout until checkout, signed webhooks, entitlements, failed-payment handling, and portal are implemented and tested.
+- [ ] Apply migration 039, create the Stripe Pro monthly price, configure the Customer Portal and webhook events, and complete the test-mode procedure in `docs/STRIPE_SETUP.md`.
 - [ ] Link the Vercel project, select the production Supabase environment, add every variable separately for Preview and Production, and leave secrets unexposed.
 - [ ] Add the production domain in Vercel, configure DNS, confirm TLS, set `NEXT_PUBLIC_APP_URL`, and update Supabase URL allowlists.
 
@@ -25,7 +25,7 @@
 - [ ] Disable or invalidate the market-data provider key and confirm DATA UNAVAILABLE, no 0%, and never READY.
 - [ ] Save a decision, open History, and confirm date, instrument, setup, decision, readiness, and result state.
 - [ ] Test 375, 430, 768, 1024, and desktop widths: no horizontal overflow, clipped dialog, covered content, or touch target below 44 px on primary paths.
-- [ ] Billing test is blocked until Stripe exists. Until then, verify the Account page cannot change plan or entitlement client-side.
+- [ ] Complete Checkout, verified webhook activation, duplicate-event replay, payment failure, cancellation, and Customer Portal tests; verify the Account page cannot change entitlement client-side.
 - [ ] Sign in as a normal customer and request every `/hq`, `/admin`, `/staff`, `/api/hq`, and `/api/admin` route. Confirm no internal data is returned.
 - [ ] Sign in as each staff permission profile and verify only granted HQ routes and actions work.
 - [ ] Run `npm test`, `npx tsc --noEmit`, `npm run build`, and `git diff --check`.

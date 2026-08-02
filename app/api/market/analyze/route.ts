@@ -10,16 +10,23 @@ import { buildAICommentary } from '@/lib/ai-commentary';
 import { explainDeterministicAnalysis } from '@/lib/server/openai-commentary';
 import { StrategyConfigurationError } from '@/lib/strategy-policy';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
+import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const startedAt=Date.now();
   let supabase: Awaited<ReturnType<typeof createClient>> | null=null;
+  let usage:{userId:string;requestKey:string}|null=null;
   try {
     supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return apiError('UNAUTHORIZED','Unauthorized.',401);
+    const requestKey=req.headers.get('idempotency-key');
+    if(!requestKey||requestKey.length>100)return apiError('IDEMPOTENCY_KEY_REQUIRED','A valid analysis request key is required.',400);
+    const reservation=await reserveAnalysis(user.id,requestKey);
+    if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED','Your monthly Free analysis limit has been reached. Upgrade to Pro to continue.',429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage});
+    usage={userId:user.id,requestKey};
     const { instrument } = await req.json() as { instrument: Instrument };
     if (!instrument) return apiError('INSTRUMENT_REQUIRED','An instrument is required.',400);
     const strategy = await loadActiveStrategy(supabase,user.id);
@@ -36,9 +43,11 @@ export async function POST(req: Request) {
     const {data:scan,error:scanError}=await supabase.from('market_scans').insert({ user_id: user.id, instrument, strategy_profile_id: strategy.id || null, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
     if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
     await supabase.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}});
+    await finalizeAnalysis(user.id,requestKey,true);
     const diagnostics=process.env.NODE_ENV==='development'?{strategyId:analysis.strategyId,strategyName:strategy.name,evaluationSource:'TRADING_DNA_RUNTIME',strategySchemaVersion:analysis.strategySchemaVersion,methodologyIds:analysis.methodologyIds,instrument,providerSymbol:analysis.providerSymbol,timeframes,candleCounts:Object.fromEntries(timeframes.map((frame,index)=>[frame,values[index].length])),latestCandleTimestamp:analysis.latestCandleTimestamp,totalRequiredWeight:analysis.setupReadiness.totalRequiredWeight,passingRequiredWeight:analysis.setupReadiness.passingRequiredWeight,requiredCounts:analysis.setupReadiness.required,optionalCounts:analysis.setupReadiness.optional,readinessFormula:analysis.setupReadiness.formula,contributingRules:analysis.tradingDnaReport.conditions.map(condition=>({id:condition.ruleId,status:condition.status,weight:condition.weight,evidenceSource:analysis.setupReadiness.conditions.find(item=>item.label===condition.label)?.evidenceSource})),timeframeAligned:analysis.timeframeAligned,finalState:analysis.setupReadiness.state,finalConfidence:analysis.liveAnalysisConfidence,calculationTimestamp:analysis.calculatedAt,cache:'MISS'}:undefined;
     return NextResponse.json({...enrichedAnalysis,analysisId:scan.id,strategyApplied:{id:strategy.id,name:strategy.name},diagnostics},{headers:{'Cache-Control':'no-store, max-age=0'}});
   } catch (error) {
+    if(usage)await finalizeAnalysis(usage.userId,usage.requestKey,false);
     if(error instanceof StrategyConfigurationError)return apiError('STRATEGY_INCOMPLETE','Strategy configuration incomplete.',409,{missingFields:error.missingFields});
     if(error instanceof MarketAnalysisError){
       const code=error.status==='INSUFFICIENT_DATA'?'INSUFFICIENT_MARKET_DATA':error.status==='ANALYSIS_FAILED'?'STRATEGY_CONFIGURATION_INCOMPLETE':'MARKET_DATA_UNAVAILABLE';

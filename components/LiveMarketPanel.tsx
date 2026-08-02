@@ -62,9 +62,10 @@ export default function LiveMarketPanel({
     setAnalysis(null);
 
     try {
+      const requestKey=crypto.randomUUID();
       const response = await fetch('/api/market/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json','Idempotency-Key':requestKey },
         body: JSON.stringify({ instrument }),
       });
       const result = await response.json();

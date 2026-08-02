@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { apiError } from '@/lib/server/public-error';
+import {getBillingState} from '@/lib/billing/entitlements';
 
 export const dynamic='force-dynamic';
 
@@ -26,6 +27,7 @@ export async function POST(request:Request){
     const parsed=schema.safeParse(await request.json());
     if(!parsed.success)return apiError('INVALID_STRATEGY',parsed.error.issues[0]?.message||'Strategy data is invalid.',400,parsed.error.flatten());
     const payload=parsed.data;
+    if(!payload.strategyId){const billing=await getBillingState(user.id);const {count}=await supabase.from('strategy_profiles').select('id',{count:'exact',head:true}).eq('is_archived',false);if((count??0)>=billing.entitlements.maximumActiveStrategies)return apiError('STRATEGY_LIMIT_REACHED',`Your ${billing.plan} plan allows ${billing.entitlements.maximumActiveStrategies} active strategy. Archive one or upgrade to continue.`,403)}
     const previousRules=payload.strategyId?(await supabase.from('strategy_rules').select('rule_key,label,enabled,mandatory,weight,minimum_confidence,timeframe_role,evaluation_mode').eq('strategy_id',payload.strategyId).eq('user_id',user.id)).data??[]:[];
     const {data,error}=await supabase.rpc('save_strategy_bundle',{
       p_strategy_id:payload.strategyId,p_profile:payload.profile,p_instruments:payload.instruments,
