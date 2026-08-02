@@ -55,6 +55,21 @@ test('landing page shows an honest illustrative decision report',()=>{
   assert.match(landing,/Illustrative result · not live market data/);
 });
 
+test('landing product walkthrough is lightweight, truthful, and motion-safe',()=>{
+  const landing=read('app/page.tsx');
+  const demo=read('components/LandingProductDemo.tsx');
+  const styles=read('app/trade-police.css');
+  assert.match(landing,/LandingProductDemo/);
+  assert.match(demo,/Every state is illustrative—not live market data, a signal, or a performance claim/);
+  for(const state of ['READY','WAIT','BLOCKED'])assert.match(demo,new RegExp(`verdict:'${state}'`));
+  assert.match(demo,/Two required confirmations are still missing/);
+  assert.match(demo,/AI may explain this result\. It cannot change the decision/);
+  assert.doesNotMatch(demo,/<video|<img|use client|fetch\(/);
+  assert.doesNotMatch(demo,/\b(win rate|profit factor|P&L|performance percentage)\b/i);
+  assert.match(styles,/@media\(prefers-reduced-motion:reduce\)/);
+  assert.match(styles,/\.product-demo-frame\{position:static;display:grid;opacity:1;transform:none;animation:none\}/);
+});
+
 test('decision surface makes source and freshness prominent',()=>{
   const hero=read('components/decision/DecisionHero.tsx');
   assert.match(hero,/Market data · \$\{analysis\.provider\}/);
