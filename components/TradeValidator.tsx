@@ -11,8 +11,9 @@ import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
 import TradingDnaEvidenceReportView from '@/components/TradingDnaEvidenceReport';
 import SetupReadiness from '@/components/SetupReadiness';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
+import { getDecisionWorkspaceLayoutState } from '@/lib/decision-workspace-layout';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
-import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmation, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, Instrument, ManualConfirmation, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
 import type { TradingDnaEvidenceReport } from '@/lib/trading-dna/runtime';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
@@ -20,7 +21,6 @@ import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-
 import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
 import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation';
-
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -29,6 +29,27 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['retestConfirmed','Retest / rejection confirmed'], ['highImpactNews','High-impact news conflict']
 ];
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
+
+function getAnalysisStatusLabel(status: ChartAnalysis['status'] | undefined) {
+  switch (status) {
+    case 'VALID_ANALYSIS':
+      return 'Valid analysis';
+    case 'NO_RELEVANT_EVIDENCE':
+      return 'No setup detected';
+    case 'STRATEGY_UNSUPPORTED':
+      return 'Strategy rules not supported by live analysis';
+    case 'STRATEGY_INCOMPLETE':
+      return 'Strategy configuration incomplete';
+    case 'INSUFFICIENT_DATA':
+      return 'Insufficient market data';
+    case 'ANALYSIS_FAILED':
+      return 'Analysis unavailable';
+    case 'DATA_UNAVAILABLE':
+      return 'Market data unavailable';
+    default:
+      return 'Analysis pending';
+  }
+}
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
 type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string };
@@ -74,6 +95,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [overrideConfirmation,setOverrideConfirmation]=useState('');
   const [candidateApplied,setCandidateApplied]=useState('');
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
+  const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
   const [accounts,setAccounts]=useState<TradingAccount[]>([]);
   const [accountId,setAccountId]=useState('');
   const [typedMessage,setTypedMessage]=useState('');
@@ -126,6 +148,21 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
   const activeContext=useMemo(()=>`${strategy.id ?? strategy.name}-${analysis?.instrument ?? 'none'}`,[analysis?.instrument,strategy.id,strategy.name]);
   useEffect(()=>{ setSessionHistory([]); },[activeContext]);
+  useEffect(() => {
+    if (!strategy.instruments.includes(selectedInstrument)) {
+      setSelectedInstrument(strategy.instruments[0] || 'XAUUSD');
+    }
+  }, [selectedInstrument, strategy.instruments]);
+  useEffect(() => {
+    if (!analysis) return;
+    if (analysis.instrument && analysis.instrument !== selectedInstrument) {
+      setAnalysis(null);
+      setResult(null);
+      setAutoChecks({});
+      setManualEvidence(initialManualConfirmations(strategy.rules ?? []));
+      setError('Instrument changed. Trade Police cleared the previous analysis and is ready for a fresh market read.');
+    }
+  }, [analysis, selectedInstrument, strategy.rules]);
   useEffect(()=>{
     if(!showReasoning)return;
     const previousOverflow=document.body.style.overflow;
@@ -173,10 +210,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     evidenceKeys.forEach((key) => { next[key] = data.evidence[key].value; });
     setAutoChecks(next);
     setManualEvidence(initialManualConfirmations(strategy.rules??[]));
-    const instrumentEl=document.querySelector('[name=instrument]') as HTMLSelectElement | null;
-    if(instrumentEl) instrumentEl.value=data.instrument;
-    const directionEl=document.querySelector('[name=direction]') as HTMLSelectElement | null;
-    if(data.suggestedDirection && directionEl) directionEl.value=data.suggestedDirection;
+    setSelectedInstrument(data.instrument as Instrument);
   }
 
   function applyLiveAnalysis(data: ChartAnalysis){
@@ -220,7 +254,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response.');setResult(data as ValidationResult);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data as any).manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
   }
 
-  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; const instrument=document.querySelector('[name=instrument]') as HTMLSelectElement|null;if(instrument)instrument.value=analysis.instrument;set('entry',c.entryLow??c.entryHigh);set('stopLoss',c.stopLoss);set('takeProfit',c.takeProfit);const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction;setCandidateApplied('Candidate applied.');}
+  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; setSelectedInstrument(analysis.instrument as Instrument); set('entry',c.entryLow??c.entryHigh); set('stopLoss',c.stopLoss); set('takeProfit',c.takeProfit); const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction; setCandidateApplied('Candidate applied.');}
   async function saveSuggestion(index:number){
     const c=analysis?.candidates[index]; if(!c||!analysis)return;
     const {error}=await createClient().from('trade_records').insert({user_id:userId,source:'SUGGESTED',status:'OPEN',instrument:analysis.instrument,direction:c.direction,setup_type:analysis.setupType,entry:c.entryLow??c.entryHigh,stop_loss:c.stopLoss,take_profit:c.takeProfit,rr:c.rr,chart_analysis:analysis});
@@ -300,19 +334,24 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
-  const narrative=result?.decisionNarrative;
-  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative,evidenceReport:result?.evidenceReport,strategy}):null,[analysis,narrative,result,strategy]);
+  const narrative=result?.decisionNarrative ?? null;
+  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative: narrative ?? undefined,evidenceReport:result?.evidenceReport,strategy}):null,[analysis,narrative,result,strategy]);
   const manualRules=useMemo(()=>(strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL'),[strategy.rules]);
   const pendingManualRules=manualRules.filter(rule=>(manualEvidence[rule.ruleKey]??'PENDING')==='PENDING');
   const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];
   const optionalMissing=narrative?.missingEvidence.filter(item=>!item.mandatory)??[];
+  const workspaceLayout = useMemo(() => getDecisionWorkspaceLayoutState({ analysis, explanation, narrative }), [analysis, explanation, narrative]);
+  const workspaceGridClassName = workspaceLayout.mode === 'full-width' ? 'validate-workspace-grid validate-workspace-grid--full-width' : 'validate-workspace-grid';
+  const isValidAnalysis = analysis?.status === 'VALID_ANALYSIS';
+  const analysisStatusLabel = getAnalysisStatusLabel(analysis?.status);
+  const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
 
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing}/>
+    <LiveMarketPanel strategy={strategy} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing}/>
 
-    <div className="validate-workspace-grid">
+    <div className={workspaceGridClassName}>
     {explanation&&<section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title"><p className="brand">DECISION</p><h2 id="mobile-decision-title">{explanation.verdict.replaceAll('_',' ')}</h2><strong>{explanation.headline}</strong><p className="decision-primary-reason">{explanation.primaryReason}</p><div className="mobile-decision-facts"><span><small>Required rules</small><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} confirmed</strong></span><span><small>Next</small><strong>{explanation.nextAction}</strong></span></div></section>}
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
@@ -320,14 +359,14 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
         <div className="grid grid-2">
-          <label>Instrument<select name="instrument">{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
+          <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>setSelectedInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
           <label>Direction<select name="direction"><option>BUY</option><option>SELL</option></select></label>
         </div>
         </section>
-        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No market read yet. Run the live market analysis so Trade Police can show the next step clearly.</p>:<><p>{analysis.summary}</p>{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected yet. Try a fresh market read or adjust the strategy rules before asking for a final verdict.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
+        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No market read yet. Run the live market analysis so Trade Police can show the next step clearly.</p>:<><p>{analysis.summary}</p>{detectorDisplayItems.length>0&&<div className="detector-review-card"><h4>Automatic detector review required</h4>{detectorDisplayItems.length>0&&<ul>{detectorDisplayItems.map((item)=><li key={`${item.title}-${item.humanLabel}`}><strong>{item.humanLabel}</strong>{item.timeframe&&<span> · {item.timeframe}</span>}</li>)}</ul>}</div>}{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')&&!w.startsWith('Automatic detector review required.')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected yet. Try a fresh market read or adjust the strategy rules before asking for a final verdict.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
         {error&&<p className="error">{error}</p>}
-        {analysis&&<SetupReadiness analysis={analysis}/>}
-        {analysis&&<><div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div><p className="readiness-disclaimer">Readiness reflects completion of your configured playbook rules. It is not a probability of profit.</p></>}
+        {isValidAnalysis&&<SetupReadiness analysis={analysis}/>}
+        {isValidAnalysis&&<><div className="analysis-strip"><strong>{analysisStatusLabel}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div><p className="readiness-disclaimer">Readiness reflects completion of your configured playbook rules. It is not a probability of profit.</p></>}
         <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
           <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
           <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
@@ -349,21 +388,22 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         <section className="workspace-section authorization-section"><p className="muted">This final check applies account risk, daily limits, manual confirmations, and the same saved strategy rules shown above.</p><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Risk check suspended':loading?'Checking…':'Run final risk check'}</button></section>
       </form>
 
-    <aside className="decision-workspace-column">
+    {workspaceLayout.showDecisionColumn&&<aside className="decision-workspace-column">
       <div className="decision-workspace-sticky">
       <DecisionHero
         analyzing={analyzing}
         explanation={explanation}
-        narrative={narrative}
+        narrative={narrative ?? undefined}
         onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(explanation?.verdict==='READY'){document.getElementById('final-risk-check')?.scrollIntoView({behavior:'smooth',block:'start'});return}(document.querySelector('[data-market-check]') as HTMLButtonElement|null)?.click()}}
         onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
         reportButtonRef={reasoningButtonRef}
+        showReportButton={workspaceLayout.showDecisionReportButton}
       />
 
     <div className="card primary-workspace-surface decision-report-workspace narrative-workspace">
       <div className="narrative-workspace-head"><div><p className="brand">YOUR ANSWER</p><h2>Decision breakdown</h2></div><span className="narrative-provenance">{narrative?.source==='AI_ENHANCED'?'Deterministic decision · coaching added':'Deterministic decision'}</span></div>
 
-      {!narrative?<section className="narrative-empty" aria-live="polite"><strong>Complete the trade details</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section>:<>
+      {!narrative ? <section className="narrative-empty" aria-live="polite"><strong>Complete the trade details</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section> : <>
       <section className="narrative-section narrative-why" aria-labelledby="narrative-why-title"><div className="narrative-section-head"><span>01</span><div><h3 id="narrative-why-title">Why?</h3><p>The engine reasons behind this answer.</p></div></div><div className="narrative-list">{narrative.reasons.length?narrative.reasons.map(reason=><div className={`narrative-item ${reason.blocking?'blocking':'advisory'}`} key={reason.id}><span className="narrative-item-icon" aria-hidden="true">{reason.blocking?'!':'·'}</span><div><strong>{reason.message}</strong><small>{reason.blocking?'Blocking condition':'Context to review'}</small></div></div>):<div className="narrative-item clear"><span className="narrative-item-icon" aria-hidden="true">✓</span><div><strong>No blocking reasons</strong><small>The configured deterministic checks passed.</small></div></div>}</div></section>
 
       <section className="narrative-section" aria-labelledby="narrative-missing-title"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{requiredMissing.length?<><h4>Still required</h4><div className="narrative-list">{requiredMissing.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div></>:<p className="narrative-clear-copy">No required playbook evidence is pending.</p>}{optionalMissing.length?<><h4>Additional confirmations that could strengthen this setup</h4><div className="narrative-list">{optionalMissing.map(item=><div className="narrative-item evidence optional" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}</small></div></div>)}</div></>:null}</section>
@@ -377,7 +417,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <section className="workspace-section save-report-card"><h3>Historical Decision Report</h3><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section>
     </div>
       </div>
-    </aside>
+    </aside>}
     </div>
 
     {result?.evidenceReport&&<TradingDnaEvidenceReportView report={result.evidenceReport}/>}
@@ -394,7 +434,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
       <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
       <span className="sr-only">AI explanation cannot override the result.</span>
-      <div className="reasoning-modal-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
+      <div className="reasoning-modal-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative ?? undefined} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
       </section>
     </div>}
 

@@ -302,6 +302,7 @@ export type EntryCandidate = {
 export type ChartAnalysis = {
   analysisId?: string;
   status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
+  detectorDisplayItems?: Array<{title:string;status:'pending'|'warning'|'info';humanLabel:string;timeframe?:string;explanation?:string}>;
   analysisStatus: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   instrument: Instrument;
   timeframe: string;
