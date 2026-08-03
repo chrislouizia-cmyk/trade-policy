@@ -16,6 +16,7 @@ export interface TradeAuthorizationEligibility {
   immutableSourceLink?: boolean;
   sourceDecisionId?: string;
   sourceReportId?: string;
+  overrideMode?: 'READY' | 'OVERRIDE';
 }
 
 export interface TradeAuthorizationInput {
@@ -33,6 +34,7 @@ export interface TradeAuthorizationInput {
   sourceReportId?: string;
   readinessPercentage?: number | null;
   missingMandatoryConfirmations?: TradeAuthorizationMissingConfirmation[];
+  allowOverride?: boolean;
 }
 
 function normalizeVerdict(verdict?: string) {
@@ -67,6 +69,46 @@ export function evaluateTradeAuthorizationEligibility(input: TradeAuthorizationI
       message: 'This decision belongs to a different account.',
       createActiveTrade: false,
       missingMandatoryConfirmations,
+    };
+  }
+
+  if (input.analysisStatus && input.analysisStatus !== 'VALID_ANALYSIS') {
+    return {
+      allowed: false,
+      eligible: false,
+      state: 'DATA_UNAVAILABLE',
+      reasonCode: 'DECISION_NOT_READY',
+      message: 'The market analysis is not currently in a state that supports authorization.',
+      createActiveTrade: false,
+      missingMandatoryConfirmations,
+    };
+  }
+
+  if (input.strategyActive === false) {
+    return {
+      allowed: false,
+      eligible: false,
+      state: 'DATA_UNAVAILABLE',
+      reasonCode: 'DECISION_NOT_READY',
+      message: 'The active strategy is no longer available for authorization.',
+      createActiveTrade: false,
+      missingMandatoryConfirmations,
+    };
+  }
+
+  if (input.allowOverride && (normalizedVerdict === 'REJECTED' || input.verdict === 'BLOCKED' || normalizedVerdict === 'WAIT' || input.verdict === 'WAIT')) {
+    return {
+      allowed: true,
+      eligible: false,
+      state: normalizedVerdict === 'WAIT' || input.verdict === 'WAIT' ? 'WAIT' : 'BLOCKED',
+      reasonCode: 'OVERRIDE',
+      message: 'This decision is being taken as an override.',
+      createActiveTrade: true,
+      immutableSourceLink: true,
+      sourceDecisionId: input.sourceDecisionId,
+      sourceReportId: input.sourceReportId,
+      missingMandatoryConfirmations,
+      overrideMode: 'OVERRIDE',
     };
   }
 
@@ -113,30 +155,6 @@ export function evaluateTradeAuthorizationEligibility(input: TradeAuthorizationI
       state: 'WAIT',
       reasonCode: 'WAIT',
       message: 'The setup is still waiting for the required confirmations.',
-      createActiveTrade: false,
-      missingMandatoryConfirmations,
-    };
-  }
-
-  if (input.analysisStatus && input.analysisStatus !== 'VALID_ANALYSIS') {
-    return {
-      allowed: false,
-      eligible: false,
-      state: 'DATA_UNAVAILABLE',
-      reasonCode: 'DECISION_NOT_READY',
-      message: 'The market analysis is not currently in a state that supports authorization.',
-      createActiveTrade: false,
-      missingMandatoryConfirmations,
-    };
-  }
-
-  if (input.strategyActive === false) {
-    return {
-      allowed: false,
-      eligible: false,
-      state: 'DATA_UNAVAILABLE',
-      reasonCode: 'DECISION_NOT_READY',
-      message: 'The active strategy is no longer available for authorization.',
       createActiveTrade: false,
       missingMandatoryConfirmations,
     };

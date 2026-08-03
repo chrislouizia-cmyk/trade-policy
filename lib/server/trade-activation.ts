@@ -26,6 +26,8 @@ export interface ActiveTradeInsertInput {
   originalVerdict?: string | null;
   originalVerdictReason?: string | null;
   overrideReason?: string | null;
+  overrideConditions?: unknown[] | null;
+  activationMode?: 'READY' | 'OVERRIDE';
   createdAt?: string;
   updatedAt?: string;
 }
@@ -62,6 +64,8 @@ export function buildActiveTradeRow(input: ActiveTradeInsertInput) {
     original_verdict: input.originalVerdict ?? null,
     original_verdict_reason: input.originalVerdictReason ?? null,
     override_reason: input.overrideReason ?? null,
+    override_conditions: input.overrideConditions ?? null,
+    activation_mode: input.activationMode ?? 'READY',
     opened_at: input.createdAt ?? new Date().toISOString(),
     updated_at: input.updatedAt ?? new Date().toISOString(),
   };

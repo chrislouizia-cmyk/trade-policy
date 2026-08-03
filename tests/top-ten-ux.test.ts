@@ -90,12 +90,16 @@ test('decision surface makes source and freshness prominent',()=>{
 
 test('trade lifecycle uses explicit take and missed actions with source linkage',()=>{
   const validator=read('components/TradeValidator.tsx');
+  const header=read('components/AppHeader.tsx');
   assert.match(validator,/setTradeActionMode\('ACTIVATE'\)/);
   assert.match(validator,/setTradeActionMode\('MISSED'\)/);
   assert.match(validator,/Take trade/);
+  assert.match(validator,/Take anyway/);
   assert.match(validator,/Mark as missed/);
   assert.match(validator,/Save setup/);
-  assert.match(validator,/Use setup/);
+  assert.match(validator,/Use setup parameters/);
+  assert.match(header,/href="\/active-trade"/);
+  assert.match(header,/Active Trade/);
   assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
   assert.match(validator,/sourceReportId:result\.reportSourceId/);
 });

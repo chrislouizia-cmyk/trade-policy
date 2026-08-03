@@ -1,9 +1,13 @@
-import { evaluateTradeAuthorizationEligibility as evaluateEligibility, type TradeAuthorizationInput } from '@/lib/trade-authorization';
+import { evaluateTradeAuthorizationEligibility as evaluateEligibility, type TradeAuthorizationInput } from '../trade-authorization.ts';
 
 export type TradeLifecycleStatus = 'ACTIVE' | 'OPEN' | 'CLOSED' | 'MISSED';
 
 export interface TradeActivationInput extends TradeAuthorizationInput {
   verdict: string;
+}
+
+export interface TradeActivationOptions {
+  allowOverride?: boolean;
 }
 
 export interface TradeActivationResult {
@@ -14,6 +18,7 @@ export interface TradeActivationResult {
   immutableSourceLink?: boolean;
   sourceDecisionId?: string;
   sourceReportId?: string;
+  overrideMode?: 'READY' | 'OVERRIDE';
 }
 
 export interface TradeCloseInput {
@@ -31,8 +36,8 @@ export interface TradeCloseResult {
   manageTradeVisible?: boolean;
 }
 
-export function canActivateTradeFromDecision(input: TradeActivationInput): TradeActivationResult {
-  const eligibility = evaluateEligibility(input);
+export function canActivateTradeFromDecision(input: TradeActivationInput, options?: TradeActivationOptions): TradeActivationResult {
+  const eligibility = evaluateEligibility({ ...input, allowOverride: options?.allowOverride });
   if (!eligibility.allowed) {
     return {
       allowed: false,
@@ -42,6 +47,7 @@ export function canActivateTradeFromDecision(input: TradeActivationInput): Trade
       immutableSourceLink: eligibility.immutableSourceLink,
       sourceDecisionId: eligibility.sourceDecisionId,
       sourceReportId: eligibility.sourceReportId,
+      overrideMode: eligibility.overrideMode,
     };
   }
 
@@ -52,6 +58,7 @@ export function canActivateTradeFromDecision(input: TradeActivationInput): Trade
     immutableSourceLink: true,
     sourceDecisionId: input.sourceDecisionId,
     sourceReportId: input.sourceReportId,
+    overrideMode: eligibility.overrideMode ?? 'READY',
   };
 }
 

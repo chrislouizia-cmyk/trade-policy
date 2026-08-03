@@ -90,6 +90,23 @@ test('WAIT and blocked outcomes cannot create trade', () => {
   assert.equal(canActivateTradeFromDecision({ verdict: 'READY', analysisStatus: 'DATA_UNAVAILABLE', strategyActive: true, alreadyConverted: false }).allowed, false);
 });
 
+test('override activation is allowed for WAIT and BLOCKED when explicitly requested', () => {
+  const wait = canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
+  const blocked = canActivateTradeFromDecision({ verdict: 'BLOCKED', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
+
+  assert.equal(wait.allowed, true);
+  assert.equal(wait.overrideMode, 'OVERRIDE');
+  assert.equal(blocked.allowed, true);
+  assert.equal(blocked.overrideMode, 'OVERRIDE');
+});
+
+test('data unavailable cannot be overridden', () => {
+  const result = canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'DATA_UNAVAILABLE', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'DECISION_NOT_READY');
+});
+
 test('duplicate activation is blocked', () => {
   const result = canActivateTradeFromDecision({
     verdict: 'READY',

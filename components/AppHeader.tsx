@@ -4,6 +4,7 @@ import FeedbackWidget from '@/components/FeedbackWidget';
 import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 
 function greeting() {
@@ -13,7 +14,7 @@ function greeting() {
   return 'Good evening';
 }
 
-export default function AppHeader({
+export default async function AppHeader({
   eyebrow,
   displayName,
   description,
@@ -24,6 +25,10 @@ export default function AppHeader({
   description: string;
   userId: string;
 }) {
+  const supabase = await createClient();
+  const { count } = await supabase.from('active_trades').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'OPEN');
+  const activeTradeCount = count ?? 0;
+
   return (
     <>
       <header className="app-shell-header client-header">
@@ -52,6 +57,7 @@ export default function AppHeader({
         <nav className="primary-nav" aria-label="Primary navigation">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/validate">Decision</Link>
+          <Link href="/active-trade">Active Trade{activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}</Link>
           <Link href="/history">History</Link>
           <Link href="/account">Account</Link>
           <Link href="/profile">Strategies</Link>

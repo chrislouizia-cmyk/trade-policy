@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     const body = await request.json();
     const mode = body.mode === 'MISSED' ? 'MISSED' : 'ACTIVATE';
+    const allowOverride = body.activationMode === 'OVERRIDE' && ['WAIT','BLOCKED','REJECTED'].includes(String(body.originalVerdict ?? body.verdict ?? 'READY'));
     const entry = Number(body.entry), stopLoss = Number(body.stopLoss), takeProfit = Number(body.takeProfit);
     const riskPercent = Number(body.riskPercent ?? 0.5), initialRR = Number(body.initialRR);
     if (!body.instrument || !['BUY','SELL'].includes(body.direction) || typeof body.highImpactNews !== 'boolean' || ![entry,stopLoss,takeProfit,riskPercent,initialRR].every(Number.isFinite)) {
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       sourceReportId: typeof body.sourceReportId === 'string' ? body.sourceReportId : undefined,
       readinessPercentage: typeof body.readinessPercentage === 'number' ? body.readinessPercentage : undefined,
       missingMandatoryConfirmations: Array.isArray(body.missingMandatoryConfirmations) ? body.missingMandatoryConfirmations : undefined,
-    });
+    }, { allowOverride });
 
     if (mode === 'MISSED') {
       if (body.tradeRecordId) {
@@ -116,6 +117,8 @@ export async function POST(request: Request) {
       originalVerdict: body.originalVerdict ?? null,
       originalVerdictReason: body.originalVerdictReason ?? null,
       overrideReason: body.overrideReason ?? null,
+      overrideConditions: Array.isArray(body.overrideConditions) ? body.overrideConditions : null,
+      activationMode: body.activationMode === 'OVERRIDE' ? 'OVERRIDE' : 'READY',
     });
     const { data: trade, error } = await supabase.from('active_trades').insert({
       ...tradePayload,
