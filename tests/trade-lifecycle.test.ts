@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canActivateTradeFromDecision, canCloseTrade, evaluateTradeAuthorizationEligibility, finalizeTradeLifecycle, resolveTradeJournalAction } from '../lib/server/trade-lifecycle.ts';
+import { getSafeTradeActivationError } from '../lib/trade-action-errors.ts';
 
 test('READY decision can create ACTIVE trade', () => {
   const result = canActivateTradeFromDecision({
@@ -176,4 +177,13 @@ test('source decision remains linked and immutable', () => {
   assert.equal(result.sourceDecisionId, 'decision-source-id');
   assert.equal(result.sourceReportId, 'decision-report-id');
   assert.equal(result.immutableSourceLink, true);
+});
+
+test('server failures surface a safe actionable reason', () => {
+  const message = getSafeTradeActivationError({
+    error: 'The originating decision could not be verified.',
+    rejection: { reasonCode: 'SOURCE_DECISION_MISSING', message: 'The originating decision could not be verified.' },
+  });
+
+  assert.equal(message, 'The originating decision could not be verified.');
 });

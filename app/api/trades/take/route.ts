@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { canActivateTradeFromDecision, evaluateTradeAuthorizationEligibility } from '@/lib/server/trade-lifecycle';
+import { buildActiveTradeRow } from '@/lib/server/trade-activation';
 
 export async function POST(request: Request) {
   let cleanup:{supabase:Awaited<ReturnType<typeof createClient>>;userId:string;tradeRecordId:string}|null=null;
@@ -89,15 +90,36 @@ export async function POST(request: Request) {
       }
     }
 
+    const tradePayload = buildActiveTradeRow({
+      userId: user.id,
+      accountId: body.accountId ?? null,
+      balanceAtEntry: body.balanceAtEntry ?? null,
+      riskAmount: body.riskAmount ?? null,
+      strategyProfileId: body.strategyProfileId ?? null,
+      strategyNameAtEntry: body.strategyNameAtEntry ?? null,
+      strategyVersion: typeof body.strategySnapshot?.version === 'string' ? body.strategySnapshot.version : (typeof body.strategySnapshot?.engineVersion === 'number' ? String(body.strategySnapshot.engineVersion) : null),
+      strategyRevisionId: typeof body.strategySnapshot?.revisionId === 'string' ? body.strategySnapshot.revisionId : null,
+      tradeRecordId: body.tradeRecordId ?? null,
+      sourceDecisionId: typeof body.sourceDecisionId === 'string' ? body.sourceDecisionId : null,
+      sourceReportId: typeof body.sourceReportId === 'string' ? body.sourceReportId : null,
+      instrument: body.instrument,
+      direction: body.direction,
+      entry,
+      stopLoss,
+      takeProfit,
+      riskPercent,
+      initialRR,
+      setupType: body.setupType ?? null,
+      initialScore: body.initialScore ?? null,
+      initialAnalysis: body.initialAnalysis ?? null,
+      takenAgainstVerdict: Boolean(body.takenAgainstVerdict),
+      originalVerdict: body.originalVerdict ?? null,
+      originalVerdictReason: body.originalVerdictReason ?? null,
+      overrideReason: body.overrideReason ?? null,
+    });
     const { data: trade, error } = await supabase.from('active_trades').insert({
-      user_id:user.id, account_id:body.accountId ?? null, balance_at_entry:body.balanceAtEntry ?? null, risk_amount:body.riskAmount ?? null, strategy_profile_id:body.strategyProfileId ?? null, strategy_name_at_entry:body.strategyNameAtEntry ?? null, strategy_snapshot:{...(body.strategySnapshot ?? {}),tradeContext:{highImpactNews:body.highImpactNews}}, trade_record_id:body.tradeRecordId ?? null,
-      instrument:body.instrument, direction:body.direction, entry, stop_loss:stopLoss, take_profit:takeProfit,
-      risk_percent:riskPercent, initial_rr:initialRR, setup_type:body.setupType ?? null, initial_score:body.initialScore ?? null,
-      initial_analysis:body.initialAnalysis ?? null, status:'OPEN', current_price:entry, current_r:0, mfe_r:0, mae_r:0,
-      taken_against_verdict:Boolean(body.takenAgainstVerdict), original_verdict:body.originalVerdict ?? null,
-      original_verdict_reason:body.originalVerdictReason ?? null, override_reason:body.overrideReason ?? null,
-      source_decision_id: typeof body.sourceDecisionId === 'string' ? body.sourceDecisionId : null,
-      source_report_id: typeof body.sourceReportId === 'string' ? body.sourceReportId : null,
+      ...tradePayload,
+      strategy_snapshot:{...(body.strategySnapshot ?? {}),tradeContext:{highImpactNews:body.highImpactNews}},
     }).select().single();
     if (error) throw error;
     const {error:eventError}=await supabase.from('active_trade_events').insert({ user_id:user.id, trade_id:trade.id,

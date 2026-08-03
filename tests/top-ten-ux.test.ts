@@ -92,8 +92,10 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
   const validator=read('components/TradeValidator.tsx');
   assert.match(validator,/setTradeActionMode\('ACTIVATE'\)/);
   assert.match(validator,/setTradeActionMode\('MISSED'\)/);
-  assert.match(validator,/Record trade taken/);
-  assert.match(validator,/I did not take this trade/);
+  assert.match(validator,/Take trade/);
+  assert.match(validator,/Mark as missed/);
+  assert.match(validator,/Save setup/);
+  assert.match(validator,/Use setup/);
   assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
   assert.match(validator,/sourceReportId:result\.reportSourceId/);
 });
