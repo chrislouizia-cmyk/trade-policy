@@ -1,11 +1,12 @@
-import type { StrategyProfile } from '../../types/trade.ts';
+import type { ReadinessDiagnostics, StrategyProfile } from '../../types/trade.ts';
 import type { EvidenceAssessment } from '../market-analysis.ts';
+import { resolveComposerRuleId } from './composer.ts';
 import { evaluateTradingDnaRuntime, type RuntimeFact, type RuntimeStatus, type TradingDnaEvidenceReport, type TradingDnaRuntimeContext } from './runtime.ts';
 
 export type LiveReadinessState='READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';
 export type LiveReadinessCounts={passed:number;failed:number;pending:number};
 export type LiveReadinessItem={label:string;status:RuntimeStatus;required:boolean;weight:number;reason:string;evidenceSource:string};
-export type LiveSetupReadiness={percentage:number|null;state:LiveReadinessState;required:LiveReadinessCounts;optional:LiveReadinessCounts;totalRequiredWeight:number;passingRequiredWeight:number;formula:string;conditions:LiveReadinessItem[];blockers:LiveReadinessItem[];pendingConfirmations:LiveReadinessItem[]};
+export type LiveSetupReadiness={percentage:number|null;state:LiveReadinessState;required:LiveReadinessCounts;optional:LiveReadinessCounts;totalRequiredWeight:number;passingRequiredWeight:number;formula:string;conditions:LiveReadinessItem[];blockers:LiveReadinessItem[];pendingConfirmations:LiveReadinessItem[];diagnostics?:ReadinessDiagnostics};
 
 const evidenceMap:Record<string,string[]>={
   h4TrendAligned:['structure.trend-alignment'],h1TrendAligned:['structure.trend-alignment'],structurePattern:['structure.higher-high','structure.higher-low','structure.lower-high','structure.lower-low'],
@@ -34,4 +35,22 @@ function readinessRules(strategy:StrategyProfile){
   const required=new Set(strategy.requiredEvidence??[]);
   return Object.entries(strategy.evidenceWeights??{}).map(([ruleKey,weight])=>({ruleKey,label:ruleKey,enabled:true,mandatory:required.has(ruleKey as never),weight:Number(weight),minimumConfidence:0,timeframeRole:'ENTRY' as const,evaluationMode:'AUTOMATIC' as const}));
 }
-export function evaluateLiveTradingDna(strategy:StrategyProfile,evidence:Record<string,EvidenceAssessment>,now?:()=>string){const report=evaluateTradingDnaRuntime(readinessRules(strategy),buildLiveTradingDnaContext(evidence),now);return {report,readiness:calculateLiveSetupReadiness(report)}}
+function collectReadinessDiagnostics(strategy:StrategyProfile,evidence:Record<string,EvidenceAssessment>,report:TradingDnaEvidenceReport):ReadinessDiagnostics {
+  const ruleKeys=(strategy.rules??[]).filter(rule=>rule.enabled).map(rule=>rule.ruleKey);
+  const evidenceKeys=Object.keys(evidence??{});
+  const resolvedRuleIds=new Set(ruleKeys.map((ruleKey)=>resolveComposerRuleId(ruleKey)).filter((ruleId):ruleId is string=>Boolean(ruleId)));
+  const normalizedEvidenceIds=new Set(evidenceKeys.map((evidenceKey)=>{
+    const resolved=resolveComposerRuleId(evidenceKey);
+    return resolved ?? null;
+  }).filter((ruleId):ruleId is string=>Boolean(ruleId)));
+  const unmatchedStrategyRuleKeys=ruleKeys.filter((ruleKey)=>!resolveComposerRuleId(ruleKey));
+  const unmatchedEvidenceKeys=evidenceKeys.filter((evidenceKey)=>!normalizedEvidenceIds.has(resolveComposerRuleId(evidenceKey) ?? ''));
+  const reason = evidenceKeys.length === 0 || report.conditions.length === 0
+    ? 'No evidence was produced for the required readiness rules.'
+    : unmatchedStrategyRuleKeys.length || unmatchedEvidenceKeys.length
+      ? `Readiness is using the current analysis evidence, but ${unmatchedStrategyRuleKeys.length ? `${unmatchedStrategyRuleKeys.length} strategy rule${unmatchedStrategyRuleKeys.length===1?'':'s'} could not be normalized` : 'no strategy rules were normalized'}${unmatchedEvidenceKeys.length ? ` and ${unmatchedEvidenceKeys.length} evidence key${unmatchedEvidenceKeys.length===1?'':'s'} were not matched` : ''}.`
+      : 'Readiness is derived from the current analysis evidence and required strategy rules.';
+  return {reason,unmatchedEvidenceKeys,unmatchedStrategyRuleKeys,normalizedRuleKeys:[...resolvedRuleIds]};
+}
+
+export function evaluateLiveTradingDna(strategy:StrategyProfile,evidence:Record<string,EvidenceAssessment>,now?:()=>string){const report=evaluateTradingDnaRuntime(readinessRules(strategy),buildLiveTradingDnaContext(evidence),now);const readiness=calculateLiveSetupReadiness(report);return {report,readiness:{...readiness,diagnostics:collectReadinessDiagnostics(strategy,evidence,report)}}}

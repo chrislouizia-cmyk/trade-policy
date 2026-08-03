@@ -64,3 +64,48 @@ test('customer readiness uses human labels and never serialized composer keys',(
   const condition=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.bos')!,'bos');const result=evaluateLiveTradingDna(profile(strategyRulesFromComposerTree(appendComposerNode(createComposerGroup(),'root',condition))),{bosConfirmed:assessment(false)});
   assert.match(result.readiness.blockers[0].label,/BOS/);assert.doesNotMatch(JSON.stringify(result.readiness),/dna\.v1\./);
 });
+
+test('required readiness percentages use the required-rule denominator and ignore optional confluence',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('bosConfirmed',true,25),
+    legacy('liquiditySweep',true,25),
+    legacy('retestConfirmed',true,25),
+    legacy('fairValueGap',true,25),
+    legacy('premiumDiscount',false,50),
+  ]),{bosConfirmed:assessment(true),liquiditySweep:assessment(false),retestConfirmed:assessment(false),fairValueGap:assessment(false),premiumDiscount:assessment(true)});
+  assert.equal(result.readiness.percentage,25);
+  assert.equal(result.readiness.required.passed,1);
+  assert.equal(result.readiness.required.failed,3);
+  assert.equal(result.readiness.required.pending,0);
+  assert.equal(result.readiness.optional.passed,1);
+});
+
+test('alias keys normalize to the canonical runtime evidence and resolve readiness',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('trendAlignmentH1',true,40),
+    legacy('premium_discount',true,30),
+    legacy('breakOfStructure',true,30),
+  ]),{h1TrendAligned:assessment(true),premiumDiscount:assessment(true),bosConfirmed:assessment(true)});
+  assert.equal(result.readiness.percentage,100);
+  assert.equal(result.readiness.required.passed,3);
+  assert.equal(result.readiness.diagnostics?.unmatchedStrategyRuleKeys.length,0);
+});
+
+test('empty evidence produces zero percent with explicit diagnostics',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('bosConfirmed',true,100),
+    legacy('liquiditySweep',true,100),
+  ]),{});
+  assert.equal(result.readiness.percentage,0);
+  assert.equal(result.readiness.required.passed,0);
+  assert.equal(result.readiness.required.failed,0);
+  assert.equal(result.readiness.required.pending,2);
+  assert.match(result.readiness.diagnostics?.reason ?? '',/no evidence/i);
+});
+
+test('unmatched strategy rule keys are surfaced diagnostically',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('mysteryDetector',true,100),
+  ]),{});
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys, ['mysteryDetector']);
+});

@@ -29,6 +29,7 @@ export default function SetupReadiness({analysis}:{analysis:ChartAnalysis}){
   });
   const failedLabels=readiness.blockers.map(item=>formatHumanLabel(item.label));
   const pendingLabels=readiness.pendingConfirmations.map(item=>formatHumanLabel(item.label));
+  const showBetaDiagnostics = process.env.NODE_ENV !== 'production' && Boolean(readiness.diagnostics);
 
   return <section className="setup-readiness card inset-card" aria-labelledby="setup-readiness-title">
     <header className="setup-readiness-header">
@@ -64,5 +65,6 @@ export default function SetupReadiness({analysis}:{analysis:ChartAnalysis}){
     </div>
     {failedLabels.length>0&&<article className="setup-readiness-list-card"><div className="setup-readiness-list-head"><h4>Failed</h4><p className="setup-readiness-list-summary">{readiness.required.failed} failed rule{readiness.required.failed===1?'':'s'}</p></div><ul className="setup-readiness-list">{failedLabels.map(item=><li key={item}>{item}</li>)}</ul></article>}
     {pendingLabels.length>0&&<article className="setup-readiness-list-card"><div className="setup-readiness-list-head"><h4>Pending confirmations</h4><p className="setup-readiness-list-summary">{readiness.required.pending} pending confirmation{readiness.required.pending===1?'':'s'}</p></div><ul className="setup-readiness-list setup-readiness-pending">{pendingLabels.map(item=><li key={item}>{item}</li>)}</ul></article>}
+    {showBetaDiagnostics&&readiness.diagnostics&&<article className="setup-readiness-list-card"><div className="setup-readiness-list-head"><h4>Beta diagnostics</h4><p className="setup-readiness-list-summary">Required rules {readiness.required.passed + readiness.required.failed + readiness.required.pending}/{readiness.required.passed + readiness.required.failed + readiness.required.pending}</p></div><ul className="setup-readiness-list"><li><strong>Required rules total:</strong> {readiness.required.passed + readiness.required.failed + readiness.required.pending}</li><li><strong>Passed:</strong> {readiness.required.passed}</li><li><strong>Failed:</strong> {readiness.required.failed}</li><li><strong>Pending:</strong> {readiness.required.pending}</li><li><strong>Unmatched evidence keys:</strong> {readiness.diagnostics.unmatchedEvidenceKeys.length ? readiness.diagnostics.unmatchedEvidenceKeys.join(', ') : 'None'}</li><li><strong>Unmatched strategy rule keys:</strong> {readiness.diagnostics.unmatchedStrategyRuleKeys.length ? readiness.diagnostics.unmatchedStrategyRuleKeys.join(', ') : 'None'}</li></ul></article>}
   </section>
 }

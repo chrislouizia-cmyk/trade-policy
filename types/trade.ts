@@ -60,6 +60,7 @@ export type MarketBias='BULLISH'|'BEARISH'|'RANGE'|'UNCLEAR';
 export type TimeframeLayer={role:TimeframeRole;timeframe:string};
 export type LayerAnalysis=TimeframeLayer&{bias:MarketBias;confirmedEvidence:string[];missingEvidence:string[];confidence:number|null};
 export type ManualConfirmationState='PENDING'|'CONFIRMED'|'FAILED';
+export type ReadinessDiagnostics={reason:string;unmatchedEvidenceKeys:string[];unmatchedStrategyRuleKeys:string[];normalizedRuleKeys:string[]};
 export type ManualConfirmation={evidenceKey:string;state?:ManualConfirmationState;confirmed?:boolean;note?:string};
 
 export type StopLimit = {
@@ -319,7 +320,7 @@ export type ChartAnalysis = {
   setupType: SetupType;
   liveAnalysisConfidence: number | null;
   strategyConfidenceThreshold: number;
-  setupReadiness?: {percentage:number|null;state:'READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';required:{passed:number;failed:number;pending:number};optional:{passed:number;failed:number;pending:number};totalRequiredWeight:number;passingRequiredWeight:number;formula:string;blockers:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;pendingConfirmations:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>};
+  setupReadiness?: {percentage:number|null;state:'READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';required:{passed:number;failed:number;pending:number};optional:{passed:number;failed:number;pending:number};totalRequiredWeight:number;passingRequiredWeight:number;formula:string;blockers:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;pendingConfirmations:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;diagnostics?:ReadinessDiagnostics};
   evidence: Record<EvidenceKey, EvidenceAssessment>;
   candidates: EntryCandidate[];
   warnings: string[];
