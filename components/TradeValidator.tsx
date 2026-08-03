@@ -341,7 +341,6 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];
   const optionalMissing=narrative?.missingEvidence.filter(item=>!item.mandatory)??[];
   const workspaceLayout = useMemo(() => getDecisionWorkspaceLayoutState({ analysis, explanation, narrative }), [analysis, explanation, narrative]);
-  const workspaceGridClassName = workspaceLayout.mode === 'full-width' ? 'validate-workspace-grid validate-workspace-grid--full-width' : 'validate-workspace-grid';
   const isValidAnalysis = analysis?.status === 'VALID_ANALYSIS';
   const analysisStatusLabel = getAnalysisStatusLabel(analysis?.status);
   const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
@@ -351,7 +350,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
     <LiveMarketPanel strategy={strategy} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing}/>
 
-    <div className={workspaceGridClassName}>
+    <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {explanation&&<section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title"><p className="brand">DECISION</p><h2 id="mobile-decision-title">{explanation.verdict.replaceAll('_',' ')}</h2><strong>{explanation.headline}</strong><p className="decision-primary-reason">{explanation.primaryReason}</p><div className="mobile-decision-facts"><span><small>Required rules</small><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} confirmed</strong></span><span><small>Next</small><strong>{explanation.nextAction}</strong></span></div></section>}
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
