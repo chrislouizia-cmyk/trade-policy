@@ -44,7 +44,7 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         }).eq('id', body.tradeRecordId).eq('user_id', user.id);
       }
-      return NextResponse.json({ status: 'MISSED', createActiveTrade: false, decisionCheck });
+      return NextResponse.json({ status: 'MISSED', createActiveTrade: false, decisionCheck, rejection: { reasonCode: 'MISSED', message: 'The decision was recorded as missed without creating an active trade.', state: 'READY' } });
     }
 
     if (!decisionCheck.allowed) {
@@ -65,27 +65,27 @@ export async function POST(request: Request) {
         missingMandatoryConfirmations: Array.isArray(body.missingMandatoryConfirmations) ? body.missingMandatoryConfirmations : undefined,
       });
       console.error('[TRADE_AUTHORIZATION_REJECTED]', { reasonCode: eligibility.reasonCode, message: eligibility.message, verdict: body.originalVerdict ?? body.verdict ?? 'READY' });
-      return NextResponse.json({ error: 'This decision cannot be authorized into an active trade right now.', rejection: { reasonCode: eligibility.reasonCode, message: eligibility.message, state: eligibility.state } }, { status: 409 });
+      return NextResponse.json({ error: eligibility.message, rejection: { reasonCode: eligibility.reasonCode, message: eligibility.message, state: eligibility.state } }, { status: 409 });
     }
 
     const { data: existing, error: existingError } = await supabase.from('active_trades').select('id').eq('user_id', user.id).eq('instrument', body.instrument).eq('status','OPEN').maybeSingle();
     if (existingError) throw existingError;
     if (existing) {
       if(cleanup)await cleanup.supabase.from('trade_records').delete().eq('id',cleanup.tradeRecordId).eq('user_id',cleanup.userId).eq('source','EXECUTED').eq('status','OPEN');
-      return NextResponse.json({ error: 'You already have an open trade for this instrument.' }, { status: 409 });
+      return NextResponse.json({ error: 'You already have an open trade for this instrument.', rejection: { reasonCode: 'TRADE_ALREADY_ACTIVATED', message: 'You already have an open trade for this instrument.', state: 'BLOCKED' } }, { status: 409 });
     }
 
     const { data: sourceDecision, error: sourceDecisionError } = await supabase.from('decision_report_sources').select('id,user_id').eq('id', body.sourceDecisionId).eq('user_id', user.id).maybeSingle();
     if (sourceDecisionError) throw sourceDecisionError;
     if (!sourceDecision && body.sourceDecisionId) {
-      return NextResponse.json({ error: 'The originating decision could not be verified.' }, { status: 409 });
+      return NextResponse.json({ error: 'The originating decision could not be verified.', rejection: { reasonCode: 'SOURCE_DECISION_MISSING', message: 'The originating decision could not be verified.', state: 'BLOCKED' } }, { status: 409 });
     }
 
     if (body.sourceReportId) {
       const { data: sourceReport, error: sourceReportError } = await supabase.from('decision_reports').select('id,user_id').eq('id', body.sourceReportId).eq('user_id', user.id).maybeSingle();
       if (sourceReportError) throw sourceReportError;
       if (!sourceReport) {
-        return NextResponse.json({ error: 'The originating decision report could not be verified.' }, { status: 409 });
+        return NextResponse.json({ error: 'The originating decision report could not be verified.', rejection: { reasonCode: 'SOURCE_REPORT_MISSING', message: 'The originating decision report could not be verified.', state: 'BLOCKED' } }, { status: 409 });
       }
     }
 
