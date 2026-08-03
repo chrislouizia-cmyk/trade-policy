@@ -10,6 +10,7 @@ type Props={
   onPrimaryAction:()=>void;
   onViewReport:()=>void;
   reportButtonRef?:RefObject<HTMLButtonElement|null>;
+  showReportButton?:boolean;
 };
 
 const icon={READY:'✓',WAIT:'…',BLOCKED:'!',NO_SETUP:'○',MARKET_CLOSED:'○',DATA_UNAVAILABLE:'!',STRATEGY_INCOMPLETE:'!'} as const;
@@ -22,7 +23,7 @@ function actionLabel(explanation:DecisionExplanationSummary|null):string{
   return 'Check again';
 }
 
-export default function DecisionHero({explanation,narrative,analyzing,onPrimaryAction,onViewReport,reportButtonRef}:Props){
+export default function DecisionHero({explanation,narrative,analyzing,onPrimaryAction,onViewReport,reportButtonRef,showReportButton=true}:Props){
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const readinessAllowed=!['DATA_UNAVAILABLE','MARKET_CLOSED'].includes(explanation.verdict);
@@ -38,7 +39,7 @@ export default function DecisionHero({explanation,narrative,analyzing,onPrimaryA
       {readinessAllowed&&<p className="required-rule-count"><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount}</strong> required rules confirmed</p>}
       <div className="decision-next-action"><span>What happens next</span><strong>{explanation.nextAction}</strong></div>
     </div>
-    <div className="decision-hero-actions"><button className="primary" type="button" onClick={onPrimaryAction}>{actionLabel(explanation)}</button><button ref={reportButtonRef} type="button" className="decision-hero-report-button" onClick={onViewReport}><span aria-hidden="true">View full Decision Report</span><span className="sr-only">View Decision Report</span></button></div>
+    <div className="decision-hero-actions"><button className="primary" type="button" onClick={onPrimaryAction}>{actionLabel(explanation)}</button>{showReportButton?<button ref={reportButtonRef} type="button" className="decision-hero-report-button" onClick={onViewReport}><span aria-hidden="true">View full Decision Report</span><span className="sr-only">View Decision Report</span></button>:null}</div>
     <div className="decision-data-trust available"><strong>{`Market data · ${analysis.provider}`}</strong><span>{analysis.latestCandleTimestamp?`Last verified candle ${new Date(analysis.latestCandleTimestamp).toLocaleString()}`:'No verified candle time available'}{analysis.calculatedAt?` · decision calculated ${new Date(analysis.calculatedAt).toLocaleTimeString()}`:''}</span></div>
   </section>;
 }
