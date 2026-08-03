@@ -104,6 +104,11 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
   assert.match(validator,/sourceReportId:result\.reportSourceId/);
 });
 
+test('decision card explanation uses the same authorization eligibility as the take flow',()=>{
+  const validator=read('components/TradeValidator.tsx');
+  assert.match(validator,/authorizationEligibility: result\?\.authorizationEligibility/);
+});
+
 test('UX work does not modify deterministic or HQ implementation files',()=>{
   const changed=process.env.UX_CHANGED_FILES?.split('\n').filter(Boolean)??[];
   for(const path of changed){
