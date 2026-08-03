@@ -16,7 +16,7 @@ test('first-run dashboard and analytics never invent zero-value evidence',()=>{
 test('pricing states the real Pro price and exact plan limits',()=>{
   const pricing=read('app/pricing/page.tsx');
   assert.match(pricing,/\$29 \/ month/);
-  assert.match(pricing,/20 market checks each month/);
+  assert.match(pricing,/30 market checks each month/);
   assert.match(pricing,/Up to 10 active strategies/);
   assert.match(pricing,/same deterministic decision logic/);
 });
