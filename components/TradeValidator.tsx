@@ -21,6 +21,7 @@ import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-
 import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
 import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation';
+import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -52,7 +53,7 @@ function getAnalysisStatusLabel(status: ChartAnalysis['status'] | undefined) {
 }
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
-type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string; authorizationEligibility?: TradeAuthorizationEligibility };
 type ReportSaveState={status:'idle'|'saving'|'saved'|'error';message?:string;reportId?:string;reportUrl?:string;savedAt?:string};
 
 type SavedSetup = {
@@ -93,6 +94,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [reviewAcknowledged,setReviewAcknowledged]=useState(false);
   const [showReasoning,setShowReasoning]=useState(false);
   const [overrideConfirmation,setOverrideConfirmation]=useState('');
+  const [tradeActionMode,setTradeActionMode]=useState<'ACTIVATE'|'MISSED'|null>(null);
+  const [tradeActionContext,setTradeActionContext]=useState<{againstVerdict:boolean;reason:string|null}>({againstVerdict:false,reason:null});
   const [candidateApplied,setCandidateApplied]=useState('');
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
   const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
@@ -262,15 +265,11 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   }
   async function saveTakenTrade(againstVerdict:boolean){
     if(!result){setError('Run the final risk check before recording the trade.');return;}
+    if(authorizationEligibility?.allowed !== true){setError(authorizationEligibility?.message ?? 'This setup is not currently eligible for final authorization.');return;}
     if(againstVerdict&&result.overrideAllowed===false){setError('This risk-control verdict cannot be overridden with Take Anyway.');return;}
     const get=(name:string)=>(document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null)?.value||'';
-    let overrideReason:string|null=null;
-    if(againstVerdict){
-      const confirmed=window.confirm(`Trade Police verdict: ${result.verdict}\n\n${result.vetoes[0]||result.observations[0]||'The setup is not authorized.'}\n\nDo you still want to take this trade?`);
-      if(!confirmed)return;
-      overrideReason=window.prompt('Why are you taking this trade against the verdict?');
-      if(!overrideReason?.trim()){setError('A reason is required to take a trade against the verdict.');return;}
-    }
+    const overrideReason = tradeActionContext.reason?.trim() || null;
+    if(againstVerdict && !overrideReason){setError('A reason is required to take a trade against the verdict.');return;}
     setSavingTrade(true);setError('');
     try{
       const originalReason=result.vetoes[0]||result.observations[0]||(result.verdict==='AUTHORIZED'?'All configured authorization rules passed.':'The setup did not pass final authorization.');
@@ -278,13 +277,41 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       const riskAmount=balanceAtEntry*(Number(get('riskPercent'))/100);
       const {data:record,error:recordError}=await createClient().from('trade_records').insert({user_id:userId,account_id:accountId||null,balance_at_entry:balanceAtEntry,risk_amount:riskAmount,strategy_profile_id:strategy.id||null,strategy_name_at_entry:strategy.name,source:'EXECUTED',status:'OPEN',instrument:get('instrument'),direction:get('direction'),setup_type:analysis?.setupType||'Manual',session:get('session'),entry:Number(get('entry')),stop_loss:Number(get('stopLoss')),take_profit:Number(get('takeProfit')),rr:result.rr,score:result.score,verdict:result.verdict,chart_analysis:analysis,rule_snapshot:{...strategy,riskPercent:Number(get('riskPercent')),accountBalance:Number(get('accountBalance')),highImpactNews:Boolean(autoChecks.highImpactNews),takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason}}).select().single();
       if(recordError)throw recordError;
-      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,highImpactNews:Boolean(autoChecks.highImpactNews),tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason})});
+      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,highImpactNews:Boolean(autoChecks.highImpactNews),tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason,analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:result.reportSourceId,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
       const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not start Active Trade Monitor.'));if(!data||typeof data!=='object'||!('trade' in data))throw new Error('The trade response was incomplete. Refresh History before trying again.');
       await loadHistory();
-      if(againstVerdict){setOverrideConfirmation('Recorded as taken against the Police Verdict.');window.setTimeout(()=>{window.location.href='/active-trade'},900);}
-      else window.location.href='/active-trade';
+      if(againstVerdict){setOverrideConfirmation('Recorded as taken against the Police Verdict.');window.setTimeout(()=>{window.location.href='/active-trade'},900);} else window.location.href='/active-trade';
     }catch(e:any){setError(e.message||'Could not save executed trade.');}
-    finally{setSavingTrade(false);}
+    finally{setSavingTrade(false);setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null});}
+  }
+
+  async function markTradeMissed(){
+    if(!result){setError('Run the final risk check before recording the missed trade.');return;}
+    setSavingTrade(true);setError('');
+    try {
+      const get=(name:string)=>(document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null)?.value||'';
+      const tradeRecordPayload = {
+        user_id:userId,
+        account_id:accountId||null,
+        instrument:get('instrument'),
+        direction:get('direction'),
+        setup_type:analysis?.setupType||'Manual',
+        session:get('session'),
+        entry:Number(get('entry')),
+        stop_loss:Number(get('stopLoss')),
+        take_profit:Number(get('takeProfit')),
+        verdict:'MISSED',
+        status:'CLOSED',
+        source:'EXECUTED',
+        chart_analysis:analysis,
+        rule_snapshot:{...strategy,riskPercent:Number(get('riskPercent')),accountBalance:Number(get('accountBalance')),highImpactNews:Boolean(autoChecks.highImpactNews)},
+      };
+      const { data: record, error: recordError } = await createClient().from('trade_records').insert(tradeRecordPayload).select().single();
+      if(recordError)throw recordError;
+      const response = await fetch('/api/trades/take', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'MISSED',tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:result.reportSourceId,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
+      const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not record the missed trade.'));await loadHistory();window.location.href='/history';
+    } catch (e:any) { setError(e.message||'Could not record the missed trade.'); }
+    finally { setSavingTrade(false); setTradeActionMode(null); setTradeActionContext({againstVerdict:false,reason:null}); }
   }
 
   const suggested=useMemo(()=>history.filter(h=>h.source==='SUGGESTED').slice(0,3),[history]);
@@ -344,6 +371,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const isValidAnalysis = analysis?.status === 'VALID_ANALYSIS';
   const analysisStatusLabel = getAnalysisStatusLabel(analysis?.status);
   const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
+  const authorizationEligibility = result?.authorizationEligibility ?? null;
+  const isAuthorizationEligible = authorizationEligibility?.allowed === true;
+  const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
+  const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
 
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
@@ -393,7 +424,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         analyzing={analyzing}
         explanation={explanation}
         narrative={narrative ?? undefined}
-        onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(explanation?.verdict==='READY'){document.getElementById('final-risk-check')?.scrollIntoView({behavior:'smooth',block:'start'});return}(document.querySelector('[data-market-check]') as HTMLButtonElement|null)?.click()}}
+        authoritativeVerdict={authorizationBadgeVerdict}
+        onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(authorizationBadgeVerdict==='READY'){document.getElementById('final-risk-check')?.scrollIntoView({behavior:'smooth',block:'start'});return}(document.querySelector('[data-market-check]') as HTMLButtonElement|null)?.click()}}
         onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
         reportButtonRef={reasoningButtonRef}
         showReportButton={workspaceLayout.showDecisionReportButton}
@@ -412,7 +444,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       {(narrative.educationalExplanation||narrative.coachingMessage||narrative.learningTip)?<section className="narrative-coaching" aria-label="Educational coaching"><span>COACHING · EDUCATIONAL ONLY</span>{narrative.educationalExplanation?<p>{narrative.educationalExplanation}</p>:null}{narrative.coachingMessage?<p>{narrative.coachingMessage}</p>:null}{narrative.learningTip?<small>{narrative.learningTip}</small>:null}</section>:null}
       </>}
 
-      <section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Rule score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}<div className="discipline-action-row">{result.verdict==='AUTHORIZED'?<button type="button" onClick={()=>saveTakenTrade(false)} disabled={savingTrade}>{savingTrade?'Saving trade…':'Record trade taken'}</button>:result.overrideAllowed!==false?<details className="override-disclosure"><summary>Advanced: record against this result</summary><p className="muted">This preserves the original verdict and requires your reason. It does not change or approve the decision.</p><button type="button" onClick={()=>saveTakenTrade(true)} disabled={savingTrade}>{savingTrade?'Saving trade…':'Record against verdict'}</button></details>:null}<button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View active trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
+      <section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Rule score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}{isAuthorizationEligible?null:<div className="reasoning-section" aria-live="polite"><strong>{authorizationEligibility?.message ?? 'This decision is not currently eligible to be activated.'}</strong>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}</div>}<div className="discipline-action-row">{isAuthorizationEligible?<button type="button" onClick={()=>setTradeActionMode('ACTIVATE')} disabled={savingTrade}>{savingTrade?'Saving trade…':'Record trade taken'}</button>:null}<button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>I did not take this trade</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View active trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
       <section className="workspace-section save-report-card"><h3>Historical Decision Report</h3><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section>
     </div>
       </div>
@@ -428,6 +460,17 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <h2 className="workspace-title">RECENT ACTIVITY</h2>
       <section className="workspace-section compact-history-card"><h3>LAST 3 TRADES</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
     </div>
+
+    {tradeActionMode&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget){setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null});}}}>
+      <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="trade-action-title">
+        <header className="reasoning-modal-header"><div><p className="brand" id="trade-action-title">TRADE ACTION</p><p className="reasoning-panel-copy">Confirm whether you want to activate this decision into an active trade or mark it as missed.</p></div><button className="reasoning-modal-close" type="button" aria-label="Close trade action" onClick={()=>{setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null});}}>×</button></header>
+        <div className="reasoning-modal-body">
+          <p className="muted">This action is recorded server-side and linked to the originating decision report.</p>
+          {tradeActionMode==='ACTIVATE'&&<div className="reasoning-section"><label>Why are you taking this trade{result?.verdict!=='AUTHORIZED'?' against the current verdict':''}?<textarea value={tradeActionContext.reason ?? ''} onChange={(event)=>setTradeActionContext(current=>({...current,reason:event.target.value}))} rows={4} placeholder={result?.verdict!=='AUTHORIZED'?'Describe the reason for taking it despite the current verdict.':'Describe your rationale for taking this trade.'}/></label><div className="discipline-action-row"><button type="button" onClick={()=>void saveTakenTrade(result?.verdict!=='AUTHORIZED' && tradeActionContext.reason?.trim()!=='' ? true : false)} disabled={savingTrade}>Confirm activation</button><button type="button" onClick={()=>{setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null});}} disabled={savingTrade}>Cancel</button></div></div>}
+          {tradeActionMode==='MISSED'&&<div className="reasoning-section"><p>This marks the setup as a missed opportunity without creating an active trade.</p><div className="discipline-action-row"><button type="button" onClick={()=>void markTradeMissed()} disabled={savingTrade}>Confirm missed trade</button><button type="button" onClick={()=>{setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null});}} disabled={savingTrade}>Cancel</button></div></div>}
+        </div>
+      </section>
+    </div>}
 
     {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
       <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">

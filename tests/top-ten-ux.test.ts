@@ -88,11 +88,14 @@ test('decision surface makes source and freshness prominent',()=>{
   assert.match(hero,/decision calculated/);
 });
 
-test('recording against a verdict is buried and cannot alter the result',()=>{
+test('trade lifecycle uses explicit take and missed actions with source linkage',()=>{
   const validator=read('components/TradeValidator.tsx');
-  assert.match(validator,/Advanced: record against this result/);
-  assert.match(validator,/It does not change or approve the decision/);
-  assert.doesNotMatch(validator,/>Take anyway</);
+  assert.match(validator,/setTradeActionMode\('ACTIVATE'\)/);
+  assert.match(validator,/setTradeActionMode\('MISSED'\)/);
+  assert.match(validator,/Record trade taken/);
+  assert.match(validator,/I did not take this trade/);
+  assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
+  assert.match(validator,/sourceReportId:result\.reportSourceId/);
 });
 
 test('UX work does not modify deterministic or HQ implementation files',()=>{

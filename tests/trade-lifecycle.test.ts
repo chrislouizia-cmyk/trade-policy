@@ -1,0 +1,179 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { canActivateTradeFromDecision, canCloseTrade, evaluateTradeAuthorizationEligibility, finalizeTradeLifecycle, resolveTradeJournalAction } from '../lib/server/trade-lifecycle.ts';
+
+test('READY decision can create ACTIVE trade', () => {
+  const result = canActivateTradeFromDecision({
+    verdict: 'READY',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+  });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.status, 'ACTIVE');
+});
+
+test('WAIT at 100% cannot authorize', () => {
+  const result = evaluateTradeAuthorizationEligibility({
+    verdict: 'WAIT',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    readinessPercentage: 100,
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.eligible, false);
+  assert.equal(result.reasonCode, 'WAIT');
+});
+
+test('incomplete entry evidence cannot authorize', () => {
+  const result = evaluateTradeAuthorizationEligibility({
+    verdict: 'AUTHORIZED',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    missingMandatoryConfirmations: [{ label: 'Entry evidence', reason: 'Entry evidence is still missing.' }],
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reasonCode, 'MISSING_MANDATORY_CONFIRMATIONS');
+  assert.equal(result.missingMandatoryConfirmations[0].label, 'Entry evidence');
+});
+
+test('READY with all mandatory rules can authorize', () => {
+  const result = evaluateTradeAuthorizationEligibility({
+    verdict: 'AUTHORIZED',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    missingMandatoryConfirmations: [],
+  });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.eligible, true);
+  assert.equal(result.reasonCode, 'READY');
+});
+
+test('authorization failure leaves trade data unchanged', () => {
+  const result = evaluateTradeAuthorizationEligibility({
+    verdict: 'WAIT',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.createActiveTrade, false);
+  assert.equal(result.state, 'WAIT');
+});
+
+test('UI verdict and authorization eligibility cannot diverge', () => {
+  const result = evaluateTradeAuthorizationEligibility({
+    verdict: 'AUTHORIZED',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    missingMandatoryConfirmations: [{ label: 'Manual confirmation', reason: 'Manual confirmation is still pending.' }],
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.state, 'WAIT');
+  assert.equal(result.eligible, false);
+});
+
+test('WAIT and blocked outcomes cannot create trade', () => {
+  assert.equal(canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }).allowed, false);
+  assert.equal(canActivateTradeFromDecision({ verdict: 'BLOCKED', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }).allowed, false);
+  assert.equal(canActivateTradeFromDecision({ verdict: 'READY', analysisStatus: 'DATA_UNAVAILABLE', strategyActive: true, alreadyConverted: false }).allowed, false);
+});
+
+test('duplicate activation is blocked', () => {
+  const result = canActivateTradeFromDecision({
+    verdict: 'READY',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: true,
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'TRADE_ALREADY_ACTIVATED');
+});
+
+test('another user cannot activate the decision', () => {
+  const result = canActivateTradeFromDecision({
+    verdict: 'READY',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    decisionOwnerId: 'owner-id',
+    currentUserId: 'viewer-id',
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'DECISION_OWNERSHIP_MISMATCH');
+});
+
+test('source instrument and direction mismatch is blocked', () => {
+  const result = canActivateTradeFromDecision({
+    verdict: 'READY',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    decisionOwnerId: 'owner-id',
+    currentUserId: 'owner-id',
+    decisionInstrument: 'XAUUSD',
+    decisionDirection: 'BUY',
+    requestedInstrument: 'GBPUSD',
+    requestedDirection: 'SELL',
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'DECISION_CONTEXT_MISMATCH');
+});
+
+test('MISSED does not create an active trade', () => {
+  const result = resolveTradeJournalAction({ mode: 'MISSED', verdict: 'READY', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false });
+
+  assert.equal(result.createActiveTrade, false);
+  assert.equal(result.status, 'MISSED');
+});
+
+test('closing an ACTIVE trade updates lifecycle correctly', () => {
+  const result = finalizeTradeLifecycle({ currentStatus: 'OPEN', outcome: 'WIN', exitPrice: 2000, closedAt: '2026-08-02T00:00:00.000Z' });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.nextStatus, 'CLOSED');
+  assert.equal(result.outcome, 'WIN');
+});
+
+test('closed trade cannot be closed twice', () => {
+  const result = canCloseTrade({ currentStatus: 'CLOSED' });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'TRADE_ALREADY_CLOSED');
+});
+
+test('active trade appears in Manage Trade when it is still open', () => {
+  const result = canCloseTrade({ currentStatus: 'OPEN' });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.manageTradeVisible, true);
+});
+
+test('source decision remains linked and immutable', () => {
+  const result = resolveTradeJournalAction({
+    mode: 'ACTIVATE',
+    verdict: 'READY',
+    analysisStatus: 'VALID_ANALYSIS',
+    strategyActive: true,
+    alreadyConverted: false,
+    sourceDecisionId: 'decision-source-id',
+    sourceReportId: 'decision-report-id',
+  });
+
+  assert.equal(result.sourceDecisionId, 'decision-source-id');
+  assert.equal(result.sourceReportId, 'decision-report-id');
+  assert.equal(result.immutableSourceLink, true);
+});

@@ -16,6 +16,7 @@ import { buildHistoricalDecisionSnapshot } from '@/lib/historical-decisions/buil
 import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/schema';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { recordReportFailure } from '@/lib/historical-decisions/operations';
+import { evaluateTradeAuthorizationEligibility } from '@/lib/trade-authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,6 +104,14 @@ export async function POST(request: Request) {
     }
 
     const explanation=buildDecisionExplanation({analysis:authoritativeAnalysis,result,narrative:decisionNarrative,evidenceReport,strategy});
+    const authorizationEligibility=evaluateTradeAuthorizationEligibility({
+      verdict: result.verdict,
+      analysisStatus: authoritativeAnalysis.analysisStatus,
+      strategyActive: true,
+      alreadyConverted: false,
+      readinessPercentage: authoritativeAnalysis.setupReadiness?.percentage ?? undefined,
+      missingMandatoryConfirmations: decisionNarrative.missingEvidence.filter((item)=>item.mandatory).map((item)=>({label:item.label,reason:item.reason})),
+    });
     let snapshot:ReturnType<typeof buildHistoricalDecisionSnapshot>,validatedSnapshot:ReturnType<typeof historicalDecisionSnapshotV1Schema.parse>;
     try{snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot)}catch{await recordReportFailure({reasonCode:'FINGERPRINT_FAILURE',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('REPORT_SNAPSHOT_FAILED','The decision was completed but its historical snapshot could not be prepared. No report was saved.',503)}
     const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
@@ -121,6 +130,7 @@ export async function POST(request: Request) {
         manualConfirmations:normalizedConfirmations,
         evidenceReport,
         decisionNarrative,
+        authorizationEligibility,
         reportSourceId:source.id,
         reportSourceExpiresAt:source.expires_at,
       },
