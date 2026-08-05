@@ -52,9 +52,11 @@ export async function POST(request: Request) {
   const requestId=crypto.randomUUID();
   try {
     const supabase = await createClient();
+    console.log('[auth-debug] validate route start', { pathname: new URL(request.url).pathname, hasCookies: typeof request.headers.get('cookie') === 'string' });
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    console.log('[auth-debug] validate route getUser', { hasUser: Boolean(user), userId: user?.id });
 
     if (!user) {
       return apiError('UNAUTHORIZED','Unauthorized.',401);
@@ -103,7 +105,6 @@ export async function POST(request: Request) {
       console.error('Decision narrative error:', narrativeError);
     }
 
-    const explanation=buildDecisionExplanation({analysis:authoritativeAnalysis,result,narrative:decisionNarrative,evidenceReport,strategy});
     const authorizationEligibility=evaluateTradeAuthorizationEligibility({
       verdict: result.verdict,
       analysisStatus: authoritativeAnalysis.analysisStatus,
@@ -111,7 +112,9 @@ export async function POST(request: Request) {
       alreadyConverted: false,
       readinessPercentage: authoritativeAnalysis.setupReadiness?.percentage ?? undefined,
       missingMandatoryConfirmations: decisionNarrative.missingEvidence.filter((item)=>item.mandatory).map((item)=>({label:item.label,reason:item.reason})),
+      allowOverride: true,
     });
+    const explanation=buildDecisionExplanation({analysis:authoritativeAnalysis,result,narrative:decisionNarrative,evidenceReport,strategy,authorizationEligibility});
     let snapshot:ReturnType<typeof buildHistoricalDecisionSnapshot>,validatedSnapshot:ReturnType<typeof historicalDecisionSnapshotV1Schema.parse>;
     try{snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot)}catch{await recordReportFailure({reasonCode:'FINGERPRINT_FAILURE',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('REPORT_SNAPSHOT_FAILED','The decision was completed but its historical snapshot could not be prepared. No report was saved.',503)}
     const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
@@ -137,7 +140,12 @@ export async function POST(request: Request) {
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    console.error('Validation error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown validation error';
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('Validation error:', message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Validation error stack:', stack);
+    }
     return apiError('VALIDATION_FAILED','Trade authorization could not be completed. Your trade data was not changed.',503);
   }
 }

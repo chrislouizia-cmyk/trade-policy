@@ -15,7 +15,7 @@ export default async function ClientLoginPage({
   if (user) {
     const { data: staffRoute } = await supabase.rpc('staff_workspace_route');
     if (staffRoute) redirect(String(staffRoute));
-    redirect(next);
+    redirect(next === '/validate' ? '/dashboard' : next);
   }
 
   return (

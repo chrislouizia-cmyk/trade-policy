@@ -90,9 +90,16 @@ test('WAIT and blocked outcomes cannot create trade', () => {
   assert.equal(canActivateTradeFromDecision({ verdict: 'READY', analysisStatus: 'DATA_UNAVAILABLE', strategyActive: true, alreadyConverted: false }).allowed, false);
 });
 
-test('override activation is allowed for WAIT and BLOCKED when explicitly requested', () => {
-  const wait = canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
-  const blocked = canActivateTradeFromDecision({ verdict: 'BLOCKED', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
+test('override activation requires a reason when explicitly requested', () => {
+  const result = canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false }, { allowOverride: true });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.code, 'OVERRIDE_REASON_REQUIRED');
+});
+
+test('override activation is allowed for WAIT and BLOCKED when a reason is provided', () => {
+  const wait = canActivateTradeFromDecision({ verdict: 'WAIT', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false, overrideReason: 'The market structure changed.' }, { allowOverride: true });
+  const blocked = canActivateTradeFromDecision({ verdict: 'BLOCKED', analysisStatus: 'VALID_ANALYSIS', strategyActive: true, alreadyConverted: false, overrideReason: 'The setup still fits the plan.' }, { allowOverride: true });
 
   assert.equal(wait.allowed, true);
   assert.equal(wait.overrideMode, 'OVERRIDE');

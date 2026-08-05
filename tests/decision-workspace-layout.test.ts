@@ -33,3 +33,15 @@ test('uses a split layout once a completed decision is available', () => {
   assert.equal(state.showDecisionColumn, true);
   assert.equal(state.showDecisionReportButton, true);
 });
+
+test('keeps the decision column visible for wait and blocked authorization states', () => {
+  for (const verdict of ['WAIT', 'BLOCKED'] as const) {
+    const state = getDecisionWorkspaceLayoutState({
+      analysis: { status: 'VALID_ANALYSIS' } as any,
+      explanation: { verdict } as any,
+      narrative: { reasons: [], missingEvidence: [], nextActions: [] } as any,
+    });
+
+    assert.equal(state.showDecisionColumn, true, verdict);
+  }
+});

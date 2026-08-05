@@ -1,6 +1,7 @@
 import type {TradingDnaEvidenceReport,ConditionEvidence} from '../trading-dna/runtime.ts';
 import type {ChartAnalysis,StrategyProfile,TradeResult} from '../../types/trade.ts';
 import type {DecisionExplanationItem,DecisionExplanationSummary,DecisionExplanationVerdict,DecisionNarrative,NextAction} from '../../types/intelligence.ts';
+import type {TradeAuthorizationEligibility} from '../trade-authorization.ts';
 
 const UNKNOWN_TRIGGER='Trade Police cannot determine the next trigger from the available rule definition.';
 const INTEGRITY='This verdict was determined by your saved trading rules and verified market evidence. AI may explain the result but cannot change it.';
@@ -22,12 +23,17 @@ function value(value:unknown):string|undefined{
   return String(value);
 }
 
-function verdictFor(analysis:ChartAnalysis,result:TradeResult|null):DecisionExplanationVerdict{
+function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorizationEligibility?:TradeAuthorizationEligibility):DecisionExplanationVerdict{
   const marketClosed=analysis.warnings.some(warning=>/market\s+closed|outside\s+market\s+hours/i.test(warning));
   if(marketClosed)return 'MARKET_CLOSED';
   if(['DATA_UNAVAILABLE','INSUFFICIENT_DATA','ANALYSIS_FAILED'].includes(analysis.status))return 'DATA_UNAVAILABLE';
   if(['STRATEGY_UNSUPPORTED','STRATEGY_INCOMPLETE'].includes(analysis.status))return 'STRATEGY_INCOMPLETE';
   if(analysis.status==='NO_RELEVANT_EVIDENCE')return 'NO_SETUP';
+  if(authorizationEligibility){
+    if(authorizationEligibility.state==='BLOCKED'||authorizationEligibility.state==='DATA_UNAVAILABLE')return authorizationEligibility.state==='BLOCKED'?'BLOCKED':'DATA_UNAVAILABLE';
+    if(authorizationEligibility.state==='WAIT')return 'WAIT';
+    if(authorizationEligibility.state==='READY')return 'READY';
+  }
   if(result?.verdict==='AUTHORIZED')return 'READY';
   if(result?.verdict==='REJECTED')return 'BLOCKED';
   if(result?.verdict==='WAIT')return 'WAIT';
@@ -80,12 +86,36 @@ function stableItems(items:DecisionExplanationItem[]):DecisionExplanationItem[]{
   return items.map((item,index)=>({item,index})).sort((a,b)=>Number(b.item.required)-Number(a.item.required)||rank[a.item.state]-rank[b.item.state]||a.index-b.index||a.item.id.localeCompare(b.item.id)).map(entry=>entry.item);
 }
 
-function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanationItem[]):string{
+function missingConfirmationItems(analysis:ChartAnalysis,authorizationEligibility?:TradeAuthorizationEligibility):DecisionExplanationItem[]{
+  if(!authorizationEligibility?.missingMandatoryConfirmations?.length)return [];
+  return authorizationEligibility.missingMandatoryConfirmations.map((item,index)=>({
+    id:`authorization-missing:${index}:${item.label}`,
+    ruleId:`authorization-missing:${index}`,
+    title:item.label,
+    plainLanguageDescription:item.reason,
+    state:'MISSING' as const,
+    required:true,
+    supported:true,
+    observedValue:undefined,
+    expectedValue:undefined,
+    detectedAt:analysis.calculatedAt,
+    source:'Authorization review',
+    nextAction:undefined,
+    evidenceIds:[`authorization-missing:${index}`],
+    deterministic:true,
+  }));
+}
+
+function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanationItem[],authorizationEligibility?:TradeAuthorizationEligibility):string{
   if(verdict==='DATA_UNAVAILABLE')return 'Primary reason: Current market data could not be verified.';
   if(verdict==='MARKET_CLOSED')return 'Primary reason: No fresh completed candles are available while the market is closed.';
   if(verdict==='STRATEGY_INCOMPLETE'){
     const item=items.find(candidate=>candidate.required&&!candidate.supported)||items.find(candidate=>candidate.required&&candidate.state==='NOT_AVAILABLE');
     return `Primary reason: ${item?.plainLanguageDescription??'A required trading rule cannot be evaluated.'}`;
+  }
+  if(authorizationEligibility?.state==='WAIT' && authorizationEligibility.missingMandatoryConfirmations.length>0){
+    const missing=authorizationEligibility.missingMandatoryConfirmations[0];
+    return `Primary reason: ${missing.reason}`;
   }
   const blocking=items.find(item=>item.required&&item.state==='BLOCKED');
   if(blocking)return `Primary reason: ${blocking.plainLanguageDescription}`;
@@ -97,11 +127,12 @@ function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanat
   return verdict==='READY'?'Every required rule that Trade Police can verify is confirmed.':'Primary reason: Required confirmation is incomplete.';
 }
 
-export function buildDecisionExplanation({analysis,result,narrative,evidenceReport,strategy,now=new Date()}:{analysis:ChartAnalysis;result:TradeResult|null;narrative?:DecisionNarrative;evidenceReport?:TradingDnaEvidenceReport;strategy:StrategyProfile;now?:Date}):DecisionExplanationSummary{
-  const verdict=verdictFor(analysis,result);
-  const items=stableItems(evidenceReport?.conditions.map(condition=>itemFor(condition,analysis,narrative))??fallbackItems(analysis,strategy));
+export function buildDecisionExplanation({analysis,result,narrative,evidenceReport,strategy,authorizationEligibility,now=new Date()}:{analysis:ChartAnalysis;result:TradeResult|null;narrative?:DecisionNarrative;evidenceReport?:TradingDnaEvidenceReport;strategy:StrategyProfile;authorizationEligibility?:TradeAuthorizationEligibility;now?:Date}):DecisionExplanationSummary{
+  const verdict=verdictFor(analysis,result,authorizationEligibility);
+  const baseItems=evidenceReport?.conditions.map(condition=>itemFor(condition,analysis,narrative))??fallbackItems(analysis,strategy);
+  const items=stableItems([...baseItems,...missingConfirmationItems(analysis,authorizationEligibility)]);
   const required=items.filter(item=>item.required),optional=items.filter(item=>!item.required);
-  const primary=primaryReason(verdict,items);
+  const primary=primaryReason(verdict,items,authorizationEligibility);
   const primaryItem=items.find(item=>primary.includes(item.plainLanguageDescription));
   const nextAction=copy[verdict].nextAction===UNKNOWN_TRIGGER?(primaryItem?.nextAction??UNKNOWN_TRIGGER):copy[verdict].nextAction;
   const candleDate=new Date(analysis.latestCandleTimestamp),age=Number.isFinite(candleDate.getTime())?Math.max(0,Math.floor((now.getTime()-candleDate.getTime())/1000)):undefined;

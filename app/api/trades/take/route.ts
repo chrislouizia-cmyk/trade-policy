@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       sourceReportId: typeof body.sourceReportId === 'string' ? body.sourceReportId : undefined,
       readinessPercentage: typeof body.readinessPercentage === 'number' ? body.readinessPercentage : undefined,
       missingMandatoryConfirmations: Array.isArray(body.missingMandatoryConfirmations) ? body.missingMandatoryConfirmations : undefined,
+      overrideReason: typeof body.overrideReason === 'string' ? body.overrideReason : undefined,
     }, { allowOverride });
 
     if (mode === 'MISSED') {
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
         sourceReportId: typeof body.sourceReportId === 'string' ? body.sourceReportId : undefined,
         readinessPercentage: typeof body.readinessPercentage === 'number' ? body.readinessPercentage : undefined,
         missingMandatoryConfirmations: Array.isArray(body.missingMandatoryConfirmations) ? body.missingMandatoryConfirmations : undefined,
+        overrideReason: typeof body.overrideReason === 'string' ? body.overrideReason : undefined,
       });
       console.error('[TRADE_AUTHORIZATION_REJECTED]', { reasonCode: eligibility.reasonCode, message: eligibility.message, verdict: body.originalVerdict ?? body.verdict ?? 'READY' });
       return NextResponse.json({ error: eligibility.message, rejection: { reasonCode: eligibility.reasonCode, message: eligibility.message, state: eligibility.state } }, { status: 409 });

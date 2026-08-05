@@ -1,5 +1,8 @@
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import LandingProductDemo from '@/components/LandingProductDemo';
+import { isPortalHostname } from '@/lib/hostname-routing';
 
 const steps = [
   ['1', 'Choose your trading rules', 'Start with a transparent template, then make the entry, confirmation, and risk rules your own.'],
@@ -25,7 +28,13 @@ const featureCards = [
   },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const headerStore = await headers();
+  const host = headerStore.get('host');
+  if (isPortalHostname(host)) {
+    redirect('/dashboard');
+  }
+
   return <main className="marketing-page">
     <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/"><span>TP</span> Trade Police</Link><div><a href="#how">How it works</a><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link></div></nav>
     <section className="marketing-hero"><p className="eyebrow">RULE-BASED DECISION SUPPORT</p><h1>Know whether the trade fits your strategy before you risk your money.</h1><p>Trade Police compares current market evidence with your trading rules and explains what is confirmed, what is missing, and what you should do next.</p><div className="marketing-actions hero-actions"><Link className="button-link primary marketing-cta hero-cta" href="/client/login?mode=signup&next=/onboarding">Check your first setup free</Link><a className="button-link secondary marketing-cta hero-cta" href="#example">See a real decision</a></div><small>Decision support, not financial advice. No result guarantees an outcome.</small></section>

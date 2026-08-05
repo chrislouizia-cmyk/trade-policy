@@ -35,6 +35,7 @@ export interface TradeAuthorizationInput {
   readinessPercentage?: number | null;
   missingMandatoryConfirmations?: TradeAuthorizationMissingConfirmation[];
   allowOverride?: boolean;
+  overrideReason?: string;
 }
 
 function normalizeVerdict(verdict?: string) {
@@ -97,6 +98,18 @@ export function evaluateTradeAuthorizationEligibility(input: TradeAuthorizationI
   }
 
   if (input.allowOverride && (normalizedVerdict === 'REJECTED' || input.verdict === 'BLOCKED' || normalizedVerdict === 'WAIT' || input.verdict === 'WAIT')) {
+    if (!input.overrideReason || !input.overrideReason.trim()) {
+      return {
+        allowed: false,
+        eligible: false,
+        state: normalizedVerdict === 'WAIT' || input.verdict === 'WAIT' ? 'WAIT' : 'BLOCKED',
+        reasonCode: 'OVERRIDE_REASON_REQUIRED',
+        message: 'A reason is required before this decision can be taken as an override.',
+        createActiveTrade: false,
+        missingMandatoryConfirmations,
+      };
+    }
+
     return {
       allowed: true,
       eligible: false,

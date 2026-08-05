@@ -22,6 +22,7 @@ import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
 import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation';
 import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
+import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
@@ -78,6 +79,47 @@ function ReasoningSection({ label, value, tone = 'neutral', support, children }:
   return <ReasoningCard title={label} value={value} description={support} tone={tone}>{children}</ReasoningCard>;
 }
 
+function applyDefaultTradeFormValues(
+  form: HTMLFormElement | null,
+  {
+    analysis,
+    selectedAccount,
+    accountId,
+    strategy,
+    selectedInstrument,
+  }: {
+    analysis: ChartAnalysis | null;
+    selectedAccount: TradingAccount | null;
+    accountId: string;
+    strategy: StrategyProfile;
+    selectedInstrument: Instrument;
+  },
+) {
+  if (!form) return;
+  const candidate = analysis?.candidates?.[0];
+  const setValue = (name: string, value: string | number | null | undefined) => {
+    const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+    if (!field) return;
+    const nextValue = value == null || value === '' ? '' : String(value);
+    if (field.value === nextValue) return;
+    field.value = nextValue;
+  };
+
+  const existingBalance = (form.elements.namedItem('accountBalance') as HTMLInputElement | null)?.value;
+  const existingRisk = (form.elements.namedItem('riskPercent') as HTMLInputElement | null)?.value;
+  const existingTradesToday = (form.elements.namedItem('tradesToday') as HTMLInputElement | null)?.value;
+
+  setValue('instrument', analysis?.instrument ?? selectedInstrument ?? strategy.instruments[0] ?? 'XAUUSD');
+  setValue('analysisId', analysis?.analysisId ?? '');
+  setValue('direction', candidate?.direction ?? 'BUY');
+  setValue('entry', candidate?.entryLow ?? candidate?.entryHigh ?? 0);
+  setValue('stopLoss', candidate?.stopLoss ?? 0);
+  setValue('takeProfit', candidate?.takeProfit ?? 0);
+  setValue('accountBalance', selectedAccount?.currentBalance ?? (existingBalance ? Number(existingBalance) : accountId ? 0 : 0));
+  setValue('riskPercent', existingRisk ? Number(existingRisk) : (strategy.maximumRiskPercent ?? 0.5));
+  setValue('tradesToday', existingTradesToday ? Number(existingTradesToday) : 0);
+  setValue('session', strategy.allowedSessions[0] ?? 'LONDON');
+}
 
 export default function TradeValidator({userId,displayName,initialStrategy}:{userId:string;displayName:string;initialStrategy:StrategyProfile}) {
   const [result,setResult]=useState<ValidationResult|null>(null);
@@ -159,6 +201,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     }
   }, [selectedInstrument, strategy.instruments]);
   useEffect(() => {
+    applyDefaultTradeFormValues(document.getElementById('final-risk-check') as HTMLFormElement | null, { analysis, selectedAccount, accountId, strategy, selectedInstrument });
+  }, [analysis, selectedAccount, accountId, strategy, selectedInstrument]);
+  useEffect(() => {
     if (!analysis) return;
     if (analysis.instrument && analysis.instrument !== selectedInstrument) {
       setAnalysis(null);
@@ -226,14 +271,18 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();
+    console.log('submit:start', { reviewActive, analysis: analysis?.analysisId, selectedAccount: selectedAccount?.id, accountId, strategy: strategy.id });
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
+    applyDefaultTradeFormValues(e.currentTarget, { analysis, selectedAccount, accountId, strategy, selectedInstrument });
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;body.analysisId=analysis?.analysisId;
+    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;body.analysisId=(fd.get('analysisId') as string | null)?.trim() || analysis?.analysisId || null;
     analysisAttemptActive.current=true;
     void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
+      console.log('submit:fetch', body);
       const res=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      console.log('submit:response', { status: res.status, ok: res.ok });
       const data:any=await readApiResponse(res);
       if(redirectExpiredSession(res,'/validate'))return;
       if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response. Your trade was not recorded.');
@@ -392,13 +441,30 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const analysisStatusLabel = getAnalysisStatusLabel(analysis?.status);
   const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
   const authorizationEligibility = result?.authorizationEligibility ?? null;
+  const hasExecutableSetup = Boolean(explanation && analysis?.status === 'VALID_ANALYSIS' && analysis?.candidates?.length);
   const isAuthorizationEligible = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
   const canTakeAnyway = authorizationEligibility?.allowed === true && ['WAIT','BLOCKED'].includes(authorizationEligibility.state);
   const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
   const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
   const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
+  const activationUiState = useMemo(() => resolveTradeActivationUiState({
+    authorizationEligibility,
+    hasExecutableSetup,
+    explanation,
+    isAnalyzing: analyzing,
+    isSaving: savingTrade,
+  }), [authorizationEligibility, hasExecutableSetup, explanation, analyzing, savingTrade]);
+  const debugCtaState = process.env.NODE_ENV !== 'production' ? {
+    verdict: result?.verdict ?? null,
+    authorizationEligibility,
+    activationUiState,
+    canTakeTrade,
+    canTakeAnyway,
+    analysisStatus: analysis?.status ?? null,
+  } : null;
 
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
+    {debugCtaState ? <section aria-label="CTA debug panel" style={{position:'fixed',right:'12px',top:'12px',zIndex:9999,maxWidth:'320px',padding:'12px',background:'#111827',color:'#f9fafb',borderRadius:'8px',border:'1px solid #374151',fontSize:'12px',lineHeight:1.4}}><strong>CTA debug</strong><pre style={{whiteSpace:'pre-wrap',margin:'8px 0 0',fontSize:'11px'}}>{JSON.stringify(debugCtaState,null,2)}</pre></section> : null}
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
     <LiveMarketPanel strategy={strategy} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing}/>
@@ -407,6 +473,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     {explanation&&<section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title"><p className="brand">DECISION</p><h2 id="mobile-decision-title">{explanation.verdict.replaceAll('_',' ')}</h2><strong>{explanation.headline}</strong><p className="decision-primary-reason">{explanation.primaryReason}</p><div className="mobile-decision-facts"><span><small>Required rules</small><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} confirmed</strong></span><span><small>Next</small><strong>{explanation.nextAction}</strong></span></div></section>}
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
+        <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">STEP 2 · REVIEW TRADE DETAILS</h2>
         <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
@@ -447,11 +514,12 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         explanation={explanation}
         narrative={narrative ?? undefined}
         authoritativeVerdict={authorizationBadgeVerdict}
-        primaryActionLabel={explanation ? (authorizationBadgeVerdict==='READY'?'Take Trade':authorizationBadgeVerdict==='WAIT'&&canTakeAnyway?'Take Anyway':authorizationBadgeVerdict==='BLOCKED'?'Take Trade':'Review next step') : 'Run market read'}
-        primaryActionHint={explanation ? (authorizationBadgeVerdict==='READY'?'Create an Active Trade from this decision.':authorizationBadgeVerdict==='WAIT'&&canTakeAnyway?'Record the trade as an override and move to Active Trade.':authorizationBadgeVerdict==='BLOCKED'?'This decision is blocked until the required conditions are cleared.':'Open the trade action flow.') : 'Check current market data before deciding.'}
-        primaryActionDisabled={analyzing || !explanation || !analysis || (!canTakeTrade && !(authorizationBadgeVerdict==='WAIT'&&canTakeAnyway)) || authorizationBadgeVerdict==='BLOCKED'}
-        primaryActionTone={authorizationBadgeVerdict==='READY'?'success':authorizationBadgeVerdict==='WAIT'&&canTakeAnyway?'warning':'danger'}
+        primaryActionLabel={activationUiState.showCta ? activationUiState.actionLabel ?? 'Take Trade' : explanation ? 'Review next step' : 'Run market read'}
+        primaryActionHint={activationUiState.showCta ? activationUiState.actionHint ?? 'Create an Active Trade from this decision.' : explanation ? 'Complete the setup and final check to activate this trade.' : 'Check current market data before deciding.'}
+        primaryActionDisabled={analyzing || !analysis || !activationUiState.showCta || activationUiState.primaryActionDisabled}
+        primaryActionTone={activationUiState.showCta ? activationUiState.actionTone : 'neutral'}
         secondaryActionLabel={explanation ? 'View full report' : undefined}
+        showPrimaryAction={activationUiState.showCta || !explanation}
         onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(!explanation||!analysis){document.querySelector('[data-market-check]')?.dispatchEvent(new MouseEvent('click',{bubbles:true})) ; return}setTradeActionMode('SELECT')}}
         onSecondaryAction={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
         onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
@@ -494,7 +562,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         <header className="reasoning-modal-header"><div><p className="brand" id="trade-action-title">TRADE ACTION</p><p className="reasoning-panel-copy">Choose whether this decision becomes an active trade or is recorded as missed.</p></div><button className="reasoning-modal-close" type="button" aria-label="Close trade action" onClick={closeTradeActionModal}>×</button></header>
         <div className="reasoning-modal-body">
           <p className="muted">This action is recorded server-side and linked to the originating decision report. Applying the setup parameters only updates the order ticket and never activates the trade.</p>
-          {tradeActionMode==='SELECT'&&<div className="reasoning-section"><h3>Was the trade taken or missed?</h3><p className="muted">Choose the next step. The primary decision CTA is trade activation, not setup reuse.</p><div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode(authorizationBadgeVerdict==='READY'?'ACTIVATE':'OVERRIDE')} disabled={savingTrade || (!canTakeTrade && !canTakeAnyway)}>{authorizationBadgeVerdict==='READY'?'Take Trade':'Take Anyway'}</button><button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>Mark as missed</button></div></div>}
+          {tradeActionMode==='SELECT'&&<div className="reasoning-section"><h3>Was the trade taken or missed?</h3><p className="muted">Choose the next step. The primary decision CTA is trade activation, not setup reuse.</p><div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode(activationUiState.activationMode==='READY'?'ACTIVATE':'OVERRIDE')} disabled={savingTrade || (!canTakeTrade && !canTakeAnyway)}>{activationUiState.activationMode==='READY'?'Take Trade':'Take Anyway'}</button><button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>Mark as missed</button></div></div>}
           {tradeActionMode==='ACTIVATE'&&<div className="reasoning-section"><h3>Take trade confirmation</h3><div className="trade-confirmation-summary"><p><strong>Account</strong> {selectedAccount?.name ?? 'Manual'}</p><p><strong>Instrument</strong> {getFieldValue('instrument')}</p><p><strong>Direction</strong> {getFieldValue('direction')}</p><p><strong>Entry</strong> {getFieldValue('entry')}</p><p><strong>Stop loss</strong> {getFieldValue('stopLoss')}</p><p><strong>Take profit</strong> {getFieldValue('takeProfit')}</p><p><strong>Risk/reward</strong> {result?.rr ? `1:${result.rr}` : '—'}</p><p><strong>Source</strong> {result?.reportSourceId ? `Decision ${result.reportSourceId}` : 'Pending'}</p></div><label className="check-row"><input type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I confirm that I entered this trade in my broker or prop-firm account.</span></label><div className="discipline-action-row"><button type="button" onClick={()=>void saveTakenTrade('ACTIVATE')} disabled={savingTrade || !tradeActionContext.confirmed}>Confirm take trade</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
           {tradeActionMode==='OVERRIDE'&&<div className="reasoning-section"><h3>Take anyway confirmation</h3><p>This trade does not satisfy the current strategy verdict. It will be recorded as an override and linked to the originating decision report.</p>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}<label>Why are you taking this trade despite the current verdict?<textarea value={tradeActionContext.reason ?? ''} onChange={(event)=>setTradeActionContext(current=>({...current,reason:event.target.value}))} rows={4} placeholder="Describe the override reason and the conditions you are accepting."/></label><label className="check-row"><input type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I acknowledge that I am overriding my rules and accepting the non-compliant outcome.</span></label><div className="discipline-action-row"><button type="button" onClick={()=>void saveTakenTrade('OVERRIDE')} disabled={savingTrade || !tradeActionContext.confirmed || !tradeActionContext.reason?.trim()}>Confirm take anyway</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
           {tradeActionMode==='MISSED'&&<div className="reasoning-section"><h3>Mark as missed confirmation</h3><p>This records the lifecycle outcome as missed without creating an active trade.</p><div className="discipline-action-row"><button type="button" onClick={()=>void markTradeMissed()} disabled={savingTrade}>Confirm missed trade</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}

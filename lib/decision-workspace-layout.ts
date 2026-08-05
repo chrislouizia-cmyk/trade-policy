@@ -16,15 +16,15 @@ export function getDecisionWorkspaceLayoutState({
   narrative: { reasons?: unknown[]; missingEvidence?: unknown[]; nextActions?: unknown[] } | null;
 }): DecisionWorkspaceLayoutState {
   const isUnavailable = analysis?.status === 'DATA_UNAVAILABLE' || analysis?.status === 'INSUFFICIENT_DATA' || analysis?.status === 'ANALYSIS_FAILED';
-  const hasCompletedDecision = Boolean(
-    explanation &&
-      explanation.verdict &&
-      !['DATA_UNAVAILABLE', 'MARKET_CLOSED', 'STRATEGY_INCOMPLETE', 'WAIT', 'BLOCKED', 'NO SETUP', 'NO_SETUP'].includes(explanation.verdict) &&
-      analysis?.status === 'VALID_ANALYSIS',
+  const hasDecision = Boolean(explanation?.verdict);
+  const shouldShowDecisionColumn = Boolean(
+    analysis &&
+      hasDecision &&
+      (analysis.status === 'VALID_ANALYSIS' || ['WAIT', 'BLOCKED'].includes(explanation?.verdict ?? '')),
   );
   const hasNarrative = Boolean(narrative);
 
-  if (!analysis || isUnavailable || !hasCompletedDecision || !hasNarrative) {
+  if (!analysis || !shouldShowDecisionColumn || (!hasNarrative && !['WAIT', 'BLOCKED'].includes(explanation?.verdict ?? ''))) {
     return {
       mode: 'full-width',
       showDecisionColumn: false,

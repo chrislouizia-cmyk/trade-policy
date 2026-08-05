@@ -88,6 +88,13 @@ test('decision surface makes source and freshness prominent',()=>{
   assert.match(hero,/decision calculated/);
 });
 
+test('trade validator seeds required form fields before the final risk check can submit',()=>{
+  const validator=read('components/TradeValidator.tsx');
+  assert.match(validator,/applyDefaultTradeFormValues/);
+  assert.match(validator,/accountBalance/);
+  assert.match(validator,/riskPercent/);
+});
+
 test('trade lifecycle uses explicit take and missed actions with source linkage',()=>{
   const validator=read('components/TradeValidator.tsx');
   const header=read('components/AppHeader.tsx');
@@ -97,7 +104,7 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
   assert.match(validator,/Take anyway/);
   assert.match(validator,/Mark as missed/);
   assert.match(validator,/Save setup/);
-  assert.match(validator,/Use setup parameters/);
+  assert.match(validator,/Apply to order ticket/);
   assert.match(header,/href="\/active-trade"/);
   assert.match(header,/Active Trade/);
   assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
@@ -107,6 +114,11 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
 test('decision card explanation uses the same authorization eligibility as the take flow',()=>{
   const validator=read('components/TradeValidator.tsx');
   assert.match(validator,/authorizationEligibility: result\?\.authorizationEligibility/);
+});
+
+test('validation responses expose override eligibility for wait and blocked decisions',()=>{
+  const route=read('app/api/validate/route.ts');
+  assert.match(route,/allowOverride: true/);
 });
 
 test('UX work does not modify deterministic or HQ implementation files',()=>{
