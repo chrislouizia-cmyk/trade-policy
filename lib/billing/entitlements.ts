@@ -1,7 +1,8 @@
 import 'server-only';
+
 import { createAdminClient } from '../supabase/admin.ts';
 import { planFor, type PlanCode } from './plans.ts';
-import { getMonthlyPeriodStartKey } from './period.ts';
+import { getAnchoredMonthlyPeriod } from './period.ts';
 
 export type BillingState = {
   plan: PlanCode;
@@ -11,6 +12,8 @@ export type BillingState = {
   paymentFailed: boolean;
   stripeCustomerId: string | null;
   usage: number;
+  usagePeriodStart: string;
+  usagePeriodEnd: string;
   entitlements: ReturnType<typeof planFor>;
 };
 
@@ -25,16 +28,19 @@ type BillingSubscriptionRow = {
   payment_failed?: boolean | null;
 };
 
+type UsageAnchorRow = {
+  created_at: string;
+};
+
 export function buildBillingState(
   subscriptionResult: {
     data: BillingSubscriptionRow | null;
     error: Error | null;
   },
   usageCount: number | null | undefined,
+  usagePeriod: { startKey: string; endKey: string },
 ): BillingState {
-
   const sub = subscriptionResult.data;
-
   const rawPlan = String(sub?.plan ?? 'FREE').toUpperCase();
   const status = String(sub?.status ?? 'inactive');
 
@@ -45,23 +51,18 @@ export function buildBillingState(
       case 'PRIVATE_BETA':
         plan = 'PRIVATE_BETA';
         break;
-
       case 'PRO':
         plan = 'PRO';
         break;
-
       case 'ELITE':
         plan = 'ELITE';
         break;
-
       case 'TEAM':
         plan = 'TEAM';
         break;
-
       case 'FOUNDER':
         plan = 'FOUNDER';
         break;
-
       default:
         plan = 'FREE';
     }
@@ -75,19 +76,48 @@ export function buildBillingState(
     paymentFailed: Boolean(sub?.payment_failed),
     stripeCustomerId: sub?.stripe_customer_id ?? null,
     usage: usageCount ?? 0,
+    usagePeriodStart: usagePeriod.startKey,
+    usagePeriodEnd: usagePeriod.endKey,
     entitlements: planFor(plan),
   };
 }
 
+async function getUsagePeriod(userId: string, now: Date = new Date()) {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from('analysis_usage')
+    .select('created_at')
+    .eq('user_id', userId)
+    .in('status', ['RESERVED', 'COMPLETED'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Billing usage anchor lookup failed', {
+      userId,
+      error,
+    });
+    throw new Error('Analysis usage is temporarily unavailable.');
+  }
+
+  const anchor = data
+    ? new Date((data as UsageAnchorRow).created_at)
+    : now;
+
+  return getAnchoredMonthlyPeriod(anchor, now);
+}
+
 export async function getBillingState(userId: string): Promise<BillingState> {
   const admin = createAdminClient();
-  const periodKey = getMonthlyPeriodStartKey();
+  const usagePeriod = await getUsagePeriod(userId);
 
   const [subscriptionResult, usageResult] = await Promise.all([
     admin
       .from('billing_subscriptions')
       .select(
-        'stripe_customer_id,plan,status,current_period_end,cancel_at_period_end,payment_failed'
+        'stripe_customer_id,plan,status,current_period_end,cancel_at_period_end,payment_failed',
       )
       .eq('user_id', userId)
       .maybeSingle(),
@@ -97,7 +127,7 @@ export async function getBillingState(userId: string): Promise<BillingState> {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('status', 'COMPLETED')
-      .gte('period_start', periodKey),
+      .eq('period_start', usagePeriod.startKey),
   ]);
 
   if (subscriptionResult.error) {
@@ -105,7 +135,6 @@ export async function getBillingState(userId: string): Promise<BillingState> {
       userId,
       error: subscriptionResult.error,
     });
-
     throw new Error('Billing status is temporarily unavailable.');
   }
 
@@ -114,11 +143,14 @@ export async function getBillingState(userId: string): Promise<BillingState> {
       userId,
       error: usageResult.error,
     });
-
     throw new Error('Analysis usage is temporarily unavailable.');
   }
 
-  return buildBillingState(subscriptionResult, usageResult.count);
+  return buildBillingState(
+    subscriptionResult,
+    usageResult.count,
+    usagePeriod,
+  );
 }
 
 export async function reserveAnalysis(
@@ -126,17 +158,15 @@ export async function reserveAnalysis(
   requestKey: string,
 ) {
   const state = await getBillingState(userId);
-
   const admin = createAdminClient();
-  const periodKey = getMonthlyPeriodStartKey();
+  const periodKey = state.usagePeriodStart;
 
-  const { data: existing, error: existingError } =
-    await admin
-      .from('analysis_usage')
-      .select('id,status')
-      .eq('user_id', userId)
-      .eq('request_key', requestKey)
-      .maybeSingle();
+  const { data: existing, error: existingError } = await admin
+    .from('analysis_usage')
+    .select('id,status')
+    .eq('user_id', userId)
+    .eq('request_key', requestKey)
+    .maybeSingle();
 
   if (existingError) {
     console.error('Billing usage lookup failed during reservation', {
@@ -144,7 +174,6 @@ export async function reserveAnalysis(
       requestKey,
       error: existingError,
     });
-
     throw new Error('Analysis usage is temporarily unavailable.');
   }
 
@@ -157,17 +186,16 @@ export async function reserveAnalysis(
     };
   }
 
-  const { data, error } =
-    await admin
-      .from('analysis_usage')
-      .insert({
-        user_id: userId,
-        request_key: requestKey,
-        period_start: periodKey,
-        status: 'RESERVED',
-      })
-      .select('id,status')
-      .single();
+  const { data, error } = await admin
+    .from('analysis_usage')
+    .insert({
+      user_id: userId,
+      request_key: requestKey,
+      period_start: periodKey,
+      status: 'RESERVED',
+    })
+    .select('id,status')
+    .single();
 
   if (error) {
     console.error('Billing usage reservation failed', {
@@ -175,21 +203,16 @@ export async function reserveAnalysis(
       requestKey,
       error,
     });
-
     throw new Error('Analysis usage is temporarily unavailable.');
   }
 
   if (state.entitlements.monthlyAnalysisLimit !== null) {
-    const { count, error: countError } =
-      await admin
-        .from('analysis_usage')
-        .select('id', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('user_id', userId)
-        .eq('period_start', periodKey)
-        .in('status', ['RESERVED', 'COMPLETED']);
+    const { count, error: countError } = await admin
+      .from('analysis_usage')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('period_start', periodKey)
+      .in('status', ['RESERVED', 'COMPLETED']);
 
     if (countError) {
       console.error('Billing usage count failed during reservation', {
@@ -198,7 +221,6 @@ export async function reserveAnalysis(
         periodKey,
         error: countError,
       });
-
       throw new Error('Analysis usage is temporarily unavailable.');
     }
 
@@ -233,16 +255,15 @@ export async function finalizeAnalysis(
 ) {
   const admin = createAdminClient();
 
-  const { error } =
-    await admin
-      .from('analysis_usage')
-      .update({
-        status: success ? 'COMPLETED' : 'FAILED',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .eq('request_key', requestKey)
-      .eq('status', 'RESERVED');
+  const { error } = await admin
+    .from('analysis_usage')
+    .update({
+      status: success ? 'COMPLETED' : 'FAILED',
+      completed_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('request_key', requestKey)
+    .eq('status', 'RESERVED');
 
   if (error) {
     console.error('Billing usage finalization failed', {
@@ -251,7 +272,6 @@ export async function finalizeAnalysis(
       success,
       error,
     });
-
     throw new Error('Analysis usage could not be finalized.');
   }
 }

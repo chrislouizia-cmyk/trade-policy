@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const requestKey=req.headers.get('idempotency-key');
     if(!requestKey||requestKey.length>100)return apiError('IDEMPOTENCY_KEY_REQUIRED','A valid analysis request key is required.',400);
     const reservation=await reserveAnalysis(user.id,requestKey);
-    if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED','Your monthly Free analysis limit has been reached. Upgrade to Pro to continue.',429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage});
+    if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED',`Your ${reservation.state.entitlements.monthlyAnalysisLimit ?? ''}-analysis cycle limit has been reached. Your analyses renew on ${reservation.state.usagePeriodEnd}. Upgrade to continue.`,429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage,periodStart:reservation.state.usagePeriodStart,renewsAt:reservation.state.usagePeriodEnd});
     usage={userId:user.id,requestKey};
     const body=await req.json().catch(()=>null) as {instrument?:Instrument}|null;
     const instrument=body?.instrument;
