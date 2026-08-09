@@ -14,6 +14,16 @@ const evidenceMap:Record<string,string[]>={
   retestConfirmed:['price-action.retest'],premiumDiscount:['smart-money.premium','smart-money.discount'],rejectionCandle:['price-action.strong-rejection'],volumeConfirmation:['volume.above-average','volume.spike'],
 };
 const sources:Record<string,string>={h4TrendAligned:'trend timeframe market data',h1TrendAligned:'multi-timeframe market data',structurePattern:'price-structure detector',liquiditySweep:'liquidity-sweep detector',chochConfirmed:'CHoCH detector',bosConfirmed:'BOS detector',orderBlock:'order-block detector',fairValueGap:'fair-value-gap detector',retestConfirmed:'retest detector',premiumDiscount:'premium/discount range detector',rejectionCandle:'rejection-candle detector',volumeConfirmation:'volume detector'};
+const liveSetupRuleIds=new Set([...Object.values(evidenceMap).flat(),'smart-money.order-block']);
+
+export function preserveLiveSetupEvidence(context:TradingDnaRuntimeContext,report:TradingDnaEvidenceReport):TradingDnaRuntimeContext{
+  const facts={...context.facts};
+  for(const condition of report.conditions){
+    if(!liveSetupRuleIds.has(condition.ruleId)||condition.evaluationType!=='AUTOMATIC')continue;
+    facts[condition.ruleId]={value:condition.actual,reason:condition.reason,source:'AUTOMATIC'};
+  }
+  return {...context,facts};
+}
 
 export function buildLiveTradingDnaContext(evidence:Record<string,EvidenceAssessment>):TradingDnaRuntimeContext{
   const facts:Record<string,RuntimeFact>={};

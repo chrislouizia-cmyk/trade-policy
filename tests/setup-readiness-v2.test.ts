@@ -3,8 +3,8 @@ import test from 'node:test';
 import {DEFAULT_STRATEGY_PROFILE,type StrategyProfile,type StrategyRule} from '../types/trade.ts';
 import {appendComposerNode,createComposerCondition,createComposerGroup,strategyRulesFromComposerTree} from '../lib/trading-dna/composer.ts';
 import {TRADING_DNA_RULES} from '../lib/trading-dna/registry.ts';
-import {buildLiveTradingDnaContext,calculateLiveSetupReadiness,evaluateLiveTradingDna} from '../lib/trading-dna/live-readiness.ts';
-import {evaluateTradingDnaRuntime} from '../lib/trading-dna/runtime.ts';
+import {buildLiveTradingDnaContext,calculateLiveSetupReadiness,evaluateLiveTradingDna,preserveLiveSetupEvidence} from '../lib/trading-dna/live-readiness.ts';
+import {buildTradingDnaRuntimeContext,evaluateTradingDnaRuntime} from '../lib/trading-dna/runtime.ts';
 
 const assessment=(value:boolean,reason='fixture')=>({value,confidence:value?100:0,reason});
 const legacy=(ruleKey:string,mandatory=true,weight=10,evaluationMode:StrategyRule['evaluationMode']='AUTOMATIC'):StrategyRule=>({ruleKey,label:ruleKey,enabled:true,mandatory,weight,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode});
@@ -108,4 +108,24 @@ test('unmatched strategy rule keys are surfaced diagnostically',()=>{
     legacy('mysteryDetector',true,100),
   ]),{});
   assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys, ['mysteryDetector']);
+});
+
+test('final evaluation preserves unresolved automatic Order Block evidence from setup review',()=>{
+  const rules=[legacy('orderBlock',true,50),legacy('bosConfirmed',true,50)];
+  const strategy=profile(rules);
+  const setup=evaluateLiveTradingDna(strategy,{bosConfirmed:assessment(true),orderBlock:assessment(false)});
+  assert.deepEqual(setup.readiness.required,{passed:1,failed:0,pending:1});
+  const input={entry:100,stopLoss:99,takeProfit:103,riskPercent:1,session:'LONDON',highImpactNews:false,h4TrendAligned:true,h1TrendAligned:true,structurePattern:true,liquiditySweep:true,chochConfirmed:true,bosConfirmed:true,orderBlock:false,fairValueGap:true,retestConfirmed:true} as any;
+  const report=evaluateTradingDnaRuntime(rules,preserveLiveSetupEvidence(buildTradingDnaRuntimeContext(input,strategy),setup.report));
+  assert.equal(report.conditions.find(item=>item.ruleId==='smart-money.order-block')?.status,'PENDING');
+  assert.equal(report.conditions.length,setup.report.conditions.length);
+});
+
+test('confirmed mandatory Order Block passes while optional Order Block never blocks the group',()=>{
+  const mandatory=legacy('orderBlock',true,100,'MANUAL');
+  const confirmed=evaluateTradingDnaRuntime([mandatory],{facts:{},manualConfirmations:[{evidenceKey:'orderBlock',state:'CONFIRMED'}]});
+  assert.equal(confirmed.status,'PASS');
+  const optional=evaluateTradingDnaRuntime([{...mandatory,mandatory:false}],{facts:{},manualConfirmations:[{evidenceKey:'orderBlock',state:'FAILED'}]});
+  assert.equal(optional.conditions[0].status,'FAIL');
+  assert.equal(optional.status,'PASS');
 });

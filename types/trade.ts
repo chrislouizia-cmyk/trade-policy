@@ -1,3 +1,5 @@
+import type { TradingDnaEvidenceReport } from '../lib/trading-dna/runtime';
+
 export type Instrument = string;
 export type Direction = 'BUY' | 'SELL';
 export type Session = string;
@@ -321,6 +323,7 @@ export type ChartAnalysis = {
   liveAnalysisConfidence: number | null;
   strategyConfidenceThreshold: number;
   setupReadiness?: {percentage:number|null;state:'READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';required:{passed:number;failed:number;pending:number};optional:{passed:number;failed:number;pending:number};totalRequiredWeight:number;passingRequiredWeight:number;formula:string;blockers:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;pendingConfirmations:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;diagnostics?:ReadinessDiagnostics};
+  tradingDnaReport?: TradingDnaEvidenceReport;
   evidence: Record<EvidenceKey, EvidenceAssessment>;
   candidates: EntryCandidate[];
   warnings: string[];

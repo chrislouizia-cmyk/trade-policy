@@ -14,7 +14,7 @@ test('desktop uses a compact full-width horizontal decision header', () => {
   assert.match(css, /\.validate-workspace-grid[^}]*grid-template-columns:minmax\(0,1fr\)/);
   assert.match(css, /\.decision-explanation-hero\{display:grid;grid-template-columns:/);
   assert.doesNotMatch(css, /\.decision-workspace-column \.decision-hero\{position:sticky/);
-  for (const label of ['Readiness', 'Status', 'Required', 'Pending', 'Violations']) assert.match(hero, new RegExp(label));
+  for (const label of ['Readiness', 'Setup evidence', 'Setup pending', 'Final risk controls', 'Final blocks']) assert.match(hero, new RegExp(label));
   assert.match(hero, /decision-panel-instrument/);
 });
 
@@ -59,15 +59,21 @@ test('one decision card owns preliminary, final and risk-check states directly b
   assert.match(livePanel, /<TradingViewChart[^>]+\/>[\s\S]{0,100}decisionContent/);
   assert.match(hero, /Run Final Risk Check/);
   assert.match(hero, /form="final-risk-check"/);
-  assert.match(hero, /displayVerdict === 'READY' && !finalized \? 'SETUP READY'/);
+  assert.match(hero, /finalized \? 'TAKE TRADE' : 'READY FOR FINAL CHECK'/);
   assert.doesNotMatch(validator, /authorization-inline-result|AUTHORIZATION RESULT/);
   assert.equal((validator.match(/<DecisionHero/g) ?? []).length, 1);
 });
 
-test('READY is final-only presentation and verdict labels cannot break', () => {
-  assert.match(hero, /displayVerdict === 'READY' && !finalized \? 'SETUP READY'/);
+test('setup readiness and final authorization use distinct presentation states', () => {
+  assert.match(hero, /finalized \? 'TAKE TRADE' : 'READY FOR FINAL CHECK'/);
+  assert.match(hero, /Setup evidence is complete\. Run the final risk check before entering the trade\./);
   assert.match(hero, /finalized \? 'Final risk controls permit this trade\.'/);
   assert.doesNotMatch(hero, /\? 'APPROVED'/);
+  assert.match(hero, /<dt>Setup evidence<\/dt>/);
+  assert.match(hero, /<dt>Final risk controls<\/dt>/);
+  assert.match(hero, /finalized \? violationsCount : '—'/);
+  assert.match(validator, /result\?\.evidenceReport\?\?analysis\?\.tradingDnaReport/);
+  assert.match(validator, /result\?\.vetoes\.length\?\?0/);
   assert.match(css, /\.decision-explanation-hero \.decision-hero-verdict\{[^}]*min-width:190px[^}]*white-space:nowrap[^}]*word-break:normal[^}]*overflow-wrap:normal/);
   assert.match(css, /@media\(max-width:1100px\)[^{]*\{[^}]*\.decision-explanation-hero\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(css, /@media\(max-width:767px\)[\s\S]*\.decision-explanation-hero \.decision-hero-actions\{grid-template-columns:1fr\}/);

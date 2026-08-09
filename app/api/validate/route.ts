@@ -10,6 +10,7 @@ import { apiError } from '@/lib/server/public-error';
 import type { ChartAnalysis, TradeInput } from '@/types/trade';
 import { confirmationState } from '@/lib/manual-confirmations';
 import { applyTradingDnaRuntime, buildTradingDnaRuntimeContext, evaluateTradingDnaRuntime } from '@/lib/trading-dna/runtime';
+import { preserveLiveSetupEvidence } from '@/lib/trading-dna/live-readiness';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildDecisionExplanation } from '@/lib/intelligence/decision-explanation';
 import { buildHistoricalDecisionSnapshot } from '@/lib/historical-decisions/build';
@@ -63,11 +64,9 @@ export async function POST(request: Request) {
   const requestId=crypto.randomUUID();
   try {
     const supabase = await createClient();
-    console.log('[auth-debug] validate route start', { pathname: new URL(request.url).pathname, hasCookies: typeof request.headers.get('cookie') === 'string' });
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    console.log('[auth-debug] validate route getUser', { hasUser: Boolean(user), userId: user?.id });
 
     if (!user) {
       return apiError('UNAUTHORIZED','Unauthorized.',401);
@@ -102,7 +101,9 @@ export async function POST(request: Request) {
     for(const item of normalizedConfirmations)if(evidenceKeys.has(item.evidenceKey))(input as unknown as Record<string,unknown>)[item.evidenceKey]=item.state==='CONFIRMED';
     const legacyDecisionStrategy={...strategy,rules:(strategy.rules??[]).filter(rule=>!rule.ruleKey.startsWith('dna.v1.'))};
     const baseResult = validateTradeWithStrategy(input, legacyDecisionStrategy, dailyContext);
-    const evidenceReport=evaluateTradingDnaRuntime(strategy.rules,buildTradingDnaRuntimeContext(input,strategy));
+    const baseRuntimeContext=buildTradingDnaRuntimeContext(input,strategy);
+    const finalRuntimeContext=authoritativeAnalysis.tradingDnaReport?preserveLiveSetupEvidence(baseRuntimeContext,authoritativeAnalysis.tradingDnaReport):baseRuntimeContext;
+    const evidenceReport=evaluateTradingDnaRuntime(strategy.rules,finalRuntimeContext);
     const result=applyTradingDnaRuntime(baseResult,evidenceReport);
     const deterministicNarrative = buildDecisionNarrative({
       result,

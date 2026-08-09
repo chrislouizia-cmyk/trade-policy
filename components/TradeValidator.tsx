@@ -428,11 +428,12 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const confidenceFill = hasConfidence ? `${Math.max(8, Math.min(100, analysis.liveAnalysisConfidence!))}%` : '0%';
   const readinessInterpretation = useMemo(() => getReadinessInterpretation(analysis, threshold), [analysis, threshold]);
   const nextActionValue = !analysis?'Run the live market read.':analyzing?'Hold while the market is checked.':result?.verdict==='REJECTED'?'Review the policy settings.':result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY')?'Review the trade details.':'Wait for confirmation.';
-  const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
+  const violatedCount=result?.vetoes.length??0;
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
   const narrative=result?.decisionNarrative ?? null;
-  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative: narrative ?? undefined,evidenceReport:result?.evidenceReport,strategy,authorizationEligibility: result?.authorizationEligibility}):null,[analysis,narrative,result,strategy]);
+  const canonicalEvidenceReport=result?.evidenceReport??analysis?.tradingDnaReport;
+  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative: narrative ?? undefined,evidenceReport:canonicalEvidenceReport,strategy,authorizationEligibility: result?.authorizationEligibility}):null,[analysis,canonicalEvidenceReport,narrative,result,strategy]);
   const manualRules=useMemo(()=>(strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL'),[strategy.rules]);
   const pendingManualRules=manualRules.filter(rule=>(manualEvidence[rule.ruleKey]??'PENDING')==='PENDING');
   const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];

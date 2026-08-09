@@ -60,7 +60,8 @@ test('visible decision panel owns setup readiness without a duplicate live-panel
   assert.match(livePanel, /decisionContent/);
   assert.doesNotMatch(livePanel, /<SetupReadiness analysis=\{analysis\}/);
   assert.doesNotMatch(livePanel, /buildSetupReadinessMetadata/);
-  assert.match(decisionHero, />Status</);
+  assert.match(decisionHero, />Setup evidence</);
+  assert.match(decisionHero, />Final risk controls</);
   assert.match(decisionHero, /readinessPercent/);
   assert.match(decisionHero, /DECISION \/ SETUP READINESS/);
 });

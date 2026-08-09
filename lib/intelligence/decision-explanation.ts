@@ -23,7 +23,7 @@ function value(value:unknown):string|undefined{
   return String(value);
 }
 
-function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorizationEligibility?:TradeAuthorizationEligibility):DecisionExplanationVerdict{
+function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorizationEligibility?:TradeAuthorizationEligibility,evidenceReport?:TradingDnaEvidenceReport):DecisionExplanationVerdict{
   const marketClosed=analysis.warnings.some(warning=>/market\s+closed|outside\s+market\s+hours/i.test(warning));
   if(marketClosed)return 'MARKET_CLOSED';
   if(['DATA_UNAVAILABLE','INSUFFICIENT_DATA','ANALYSIS_FAILED'].includes(analysis.status))return 'DATA_UNAVAILABLE';
@@ -37,6 +37,7 @@ function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorization
   if(result?.verdict==='AUTHORIZED')return 'READY';
   if(result?.verdict==='REJECTED')return 'BLOCKED';
   if(result?.verdict==='WAIT')return 'WAIT';
+  if(evidenceReport&&evidenceReport.status!=='PASS')return 'WAIT';
   return analysis.candidates.some(candidate=>candidate.status==='READY')?'READY':'WAIT';
 }
 
@@ -128,7 +129,7 @@ function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanat
 }
 
 export function buildDecisionExplanation({analysis,result,narrative,evidenceReport,strategy,authorizationEligibility,now=new Date()}:{analysis:ChartAnalysis;result:TradeResult|null;narrative?:DecisionNarrative;evidenceReport?:TradingDnaEvidenceReport;strategy:StrategyProfile;authorizationEligibility?:TradeAuthorizationEligibility;now?:Date}):DecisionExplanationSummary{
-  const verdict=verdictFor(analysis,result,authorizationEligibility);
+  const verdict=verdictFor(analysis,result,authorizationEligibility,evidenceReport);
   const baseItems=evidenceReport?.conditions.map(condition=>itemFor(condition,analysis,narrative))??fallbackItems(analysis,strategy);
   const items=stableItems([...baseItems,...missingConfirmationItems(analysis,authorizationEligibility)]);
   const required=items.filter(item=>item.required),optional=items.filter(item=>!item.required);
