@@ -1,86 +1,14 @@
 import 'server-only';
 
 import { createAdminClient } from '../supabase/admin.ts';
-import { planFor, type PlanCode } from './plans.ts';
 import { getAnchoredMonthlyPeriod } from './period.ts';
+import { buildBillingState, type BillingState } from './state.ts';
 
-export type BillingState = {
-  plan: PlanCode;
-  status: string;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-  paymentFailed: boolean;
-  stripeCustomerId: string | null;
-  usage: number;
-  usagePeriodStart: string;
-  usagePeriodEnd: string;
-  entitlements: ReturnType<typeof planFor>;
-};
-
-const paid = new Set(['active', 'trialing']);
-
-type BillingSubscriptionRow = {
-  stripe_customer_id?: string | null;
-  plan?: string | null;
-  status?: string | null;
-  current_period_end?: string | null;
-  cancel_at_period_end?: boolean | null;
-  payment_failed?: boolean | null;
-};
+export { buildBillingState, type BillingState } from './state.ts';
 
 type UsageAnchorRow = {
   created_at: string;
 };
-
-export function buildBillingState(
-  subscriptionResult: {
-    data: BillingSubscriptionRow | null;
-    error: Error | null;
-  },
-  usageCount: number | null | undefined,
-  usagePeriod: { startKey: string; endKey: string },
-): BillingState {
-  const sub = subscriptionResult.data;
-  const rawPlan = String(sub?.plan ?? 'FREE').toUpperCase();
-  const status = String(sub?.status ?? 'inactive');
-
-  let plan: PlanCode = 'FREE';
-
-  if (paid.has(status)) {
-    switch (rawPlan) {
-      case 'PRIVATE_BETA':
-        plan = 'PRIVATE_BETA';
-        break;
-      case 'PRO':
-        plan = 'PRO';
-        break;
-      case 'ELITE':
-        plan = 'ELITE';
-        break;
-      case 'TEAM':
-        plan = 'TEAM';
-        break;
-      case 'FOUNDER':
-        plan = 'FOUNDER';
-        break;
-      default:
-        plan = 'FREE';
-    }
-  }
-
-  return {
-    plan,
-    status,
-    currentPeriodEnd: sub?.current_period_end ?? null,
-    cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
-    paymentFailed: Boolean(sub?.payment_failed),
-    stripeCustomerId: sub?.stripe_customer_id ?? null,
-    usage: usageCount ?? 0,
-    usagePeriodStart: usagePeriod.startKey,
-    usagePeriodEnd: usagePeriod.endKey,
-    entitlements: planFor(plan),
-  };
-}
 
 async function getUsagePeriod(userId: string, now: Date = new Date()) {
   const admin = createAdminClient();

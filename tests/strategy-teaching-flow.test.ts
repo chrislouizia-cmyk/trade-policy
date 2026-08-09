@@ -24,7 +24,8 @@ test('every evidence rule can be classified without a not-available save blocker
 });
 
 test('external mode persists while legacy missing modes still default to automatic', () => {
-  assert.match(saveRoute, /'AUTOMATIC','MANUAL','EXTERNAL'/);
+  for (const mode of ['AUTOMATIC', 'MANUAL', 'EXTERNAL']) assert.match(saveRoute, new RegExp(`'${mode}'`));
+  assert.match(saveRoute, /\.includes\(requested\)/);
   assert.match(migration, /evaluation_mode in \('AUTOMATIC','MANUAL','EXTERNAL'\)/);
   assert.match(builder, /row\.evaluation_mode\?\?'AUTOMATIC'/);
 });

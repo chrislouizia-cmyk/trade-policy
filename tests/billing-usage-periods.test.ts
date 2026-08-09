@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildBillingState } from '../lib/billing/entitlements.ts';
+import { buildBillingState } from '../lib/billing/state.ts';
 import { getMonthlyPeriodStartKey } from '../lib/billing/period.ts';
 
 test('period_start filters use YYYY-MM-DD', () => {
@@ -15,12 +15,18 @@ test('no full ISO timestamp is sent to a date column', () => {
 });
 
 test('a Free user with no subscription row resolves as FREE', () => {
-  const state = buildBillingState({ data: null, error: null }, 0);
+  const state = buildBillingState({ data: null, error: null }, 0, {
+    startKey: '2026-08-01',
+    endKey: '2026-09-01',
+  });
   assert.equal(state.plan, 'FREE');
 });
 
 test('an empty analysis_usage table returns usage 0', () => {
-  const state = buildBillingState({ data: null, error: null }, 0);
+  const state = buildBillingState({ data: null, error: null }, 0, {
+    startKey: '2026-08-01',
+    endKey: '2026-09-01',
+  });
   assert.equal(state.usage, 0);
 });
 
