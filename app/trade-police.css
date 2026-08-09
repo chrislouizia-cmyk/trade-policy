@@ -1586,3 +1586,18 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 @media(max-width:1023px){.decision-explanation-hero{grid-template-columns:minmax(0,1fr)}.decision-explanation-hero .decision-hero-actions,.decision-explanation-hero .decision-panel-secondary-actions{grid-column:1}.market-context-strip{grid-template-columns:1fr}.market-context-timeframes{grid-template-columns:repeat(5,minmax(110px,1fr));overflow-x:auto}.live-panel .layer-analysis-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.decision-report-workspace.narrative-workspace{grid-template-columns:1fr}.trade-workspace{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:767px){.validate-page-flow{gap:12px}.decision-explanation-hero{padding:15px}.decision-explanation-hero .decision-hero-primary{grid-template-columns:1fr}.decision-explanation-hero .decision-hero-verdict,.decision-explanation-hero .decision-hero-primary>h2,.decision-explanation-hero .decision-primary-reason{grid-column:1;grid-row:auto}.decision-explanation-hero .decision-panel-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.decision-explanation-hero .decision-panel-secondary-actions{grid-template-columns:1fr}.market-context-timeframes{grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.market-context-cell:last-child{grid-column:1/-1}.playbook-table-head{display:none}.playbook-rule-row summary{grid-template-columns:22px minmax(0,1fr) auto}.playbook-rule-row summary small{grid-column:2}.trade-workspace{grid-template-columns:minmax(0,1fr);padding:14px}.trade-workspace>.workspace-section{grid-column:1}.live-panel .tv-wrap{height:280px}.live-panel .layer-analysis-grid{grid-template-columns:1fr}}
 @media(max-width:420px){.market-context-timeframes{grid-template-columns:1fr}.market-context-cell:last-child{grid-column:auto}.decision-explanation-hero .decision-panel-metrics{grid-template-columns:1fr}.decision-explanation-hero .decision-hero-actions button{width:100%}.playbook-evaluation{padding:13px}}
+
+/* Release 2.1: the decision remains the canonical result directly below the chart. */
+.live-panel>.decision-explanation-hero{margin-top:14px;background:linear-gradient(135deg,rgba(15,20,30,.98),rgba(10,13,20,.98))}
+.decision-explanation-hero .decision-hero-verdict{letter-spacing:-.055em}
+.decision-panel-metrics dd{overflow-wrap:anywhere}
+.decision-final-risk-button{width:100%;min-height:46px}
+.decision-authorization-error{grid-column:1/-1;margin:0;padding:10px 12px;border:1px solid rgba(255,112,122,.28);border-radius:10px;background:rgba(255,112,122,.06)}
+.decision-report-workspace.narrative-workspace{grid-template-columns:minmax(0,1fr);gap:8px}
+.decision-explanation-accordion{display:block!important;padding:0!important;overflow:hidden}
+.decision-explanation-accordion>summary{padding:13px 14px;cursor:pointer;font-size:13px;font-weight:850;list-style-position:inside}
+.decision-explanation-accordion[open]>summary{border-bottom:1px solid var(--border)}
+.decision-explanation-accordion-body{padding:13px}
+.decision-explanation-accordion-body>.narrative-section-head{display:none}
+.automatic-analysis-evidence{display:grid;gap:12px;padding:12px;border-top:1px solid var(--border)}
+@media(max-width:767px){.live-panel>.decision-explanation-hero{margin-inline:-2px}.decision-explanation-hero .decision-hero-verdict{font-size:clamp(42px,16vw,64px)}.decision-final-risk-button{min-height:48px}}

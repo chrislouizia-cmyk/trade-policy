@@ -47,7 +47,7 @@ test('Decision Hero component exists in validate workspace', () => {
   assert.match(decisionHero, /export default function DecisionHero/);
 });
 
-test('visible decision panel distinguishes Readiness from Confidence', () => {
+test('visible decision panel owns setup readiness without a duplicate live-panel summary', () => {
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
   const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
   const livePanel = readFileSync(`${root}/components/LiveMarketPanel.tsx`, 'utf8');
@@ -57,11 +57,12 @@ test('visible decision panel distinguishes Readiness from Confidence', () => {
   assert.match(tradeValidator, />Readiness</);
   assert.match(tradeValidator, />Setup readiness/);
   assert.match(tradeValidator, />Required readiness/);
-  assert.match(livePanel, /<SetupReadiness analysis=\{analysis\}/);
-  assert.match(livePanel, /buildSetupReadinessMetadata/);
-  assert.match(decisionHero, />Confidence</);
+  assert.match(livePanel, /decisionContent/);
+  assert.doesNotMatch(livePanel, /<SetupReadiness analysis=\{analysis\}/);
+  assert.doesNotMatch(livePanel, /buildSetupReadinessMetadata/);
+  assert.match(decisionHero, />Status</);
   assert.match(decisionHero, /readinessPercent/);
-  assert.match(decisionHero, /confidencePercent/);
+  assert.match(decisionHero, /DECISION \/ SETUP READINESS/);
 });
 
 test('Decision Report replaces Trade Reasoning in user-facing copy', () => {

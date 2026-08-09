@@ -44,9 +44,11 @@ test('starter rules accelerate activation without bypassing review or save',()=>
 test('decision journey uses one clear market-check to risk-check sequence',()=>{
   const market=read('components/LiveMarketPanel.tsx');
   const validator=read('components/TradeValidator.tsx');
+  const hero=read('components/decision/DecisionHero.tsx');
   assert.match(market,/STEP 1 · CHECK CURRENT MARKET/);
   assert.match(validator,/STEP 2 · REVIEW TRADE DETAILS/);
-  assert.match(validator,/Run final risk check/);
+  assert.match(hero,/Run Final Risk Check/);
+  assert.match(hero,/form="final-risk-check"/);
 });
 
 test('customer-facing acquisition surfaces use plain trading-rule language',()=>{

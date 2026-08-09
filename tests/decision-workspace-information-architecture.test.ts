@@ -14,7 +14,7 @@ test('desktop uses a compact full-width horizontal decision header', () => {
   assert.match(css, /\.validate-workspace-grid[^}]*grid-template-columns:minmax\(0,1fr\)/);
   assert.match(css, /\.decision-explanation-hero\{display:grid;grid-template-columns:/);
   assert.doesNotMatch(css, /\.decision-workspace-column \.decision-hero\{position:sticky/);
-  for (const label of ['Readiness', 'Confidence', 'Required', 'Pending', 'Violations']) assert.match(hero, new RegExp(label));
+  for (const label of ['Readiness', 'Status', 'Required', 'Pending', 'Violations']) assert.match(hero, new RegExp(label));
   assert.match(hero, /decision-panel-instrument/);
 });
 
@@ -54,7 +54,18 @@ test('technical evidence and historical report remain available but collapsed by
   assert.match(hero, /View full Decision Report/);
 });
 
-test('authorization result is adjacent to the final risk check', () => {
-  assert.match(validator, /authorization-section[\s\S]{0,1000}authorization-inline-result/);
-  assert.match(validator, /AUTHORIZATION RESULT/);
+test('one decision card owns preliminary, final and risk-check states directly below the chart', () => {
+  const livePanel = read('components/LiveMarketPanel.tsx');
+  assert.match(livePanel, /<TradingViewChart[^>]+\/>[\s\S]{0,100}decisionContent/);
+  assert.match(hero, /Run Final Risk Check/);
+  assert.match(hero, /form="final-risk-check"/);
+  assert.match(hero, /finalized && displayVerdict === 'READY' \? 'APPROVED'/);
+  assert.doesNotMatch(validator, /authorization-inline-result|AUTHORIZATION RESULT/);
+  assert.equal((validator.match(/<DecisionHero/g) ?? []).length, 1);
+});
+
+test('decision explanations are collapsed accordions with evidence preserved', () => {
+  for (const label of ['Why this decision?', "What's missing?", 'What should I do next?']) assert.match(validator, new RegExp(`<summary>${label.replace(/[?]/g, '\\?')}</summary>`));
+  assert.doesNotMatch(validator, /decision-explanation-accordion" open/);
+  assert.match(validator, /AutomaticAnalysisEvidence/);
 });
