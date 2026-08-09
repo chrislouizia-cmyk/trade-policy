@@ -108,7 +108,8 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
   assert.match(header,/href="\/active-trade"/);
   assert.match(header,/Active Trade/);
   assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
-  assert.match(validator,/sourceReportId:result\.reportSourceId/);
+  assert.match(validator,/sourceReportId:reportSave\.reportId \?\? undefined/);
+  assert.doesNotMatch(validator,/sourceReportId:result\.reportSourceId/);
 });
 
 test('decision card explanation uses the same authorization eligibility as the take flow',()=>{

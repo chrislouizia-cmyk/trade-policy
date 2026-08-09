@@ -30,10 +30,14 @@ export function resolveTradeActivationUiState({
   const allowed = authorizationEligibility?.allowed === true;
   const verdict = explanation?.verdict;
   const isRenderableVerdict = Boolean(verdict && !['NO_SETUP', 'DATA_UNAVAILABLE', 'MARKET_CLOSED', 'STRATEGY_INCOMPLETE'].includes(verdict));
-  const hasIntegrity = Boolean(authorizationEligibility && allowed && ['READY', 'WAIT', 'BLOCKED'].includes(state ?? ''));
+  const isReady = allowed && state === 'READY';
+  const requiresOverrideReason =
+    authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' &&
+    (state === 'WAIT' || state === 'BLOCKED');
+  const hasIntegrity = Boolean(authorizationEligibility && (isReady || requiresOverrideReason));
   const showCta = Boolean(isRenderableVerdict && explanation && hasIntegrity && hasExecutableSetup);
 
-  if (showCta && state === 'READY') {
+  if (showCta && isReady) {
     return {
       showCta: true,
       actionLabel: 'Take Trade',
@@ -46,7 +50,7 @@ export function resolveTradeActivationUiState({
     };
   }
 
-  if (showCta && (state === 'WAIT' || state === 'BLOCKED')) {
+  if (showCta && requiresOverrideReason) {
     return {
       showCta: true,
       actionLabel: 'Take Anyway',
