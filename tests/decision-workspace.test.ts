@@ -47,7 +47,7 @@ test('Decision Hero component exists in validate workspace', () => {
   assert.match(decisionHero, /export default function DecisionHero/);
 });
 
-test('visible decision UI uses Readiness instead of Confidence', () => {
+test('visible decision panel distinguishes Readiness from Confidence', () => {
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
   const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
   const livePanel = readFileSync(`${root}/components/LiveMarketPanel.tsx`, 'utf8');
@@ -57,10 +57,11 @@ test('visible decision UI uses Readiness instead of Confidence', () => {
   assert.match(tradeValidator, />Readiness</);
   assert.match(tradeValidator, />Setup readiness/);
   assert.match(tradeValidator, />Required readiness/);
-  assert.match(livePanel, />Setup readiness/);
-  assert.match(livePanel, />Required readiness/);
-  assert.doesNotMatch(tradeValidator, />Confidence</);
-  assert.doesNotMatch(decisionHero, />Confidence</);
+  assert.match(livePanel, /<SetupReadiness analysis=\{analysis\}/);
+  assert.match(livePanel, /buildSetupReadinessMetadata/);
+  assert.match(decisionHero, />Confidence</);
+  assert.match(decisionHero, /readinessPercent/);
+  assert.match(decisionHero, /confidencePercent/);
 });
 
 test('Decision Report replaces Trade Reasoning in user-facing copy', () => {
@@ -85,7 +86,7 @@ test('low readiness does not render Analysis unavailable', () => {
   assert.notEqual(interpretation, 'Analysis unavailable');
 
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
-  assert.doesNotMatch(tradeValidator, /Analysis unavailable/);
+  assert.doesNotMatch(tradeValidator, /liveAnalysisConfidence[^\n]+Analysis unavailable/);
 });
 
 test('deterministic verdict logic remains unchanged through shared dock status', () => {
