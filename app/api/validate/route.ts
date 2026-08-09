@@ -20,6 +20,17 @@ import { evaluateTradeAuthorizationEligibility } from '@/lib/trade-authorization
 
 export const dynamic = 'force-dynamic';
 
+function safeValidationError(error: unknown) {
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const safeText = (field: unknown) => typeof field === 'string' && field.trim() ? field.slice(0, 2000) : undefined;
+  return {
+    message: error instanceof Error ? error.message : safeText(value?.message) ?? 'Unknown validation error',
+    ...(safeText(value?.code) ? { code: safeText(value?.code) } : {}),
+    ...(safeText(value?.details) ? { details: safeText(value?.details) } : {}),
+    ...(safeText(value?.hint) ? { hint: safeText(value?.hint) } : {}),
+  };
+}
+
 const schema = z.object({
   analysisId: z.string().uuid(),
   instrument: z.string().trim().min(1).max(30),
@@ -120,7 +131,11 @@ export async function POST(request: Request) {
     const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
     const aiExplanation=aiParts.length?{reportId:snapshot.reportId,explanationVersion:'1',provider:'OpenAI',...(process.env.OPENAI_MODEL?{model:process.env.OPENAI_MODEL}:{}),prose:aiParts.join('\n\n'),createdAt:new Date().toISOString(),sourceVerdict:snapshot.verdict,sourceDeterministicFingerprint:snapshot.deterministicFingerprint,authoritative:false}:null;
     const {data:source,error:sourceError}=await createAdminClient().from('decision_report_sources').insert({user_id:user.id,source_analysis_id:scan.id,strategy_id:strategy.id,schema_version:snapshot.schemaVersion,deterministic_fingerprint:snapshot.deterministicFingerprint,snapshot_json:validatedSnapshot,ai_explanation_json:aiExplanation}).select('id,expires_at').single();
-    if(sourceError||!source)throw sourceError??new Error('Decision report source was not created.');
+    if(sourceError||!source){
+      const failure=sourceError??new Error('Decision report source was not created.');
+      console.error('Validation error', {requestId,operation:'decision_report_sources.insert',...safeValidationError(failure)});
+      throw failure;
+    }
 
     return NextResponse.json(
       {
@@ -140,11 +155,9 @@ export async function POST(request: Request) {
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown validation error';
-    const stack = error instanceof Error ? error.stack : undefined;
-    console.error('Validation error:', message);
+    console.error('Validation error', {requestId,operation:'validate.POST',...safeValidationError(error)});
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Validation error stack:', stack);
+      console.error('Validation error stack:', error instanceof Error ? error.stack : undefined);
     }
     return apiError('VALIDATION_FAILED','Trade authorization could not be completed. Your trade data was not changed.',503);
   }
