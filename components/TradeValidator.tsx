@@ -10,6 +10,7 @@ import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback'
 import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
 import TradingDnaEvidenceReportView from '@/components/TradingDnaEvidenceReport';
 import PlaybookEvaluation from '@/components/PlaybookEvaluation';
+import MarketContextStrip from '@/components/MarketContextStrip';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
 import { getDecisionWorkspaceLayoutState } from '@/lib/decision-workspace-layout';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
@@ -461,6 +462,32 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
     <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
+    {explanation&&<DecisionHero
+        analyzing={analyzing}
+        explanation={explanation}
+        narrative={narrative ?? undefined}
+        authoritativeVerdict={authorizationBadgeVerdict}
+        primaryActionLabel={activationUiState.showCta ? activationUiState.actionLabel ?? 'Take Trade' : explanation ? 'Review next step' : 'Run market read'}
+        primaryActionHint={activationUiState.showCta ? activationUiState.actionHint ?? 'Create an Active Trade from this decision.' : explanation ? 'Complete the setup and final check to activate this trade.' : 'Check current market data before deciding.'}
+        primaryActionDisabled={analyzing || !analysis || !activationUiState.showCta || activationUiState.primaryActionDisabled}
+        primaryActionTone={activationUiState.showCta ? activationUiState.actionTone : 'neutral'}
+        showPrimaryAction={activationUiState.showCta || !explanation}
+        onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(!explanation||!analysis){document.querySelector('[data-market-check]')?.dispatchEvent(new MouseEvent('click',{bubbles:true})) ; return}setTradeActionMode('SELECT')}}
+        onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
+        reportButtonRef={reasoningButtonRef}
+        showReportButton={Boolean(explanation)}
+        instrument={analysis?.instrument ?? selectedInstrument}
+        direction={analysis?.suggestedDirection ?? analysis?.candidates?.[0]?.direction ?? null}
+        setupType={analysis?.setupType ?? null}
+        readinessPercent={analysis?.setupReadiness?.percentage ?? null}
+        confidencePercent={analysis?.liveAnalysisConfidence ?? null}
+        pendingCount={analysis?.setupReadiness?.required.pending ?? 0}
+        violationsCount={violatedCount}
+        onMarkMissed={result?()=>setTradeActionMode('MISSED'):undefined}
+        onSaveSetup={()=>{window.location.href='/history'}}
+      />}
+    {analysis&&<MarketContextStrip analysis={analysis}/>}
+    {analysis&&<PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">STEP 2 · REVIEW TRADE DETAILS</h2>
@@ -485,7 +512,6 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         </section>
         {accounts.length===0&&<p className="warning">No trading account yet. You can validate with a manual balance, or create an auditable account from Accounts.</p>}
         {manualRules.length>0&&<section className="workspace-section manual-confirmation-summary"><div><h3>Manual confirmations</h3><strong>{pendingManualRules.length} pending</strong></div>{pendingManualRules.length?<ul>{pendingManualRules.map(rule=><li key={rule.ruleKey}>{ruleLabel(rule.ruleKey,rule.label)}</li>)}</ul>:<p className="success">All manual confirmations have an answer.</p>}<button type="button" onClick={()=>setShowManualConfirmations(true)}>{pendingManualRules.length?'Complete manual confirmations':'Review confirmations'}</button></section>}
-        <PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>
         <section className="workspace-section confirmation-section"><h3>Trade-specific check</h3><label className="check-row"><input name="highImpactNews" type="checkbox" checked={!!autoChecks.highImpactNews} onChange={e=>setAutoChecks(v=>({...v,highImpactNews:e.target.checked}))}/><span>High-impact news conflict<small>Confirm only for this proposed trade.</small></span></label></section>
         <section className="workspace-section authorization-section"><p className="muted">This final check applies account risk, daily limits, manual confirmations, and the same saved strategy rules shown above.</p><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Risk check suspended':loading?'Checking…':'Run final risk check'}</button></section>
         {(error||result)&&<section className={`authorization-inline-result ${error?'has-error':'has-result'}`} aria-live="polite"><p className="brand">AUTHORIZATION RESULT</p>{error?<p className="error">{error}</p>:<><strong>{authorizationBadgeVerdict?.replaceAll('_',' ')}</strong><p>{authorizationEligibility?.message??explanation?.primaryReason}</p></>}</section>}
@@ -493,31 +519,6 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
     {workspaceLayout.showDecisionColumn&&<aside className="decision-workspace-column">
       <div className="decision-workspace-sticky">
-      <DecisionHero
-        analyzing={analyzing}
-        explanation={explanation}
-        narrative={narrative ?? undefined}
-        authoritativeVerdict={authorizationBadgeVerdict}
-        primaryActionLabel={activationUiState.showCta ? activationUiState.actionLabel ?? 'Take Trade' : explanation ? 'Review next step' : 'Run market read'}
-        primaryActionHint={activationUiState.showCta ? activationUiState.actionHint ?? 'Create an Active Trade from this decision.' : explanation ? 'Complete the setup and final check to activate this trade.' : 'Check current market data before deciding.'}
-        primaryActionDisabled={analyzing || !analysis || !activationUiState.showCta || activationUiState.primaryActionDisabled}
-        primaryActionTone={activationUiState.showCta ? activationUiState.actionTone : 'neutral'}
-        secondaryActionLabel={explanation ? 'View full report' : undefined}
-        showPrimaryAction={activationUiState.showCta || !explanation}
-        onPrimaryAction={()=>{if(explanation?.verdict==='STRATEGY_INCOMPLETE'){window.location.href='/profile';return}if(!explanation||!analysis){document.querySelector('[data-market-check]')?.dispatchEvent(new MouseEvent('click',{bubbles:true})) ; return}setTradeActionMode('SELECT')}}
-        onSecondaryAction={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
-        onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
-        reportButtonRef={reasoningButtonRef}
-        showReportButton={workspaceLayout.showDecisionReportButton}
-        instrument={analysis?.instrument ?? selectedInstrument}
-        direction={analysis?.suggestedDirection ?? analysis?.candidates?.[0]?.direction ?? null}
-        readinessPercent={analysis?.setupReadiness?.percentage ?? null}
-        confidencePercent={analysis?.liveAnalysisConfidence ?? null}
-        violationsCount={violatedCount}
-        onMarkMissed={result?()=>setTradeActionMode('MISSED'):undefined}
-        onSaveSetup={()=>{window.location.href='/history'}}
-      />
-
     <div className="card primary-workspace-surface decision-report-workspace narrative-workspace">
       <div className="narrative-workspace-head"><div><p className="brand">YOUR ANSWER</p><h2>Decision breakdown</h2></div><span className="narrative-provenance">{narrative?.source==='AI_ENHANCED'?'Deterministic decision · coaching added':'Deterministic decision'}</span></div>
 
@@ -531,14 +532,13 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       {(narrative.educationalExplanation||narrative.coachingMessage||narrative.learningTip)?<section className="narrative-coaching" aria-label="Educational coaching"><span>COACHING · EDUCATIONAL ONLY</span>{narrative.educationalExplanation?<p>{narrative.educationalExplanation}</p>:null}{narrative.coachingMessage?<p>{narrative.coachingMessage}</p>:null}{narrative.learningTip?<small>{narrative.learningTip}</small>:null}</section>:null}
       </>}
 
-      <section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Rule score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}{activationSuccess?<div className="reasoning-section" aria-live="polite"><strong>{activationSuccess}</strong><p>You can open the active trade from Manage Trades.</p></div>:null}{isAuthorizationEligible?null:<div className="reasoning-section" aria-live="polite"><strong>{authorizationEligibility?.message ?? 'This decision is not currently eligible to be activated.'}</strong>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}</div>}<div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode('ACTIVATE')} disabled={savingTrade || !canTakeTrade}>Take trade</button>{canTakeAnyway?<button type="button" onClick={()=>setTradeActionMode('OVERRIDE')} disabled={savingTrade}>Take anyway</button>:null}<button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>Mark as missed</button><button type="button" onClick={()=>{window.location.href='/history'}} disabled={savingTrade}>Save setup</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={savingTrade || !hasActiveTrade}>View active trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
-      <details className="deep-evidence-item"><summary>Historical Decision Report</summary><section className="workspace-section save-report-card"><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section></details>
+      <details className="advanced-evidence-hub"><summary>ADVANCED EVIDENCE</summary><div className="deep-evidence-hub"><p>Decision evidence, methodology, detector output, and historical detail.</p><details className="deep-evidence-item"><summary>Decision Record</summary><section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Rule score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}{activationSuccess?<div className="reasoning-section" aria-live="polite"><strong>{activationSuccess}</strong><p>You can open the active trade from Manage Trades.</p></div>:null}{isAuthorizationEligible?null:<div className="reasoning-section" aria-live="polite"><strong>{authorizationEligibility?.message ?? 'This decision is not currently eligible to be activated.'}</strong>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}</div>}<div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode('ACTIVATE')} disabled={savingTrade || !canTakeTrade}>Take trade</button>{canTakeAnyway?<button type="button" onClick={()=>setTradeActionMode('OVERRIDE')} disabled={savingTrade}>Take anyway</button>:null}<button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>Mark as missed</button><button type="button" onClick={()=>{window.location.href='/history'}} disabled={savingTrade}>Save setup</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={savingTrade || !hasActiveTrade}>View active trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section></details>
+      <details className="deep-evidence-item"><summary>Historical Decision Report</summary><section className="workspace-section save-report-card"><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section></details>{result?.evidenceReport&&<details className="deep-evidence-item"><summary>Full rule evaluation</summary><TradingDnaEvidenceReportView report={result.evidenceReport}/></details>}{narrative&&lastAnalysisInput&&<details className="deep-evidence-item"><summary>Playbook Trace and Methodology Applied</summary><MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/></details>}</div></details>
     </div>
       </div>
     </aside>}
     </div>
 
-    {(result?.evidenceReport||(narrative&&lastAnalysisInput))&&<section className="deep-evidence-hub" aria-labelledby="deep-evidence-title"><header><p className="brand">DEEP EVIDENCE</p><h2 id="deep-evidence-title">Technical detail</h2><p>Open these sections only when you need the complete deterministic trace.</p></header>{result?.evidenceReport&&<details className="deep-evidence-item"><summary>Full rule evaluation</summary><TradingDnaEvidenceReportView report={result.evidenceReport}/></details>}{narrative&&lastAnalysisInput&&<details className="deep-evidence-item"><summary>Playbook Trace and Methodology Applied</summary><MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/></details>}</section>}
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
     <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>
 

@@ -15,7 +15,7 @@ function RuleRow({ rule }: { rule: MethodologyAuditRule }) {
     <summary>
       <span aria-hidden="true">{status === 'PASS' ? '✓' : status === 'FAIL' ? '!' : '○'}</span>
       <strong>{rule.label}</strong>
-      {rule.timeframeRole ? <small>{rule.timeframeRole.replaceAll('_', ' ')}</small> : null}
+      <small>{rule.timeframeRole ? rule.timeframeRole.replaceAll('_', ' ') : 'All'}</small>
       <b>{status}</b>
     </summary>
     <p>{rule.detail}</p>
@@ -27,11 +27,12 @@ export default function PlaybookEvaluation({ rules, analysis, manualEvidence }: 
   const groups = buildMethodologyAudit(rules, input, analysis);
   return <section className="card playbook-evaluation" aria-labelledby="playbook-evaluation-title">
     <header><div><p className="brand">PLAYBOOK EVALUATION</p><h2 id="playbook-evaluation-title">Your trading rules, evaluated once</h2></div><p>Expand a row for its recorded evaluation detail.</p></header>
+    <div className="playbook-table-head" aria-hidden="true"><span>Status</span><span>Rule</span><span>Timeframe</span><span>Result</span></div>
     <div className="playbook-evaluation-groups">
-      {(Object.keys(groupLabels) as Array<keyof typeof groupLabels>).map(key => <section key={key} aria-labelledby={`playbook-${key}`}>
-        <h3 id={`playbook-${key}`}>{groupLabels[key]} <span>{groups[key].length}</span></h3>
+      {(Object.keys(groupLabels) as Array<keyof typeof groupLabels>).map(key => <details className="playbook-rule-group" key={key} open={key === 'required'}>
+        <summary id={`playbook-${key}`}>{groupLabels[key]} <span>{groups[key].length}</span></summary>
         {groups[key].length ? <div>{groups[key].map(rule => <RuleRow key={rule.ruleKey} rule={rule}/>)}</div> : <p className="muted">No enabled {groupLabels[key].toLowerCase()}.</p>}
-      </section>)}
+      </details>)}
     </div>
   </section>;
 }

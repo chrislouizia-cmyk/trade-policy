@@ -25,6 +25,8 @@ type Props={
   readinessPercent?:number|null;
   confidencePercent?:number|null;
   violationsCount?:number;
+  pendingCount?:number;
+  setupType?:string|null;
   onMarkMissed?:()=>void;
   onSaveSetup?:()=>void;
 };
@@ -42,7 +44,7 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
   return 'Check again';
 }
 
-export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,confidencePercent,violationsCount=0,onMarkMissed,onSaveSetup}:Props){
+export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,confidencePercent,violationsCount=0,pendingCount=0,setupType,onMarkMissed,onSaveSetup}:Props){
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
@@ -54,7 +56,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
     <span className="sr-only">SHOULD I RISK MY MONEY RIGHT NOW? Mandatory rules still control the final decision. {narrative?.recommendation?'A final-check explanation is available.':''}</span><span className="sr-only">Readiness</span><span className="sr-only">Required readiness</span>
     <div className="decision-system-state"><span aria-hidden="true">{icon[explanation.verdict]}</span><strong>{explanation.dataStatus.freshness.replaceAll('_',' ')}</strong><small>{explanation.dataStatus.provider}</small></div>
     <div className="decision-hero-primary">
-      {instrument?<p className="decision-panel-instrument">{instrument}{direction?` · ${direction}`:''}</p>:null}
+      {instrument?<p className="decision-panel-instrument">{instrument}{direction?` · ${direction}`:''}{setupType?` · ${setupType}`:''}</p>:null}
       <p className="brand">DECISION</p>
       <h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Decision: </span>{displayVerdict.replaceAll('_',' ')}</h1>
       <h2>{explanation.headline}</h2>
@@ -64,6 +66,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
         <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>
         <div><dt>Confidence</dt><dd>{confidencePercent == null ? '—' : `${confidencePercent}%`}</dd></div>
         <div><dt>Required</dt><dd>{explanation.confirmedRequiredCount} / {explanation.totalRequiredCount}</dd></div>
+        <div><dt>Pending</dt><dd>{pendingCount}</dd></div>
         <div><dt>Violations</dt><dd>{violationsCount}</dd></div>
       </dl>
       <div className="decision-next-action"><span>What happens next</span><strong>{explanation.nextAction}</strong></div>
@@ -76,7 +79,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
           <small>{resolvedPrimaryHint}</small>
         </button>:null}
       </div>
-      {showReportButton?<button ref={reportButtonRef} type="button" className="decision-hero-report-button" onClick={onViewReport}><span aria-hidden="true">View full Decision Report</span><span className="sr-only">View Decision Report</span></button>:null}
+      {showReportButton?<button ref={reportButtonRef} type="button" className="decision-hero-report-button" title="View full Decision Report" onClick={onViewReport}><span aria-hidden="true">Full Report</span><span className="sr-only">View Decision Report</span></button>:null}
     </div>
     {(onMarkMissed||onSaveSetup)?<div className="decision-panel-secondary-actions">{onMarkMissed?<button type="button" onClick={onMarkMissed}>Mark as Missed</button>:null}{onSaveSetup?<button type="button" onClick={onSaveSetup}>Save Setup</button>:null}</div>:null}
     <div className="decision-data-trust available"><strong>{`Market data · ${analysis.provider}`}</strong><span>{analysis.latestCandleTimestamp?`Last verified candle ${new Date(analysis.latestCandleTimestamp).toLocaleString()}`:'No verified candle time available'}{analysis.calculatedAt?` · decision calculated ${new Date(analysis.calculatedAt).toLocaleTimeString()}`:''}</span></div>
