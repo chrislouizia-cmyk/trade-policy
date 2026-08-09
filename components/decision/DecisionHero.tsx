@@ -53,7 +53,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
-  const displayDecision = finalized && displayVerdict === 'READY' ? 'APPROVED' : displayVerdict.replaceAll('_',' ');
+  const displayDecision = displayVerdict === 'READY' && !finalized ? 'SETUP READY' : displayVerdict.replaceAll('_',' ');
   const instruction = displayVerdict === 'WAIT' ? 'Do not risk your money yet.' : displayVerdict === 'BLOCKED' ? 'This setup conflicts with a mandatory trading rule.' : displayVerdict === 'READY' ? (finalized ? 'Final risk controls permit this trade.' : 'The setup is ready for the final risk check.') : explanation.headline;
   const readinessAllowed=!['DATA_UNAVAILABLE','MARKET_CLOSED'].includes(displayVerdict);
   const analysis={provider:explanation.dataStatus.provider,latestCandleTimestamp:explanation.dataStatus.lastVerifiedCandleAt,calculatedAt:explanation.dataStatus.calculationCompletedAt};
@@ -79,6 +79,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
       <div className="decision-next-action"><span>What happens next</span><strong>{explanation.nextAction}</strong></div>
     </div>
     <div className="decision-hero-actions">
+      {primaryActionLabel === 'Take Anyway' ? <p className="decision-override-label">Override</p> : null}
       <div className="decision-hero-action-stack">
         {secondaryActionLabel&&onSecondaryAction?<button type="button" className="decision-hero-secondary-button" disabled={secondaryActionDisabled} onClick={onSecondaryAction}>{secondaryActionLabel}</button>:null}
         {showPrimaryAction?<button className={`decision-hero-primary-button ${primaryActionTone}`} type="button" onClick={onPrimaryAction} disabled={primaryActionDisabled}>

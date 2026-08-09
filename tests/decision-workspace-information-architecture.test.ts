@@ -19,7 +19,7 @@ test('desktop uses a compact full-width horizontal decision header', () => {
 });
 
 test('tablet and mobile use explicit compact, non-clipping breakpoints', () => {
-  assert.match(css, /@media\(max-width:1023px\)/);
+  assert.match(css, /@media\(max-width:1100px\)/);
   assert.match(css, /@media\(max-width:767px\)/);
   assert.match(css, /@media\(max-width:420px\)/);
   assert.match(css, /\.trade-workspace\{grid-template-columns:minmax\(0,1fr\);padding:14px\}/);
@@ -59,9 +59,24 @@ test('one decision card owns preliminary, final and risk-check states directly b
   assert.match(livePanel, /<TradingViewChart[^>]+\/>[\s\S]{0,100}decisionContent/);
   assert.match(hero, /Run Final Risk Check/);
   assert.match(hero, /form="final-risk-check"/);
-  assert.match(hero, /finalized && displayVerdict === 'READY' \? 'APPROVED'/);
+  assert.match(hero, /displayVerdict === 'READY' && !finalized \? 'SETUP READY'/);
   assert.doesNotMatch(validator, /authorization-inline-result|AUTHORIZATION RESULT/);
   assert.equal((validator.match(/<DecisionHero/g) ?? []).length, 1);
+});
+
+test('READY is final-only presentation and verdict labels cannot break', () => {
+  assert.match(hero, /displayVerdict === 'READY' && !finalized \? 'SETUP READY'/);
+  assert.match(hero, /finalized \? 'Final risk controls permit this trade\.'/);
+  assert.doesNotMatch(hero, /\? 'APPROVED'/);
+  assert.match(css, /\.decision-explanation-hero \.decision-hero-verdict\{[^}]*min-width:190px[^}]*white-space:nowrap[^}]*word-break:normal[^}]*overflow-wrap:normal/);
+  assert.match(css, /@media\(max-width:1100px\)[^{]*\{[^}]*\.decision-explanation-hero\{grid-template-columns:minmax\(0,1fr\)\}/);
+  assert.match(css, /@media\(max-width:767px\)[\s\S]*\.decision-explanation-hero \.decision-hero-actions\{grid-template-columns:1fr\}/);
+});
+
+test('override remains a secondary labeled action governed by existing eligibility', () => {
+  assert.match(hero, /primaryActionLabel === 'Take Anyway' \? <p className="decision-override-label">Override<\/p>/);
+  assert.match(validator, /reasonCode === 'OVERRIDE_REASON_REQUIRED'/);
+  assert.match(validator, /\['WAIT','BLOCKED'\]\.includes\(authorizationEligibility\.state\)/);
 });
 
 test('decision explanations are collapsed accordions with evidence preserved', () => {
