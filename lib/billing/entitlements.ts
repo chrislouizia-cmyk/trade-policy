@@ -3,6 +3,7 @@ import 'server-only';
 import { createAdminClient } from '../supabase/admin.ts';
 import { getAnchoredMonthlyPeriod } from './period.ts';
 import { buildBillingState, type BillingState } from './state.ts';
+import { applyServerEntitlementOverride } from './overrides.ts';
 
 export { buildBillingState, type BillingState } from './state.ts';
 
@@ -74,11 +75,12 @@ export async function getBillingState(userId: string): Promise<BillingState> {
     throw new Error('Analysis usage is temporarily unavailable.');
   }
 
-  return buildBillingState(
+  const state = buildBillingState(
     subscriptionResult,
     usageResult.count,
     usagePeriod,
   );
+  return applyServerEntitlementOverride(userId, state);
 }
 
 export async function reserveAnalysis(

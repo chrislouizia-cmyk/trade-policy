@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildBillingState } from '../lib/billing/state.ts';
 import { getAnchoredMonthlyPeriod, getMonthlyPeriodStartKey } from '../lib/billing/period.ts';
 import { planFor } from '../lib/billing/plans.ts';
 import { applyServerEntitlementOverride, serverEntitlementOverride } from '../lib/billing/overrides.ts';
+
+const billingEntitlementsSource = readFileSync(
+  new URL('../lib/billing/entitlements.ts', import.meta.url),
+  'utf8',
+);
 
 test('period_start filters use YYYY-MM-DD', () => {
   const key = getMonthlyPeriodStartKey(new Date('2026-08-15T12:34:56.000Z'));
@@ -48,7 +54,7 @@ test('analysis limits match each designed plan', () => {
   assert.equal(planFor('FOUNDER').monthlyAnalysisLimit, null);
 });
 
-test('founder test accounts receive only the server-side FOUNDER override', () => {
+test('getBillingState applies the server-side FOUNDER override after normal plan resolution', () => {
   const founderUserIds = [
     '65a21633-51ea-419b-bd0c-e43f81c63b4e',
     'cee066a8-a590-4c1a-9c56-5e1c3617ca26',
@@ -58,6 +64,11 @@ test('founder test accounts receive only the server-side FOUNDER override', () =
     startKey: '2026-08-15',
     endKey: '2026-09-15',
   });
+  assert.equal(free.plan, 'FREE');
+  assert.match(
+    billingEntitlementsSource,
+    /const state = buildBillingState\([\s\S]*return applyServerEntitlementOverride\(userId, state\);/,
+  );
 
   for (const userId of founderUserIds) {
     const founder = applyServerEntitlementOverride(userId, free);

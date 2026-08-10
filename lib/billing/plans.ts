@@ -33,7 +33,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
   PRIVATE_BETA: {
     code: 'PRIVATE_BETA',
     name: 'Private Beta',
-    monthlyAnalysisLimit: 80,
+    monthlyAnalysisLimit: 50,
     maximumActiveStrategies: 5,
     canViewCompleteDecisionReport: true,
     canUseExpandedHistory: true,
