@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {createClient} from '@/lib/supabase/server';
 import {createAdminClient} from '@/lib/supabase/admin';
+import {getCanonicalAppUrls} from '@/lib/app-urls';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -23,6 +24,7 @@ async function findAuthUserByEmail(admin:AdminClient,email:string){for(let page=
 function authFailure(error:unknown){const raw=error instanceof Error?error.message:String(error??'');if(/rate.?limit|too many requests/i.test(raw))return{message:'Email rate limit exceeded. Wait before trying again or check the Supabase Auth email rate limit.',status:429,code:'EMAIL_RATE_LIMIT'};if(/already.*registered|already.*exists/i.test(raw))return{message:'This email already belongs to an employee or existing account.',status:409,code:'EMAIL_EXISTS'};return{message:`Supabase could not create the invitation${raw?`: ${raw}`:'.'}`,status:502,code:'AUTH_INVITE_FAILED'}}
 function rpcFailure(message:string){if(/already has a pending invitation/i.test(message))return{message:'This email already has a pending invitation.',status:409,code:'DUPLICATE_PENDING_INVITATION'};if(/already belongs to an employee/i.test(message))return{message:'This email already belongs to an employee.',status:409,code:'DUPLICATE_EMPLOYEE'};if(/permission denied|not authorized/i.test(message))return{message:'You are not authorized to invite employees.',status:403,code:'FORBIDDEN'};return{message:message.replace(/\s*\(.*\)$/,''),status:400,code:'INVITATION_VALIDATION_FAILED'}}
 const rpcInput=(input:InviteInput,requestId:string)=>({p_email:input.email,p_display_name:input.displayName,p_department_id:input.departmentId,p_position_id:input.positionId,p_permission_profile_id:input.permissionProfileId,p_reports_to_employee_id:input.reportsToEmployeeId||null,p_request_id:requestId});
+const invitationRedirectTo=()=>`${getCanonicalAppUrls().hq}/auth/callback?next=/hq/onboarding`;
 
 export async function POST(request:Request){
  const requestId=crypto.randomUUID();let input:InviteInput|undefined;let preflight:Preflight|undefined;
@@ -46,7 +48,7 @@ export async function POST(request:Request){
   const existingAuth=await findAuthUserByEmail(admin,preflight.email);
   if(existingAuth)return jsonError('This email already belongs to an employee or existing account.',409,requestId,'EMAIL_EXISTS');
   const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
-  const redirectTo=`${new URL(request.url).origin}/auth/callback?next=/hq`;
+  const redirectTo=invitationRedirectTo();
   const {data:authInvite,error:inviteError}=await admin.auth.admin.inviteUserByEmail(preflight.email,{redirectTo,data:{account_type:'staff',display_name:preflight.displayName}});
   if(inviteError||!authInvite.user){
    const failure=authFailure(inviteError);
@@ -59,7 +61,7 @@ export async function POST(request:Request){
   if(persistenceError){
    const cleanup=await admin.auth.admin.deleteUser(invitedUser.id);
    const message=`Invitation created, but employee setup failed. ${persistenceError.message}`;
-   const {error:failureError}=await supabase.rpc('mark_staff_invitation_delivery_failed_v1',{...rpcInput(input,requestId),p_invitation_id:preflight.invitationId,p_auth_user_id:cleanup.error?invitedUser.id:null,p_expires_at:expiresAt,p_delivery_provider:'SUPABASE_AUTH',p_error_category:'PERSISTENCE_FAILED',p_error_message:message,p_auth_cleanup_succeeded:!cleanup.error});
+   const {error:failureError}=await supabase.rpc('mark_staff_invitation_persistence_failed_v1',{...rpcInput(input,requestId),p_invitation_id:preflight.invitationId,p_auth_user_id:cleanup.error?invitedUser.id:null,p_expires_at:expiresAt,p_delivery_provider:'SUPABASE_AUTH',p_error_category:'PERSISTENCE_FAILED',p_error_message:message,p_auth_cleanup_succeeded:!cleanup.error});
    serverLog('error','persistence_failed',{requestId,error:persistenceError.message,authCleanupError:cleanup.error?.message,failurePersistenceError:failureError?.message});
    return jsonError(cleanup.error?'Invitation created, but employee setup failed and Auth cleanup requires attention.':'Invitation created, but employee setup failed. The Auth invitation was cleaned up.',500,requestId,'PERSISTENCE_FAILED')
   }
@@ -85,9 +87,17 @@ export async function PATCH(request:Request){
   }
   const {data:invitation,error:prepareError}=await supabase.rpc('resend_staff_invitation_prepare_v1',{p_invitation_id:parsed.data.invitationId,p_request_id:requestId});
   if(prepareError)return jsonError(prepareError.message,400,requestId,'RESEND_NOT_ALLOWED');
-  const {error:resendError}=await admin.auth.resend({type:'signup',email:invitation.email,options:{emailRedirectTo:`${new URL(request.url).origin}/auth/callback?next=/hq`}});
-  if(resendError){const failure=authFailure(resendError);const {error:failureError}=await supabase.rpc('mark_staff_invitation_resend_failed_v1',{p_invitation_id:invitation.id,p_request_id:requestId,p_error_category:failure.code,p_error_message:failure.message});serverLog('error','resend_failed',{requestId,code:failure.code,error:resendError.message,failurePersistenceError:failureError?.message});return jsonError(failure.message,failure.status,requestId,failure.code)}
-  const {error:finalizeError}=await supabase.rpc('mark_staff_invitation_resent_v1',{p_invitation_id:invitation.id,p_request_id:requestId,p_expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString()});
+  const {data:pendingAuth,error:pendingAuthError}=await admin.auth.admin.getUserById(invitation.userId);
+  if(pendingAuthError||!pendingAuth.user||pendingAuth.user.email_confirmed_at||pendingAuth.user.last_sign_in_at)return jsonError('Invitation is no longer eligible for resend.',409,requestId,'RESEND_NOT_ALLOWED');
+  const cleanup=await admin.auth.admin.deleteUser(invitation.userId);
+  if(cleanup.error){serverLog('error','resend_auth_cleanup_failed',{requestId,userId:invitation.userId,error:cleanup.error.message});return jsonError('The pending Auth invitation could not be safely replaced.',502,requestId,'RESEND_AUTH_CLEANUP_FAILED')}
+  const {data:authInvite,error:resendError}=await admin.auth.admin.inviteUserByEmail(invitation.email,{redirectTo:invitationRedirectTo(),data:{account_type:'staff',display_name:invitation.displayName}});
+  if(resendError||!authInvite.user){const failure=authFailure(resendError);const {error:failureError}=await supabase.rpc('mark_staff_invitation_resend_failed_v1',{p_invitation_id:invitation.id,p_request_id:requestId,p_error_category:failure.code,p_error_message:failure.message});serverLog('error','resend_failed',{requestId,code:failure.code,error:resendError?.message,failurePersistenceError:failureError?.message});return jsonError(failure.message,failure.status,requestId,failure.code)}
+  const replacementInput={email:invitation.email,displayName:invitation.displayName,departmentId:invitation.departmentId,positionId:invitation.positionId,permissionProfileId:invitation.permissionProfileId,reportsToEmployeeId:invitation.reportsToEmployeeId??''};
+  const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+  const {error:persistenceError}=await supabase.rpc('create_staff_invitation_v1',{...rpcInput(replacementInput,requestId),p_invitation_id:invitation.id,p_auth_user_id:authInvite.user.id,p_expires_at:expiresAt,p_delivery_provider:'SUPABASE_AUTH',p_provider_message_id:null});
+  if(persistenceError){const compensation=await admin.auth.admin.deleteUser(authInvite.user.id);await supabase.rpc('mark_staff_invitation_resend_failed_v1',{p_invitation_id:invitation.id,p_request_id:requestId,p_error_category:'PERSISTENCE_FAILED',p_error_message:'The replacement invitation could not be persisted safely.'});serverLog('error','resend_persistence_failed',{requestId,error:persistenceError.message,authCleanupError:compensation.error?.message});return jsonError('The replacement invitation could not be persisted safely.',500,requestId,'RESEND_PERSISTENCE_FAILED')}
+  const {error:finalizeError}=await supabase.rpc('mark_staff_invitation_resent_v1',{p_invitation_id:invitation.id,p_request_id:requestId,p_expires_at:expiresAt});
   if(finalizeError)return jsonError(`Resend was accepted by Auth, but persistence failed: ${finalizeError.message}`,500,requestId,'RESEND_PERSISTENCE_FAILED');
   return NextResponse.json({ok:true,message:`Invitation delivery requested again for ${invitation.email}; final delivery is not confirmed.`,delivery:{accepted:true,confirmed:false},requestId});
  }catch(error){const message=error instanceof Error?error.message:'Invitation action failed.';serverLog('error','action_failed',{requestId,error:message});return jsonError(message,500,requestId,'ACTION_FAILED')}

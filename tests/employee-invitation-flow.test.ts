@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+import {getCanonicalAppUrls} from '../lib/app-urls.ts';
 
 const route=readFileSync(new URL('../app/api/hq/staff/invite/route.ts',import.meta.url),'utf8');
 const workspace=readFileSync(new URL('../components/hq/TeamWorkspace.tsx',import.meta.url),'utf8');
 const pending=readFileSync(new URL('../components/hq/PendingInvitations.tsx',import.meta.url),'utf8');
 const lifecycleMigration=readFileSync(new URL('../supabase/migrations/036_reliable_staff_invitations.sql',import.meta.url),'utf8');
 const migration=readFileSync(new URL('../supabase/migrations/037_secure_staff_invitation_operations.sql',import.meta.url),'utf8');
+const onboardingMigration=readFileSync(new URL('../supabase/migrations/047_hq_employee_onboarding.sql',import.meta.url),'utf8');
+const onboardingPage=readFileSync(new URL('../app/hq/onboarding/page.tsx',import.meta.url),'utf8');
+const onboardingForm=readFileSync(new URL('../components/hq/HQOnboardingForm.tsx',import.meta.url),'utf8');
+const onboardingRoute=readFileSync(new URL('../app/api/hq/staff/onboarding/route.ts',import.meta.url),'utf8');
+const callback=readFileSync(new URL('../app/auth/callback/route.ts',import.meta.url),'utf8');
+const forgotPassword=readFileSync(new URL('../app/forgot-password/page.tsx',import.meta.url),'utf8');
+const resetPassword=readFileSync(new URL('../app/reset-password/page.tsx',import.meta.url),'utf8');
 const css=readFileSync(new URL('../app/trade-police.css',import.meta.url),'utf8');
 
 test('successful invitation persists every layer and returns honest delivery metadata',()=>{
@@ -14,6 +22,35 @@ test('successful invitation persists every layer and returns honest delivery met
  assert.match(migration,/insert into public\.staff_roles[\s\S]+insert into public\.organization_members[\s\S]+insert into public\.staff_invitations/);
  assert.match(route,/status:201/);assert.match(route,/accepted:true,confirmed:false/);
  assert.doesNotMatch(route,/Invitation sent to/);
+});
+test('staff invitations always use the canonical HQ onboarding callback',()=>{
+ assert.match(route,/getCanonicalAppUrls\(\)\.hq/);
+ assert.match(route,/\/auth\/callback\?next=\/hq\/onboarding/);
+ assert.doesNotMatch(route,/new URL\(request\.url\)\.origin.*auth\/callback/);
+});
+test('canonical URL helper and callback keep production HQ authentication on the HQ origin',()=>{
+ assert.deepEqual(getCanonicalAppUrls({NEXT_PUBLIC_SITE_URL:'https://site.example',NEXT_PUBLIC_APP_URL:'https://portal.example',NEXT_PUBLIC_HQ_URL:'https://hq.example'}),{site:'https://site.example',portal:'https://portal.example',hq:'https://hq.example'});
+ assert.match(callback,/next\.startsWith\('\/hq'\) \? urls\.hq : urls\.portal/);
+});
+test('password recovery preserves HQ and client destinations',()=>{
+ assert.match(forgotPassword,/portal.*=== 'hq'/);
+ assert.match(forgotPassword,/reset-password\?portal=\$\{portal\}/);
+ assert.match(resetPassword,/\/hq\/login\?password=updated/);
+ assert.match(resetPassword,/\/client\/login\?password=updated/);
+});
+test('pending staff must set a password before atomic acceptance',()=>{
+ assert.match(onboardingPage,/current_staff_invitation_onboarding_v1/);
+ assert.match(onboardingForm,/auth\.updateUser\(\{password\}\)/);
+ assert.match(onboardingForm,/\/api\/hq\/staff\/onboarding/);
+ assert.match(onboardingRoute,/accept_staff_invitation_v1/);
+ assert.match(onboardingMigration,/status='ACCEPTED'/);
+ assert.match(onboardingMigration,/organization_members set status='ACTIVE'/);
+ assert.match(onboardingMigration,/ACCEPT_STAFF_INVITATION/);
+});
+test('invitation acceptance is idempotent and pending staff have no HQ permissions',()=>{
+ assert.match(onboardingMigration,/if invitation\.status='ACCEPTED'/);
+ assert.match(onboardingMigration,/not exists\(select 1 from public\.staff_invitations si where si\.user_id=sr\.user_id and si\.status<>'ACCEPTED'\)/);
+ assert.match(onboardingMigration,/email_confirmed_at is not null or u\.last_sign_in_at is not null/);
 });
 test('submit button has a loading state and is always restored',()=>{
  assert.match(workspace,/Sending invitation…/);assert.match(workspace,/disabled=\{busy\}/);assert.match(workspace,/finally\{[^}]+setBusy\(false\)/);
@@ -58,6 +95,20 @@ test('resend and revoke use scoped RPCs with eligibility and audit logging',()=>
  assert.match(route,/resend_staff_invitation_prepare_v1/);assert.match(route,/mark_staff_invitation_resent_v1/);assert.match(route,/mark_staff_invitation_resend_failed_v1/);assert.match(route,/revoke_staff_invitation_v1/);
  assert.match(migration,/Invitation is not eligible for resend/);assert.match(migration,/Accepted invitations cannot be revoked/);
  assert.match(migration,/RESEND_STAFF_INVITATION/);assert.match(migration,/REVOKE_STAFF_INVITATION/);
+});
+test('resend replaces only an unconfirmed pending Auth invitation without duplicating staff',()=>{
+ assert.doesNotMatch(route,/auth\.resend\(\{type:'signup'/);
+ assert.match(route,/getUserById\(invitation\.userId\)/);
+ assert.match(route,/deleteUser\(invitation\.userId\)/);
+ assert.match(route,/inviteUserByEmail\(invitation\.email/);
+ assert.match(route,/create_staff_invitation_v1/);
+ assert.match(onboardingMigration,/email_confirmed_at is not null or auth_user\.last_sign_in_at is not null/);
+});
+test('provisioning states and service role access remain explicit and least privilege',()=>{
+ for(const status of ['PENDING','ACCEPTED','DELIVERY_FAILED','PERSISTENCE_FAILED','REVOKED'])assert.match(onboardingMigration,new RegExp(status));
+ assert.match(onboardingMigration,/grant select on table public\.staff_invitations to service_role/);
+ assert.doesNotMatch(onboardingMigration,/grant .*staff_invitations.* to (?:anon|authenticated)/);
+ assert.match(pending,/Copy status\/details/);assert.match(pending,/Resend Invite/);
 });
 test('route performs no direct queries against protected organizational tables',()=>{
  assert.doesNotMatch(route,/\.from\(['"](?:staff_invitations|staff_roles|org_departments|org_positions|permission_profiles|organization_members|admin_access_logs)['"]\)/);

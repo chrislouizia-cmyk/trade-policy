@@ -8,9 +8,11 @@ export default function ForgotPasswordPage() {
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [portal, setPortal] = useState<'client' | 'hq'>('client');
 
   useEffect(() => {
     const error = new URLSearchParams(window.location.search).get('error');
+    setPortal(new URLSearchParams(window.location.search).get('portal') === 'hq' ? 'hq' : 'client');
     if (error) {
       setIsError(true);
       setMessage(error === 'invalid-link'
@@ -27,7 +29,7 @@ export default function ForgotPasswordPage() {
 
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get('email') ?? '').trim();
-    const redirectTo = `${window.location.origin}/reset-password`;
+    const redirectTo = `${window.location.origin}/reset-password?portal=${portal}`;
     const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
 
@@ -54,7 +56,7 @@ export default function ForgotPasswordPage() {
           {loading ? 'Sending…' : 'Send recovery email'}
         </button>
         {message && <p className={isError ? 'warning' : 'success'}>{message}</p>}
-        <Link className="link-button" href="/client/login">Back to sign in</Link>
+        <Link className="link-button" href={portal === 'hq' ? '/hq/login' : '/client/login'}>Back to sign in</Link>
       </form>
     </main>
   );

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { recordServerBetaEvent } from '@/lib/server/beta-events';
+import { getCanonicalAppUrls } from '@/lib/app-urls';
 
 function safeNext(value: string | null) {
   return value && value.startsWith('/') && !value.startsWith('//')
@@ -42,5 +43,8 @@ export async function GET(request: Request) {
   const {data:{user}}=await supabase.auth.getUser();
   const recentlyCreated=user?.created_at&&Date.now()-new Date(user.created_at).getTime()<10*60_000;
   if(user&&(type==='signup'||(next==='/onboarding'&&recentlyCreated)))await recordServerBetaEvent(user.id,'SIGNUP_COMPLETED');
-  return NextResponse.redirect(new URL(next, url.origin));
+  const urls = getCanonicalAppUrls();
+  const isProductionDomain = url.hostname === 'tradepolice.app' || url.hostname.endsWith('.tradepolice.app');
+  const destinationOrigin = isProductionDomain ? (next.startsWith('/hq') ? urls.hq : urls.portal) : url.origin;
+  return NextResponse.redirect(new URL(next, destinationOrigin));
 }

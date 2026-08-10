@@ -9,6 +9,7 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [ready, setReady] = useState(false);
+  const [portal, setPortal] = useState<'client' | 'hq'>('client');
 
   useEffect(() => {
     const supabase = createClient();
@@ -16,6 +17,7 @@ export default function ResetPasswordPage() {
 
     async function establishRecoverySession() {
       const queryParams = new URLSearchParams(window.location.search);
+      setPortal(queryParams.get('portal') === 'hq' ? 'hq' : 'client');
       const queryError = queryParams.get('error') || queryParams.get('error_description');
       if (queryError) {
         if (mounted) {
@@ -35,7 +37,7 @@ export default function ResetPasswordPage() {
           if (mounted) { setMessage(exchangeError.message); setReady(false); setChecking(false); }
           return;
         }
-        window.history.replaceState({}, document.title, '/reset-password');
+        window.history.replaceState({}, document.title, `/reset-password?portal=${queryParams.get('portal') === 'hq' ? 'hq' : 'client'}`);
       }
 
       // Support legacy/implicit recovery links that contain tokens in the URL hash.
@@ -126,7 +128,7 @@ export default function ResetPasswordPage() {
 
     await supabase.auth.signOut();
     setMessage('Password updated successfully. Redirecting to sign in…');
-    window.setTimeout(() => window.location.assign('/client/login?password=updated'), 1000);
+    window.setTimeout(() => window.location.assign(portal === 'hq' ? '/hq/login?password=updated' : '/client/login?password=updated'), 1000);
     setLoading(false);
   }
 
@@ -159,7 +161,7 @@ export default function ResetPasswordPage() {
 
         {message && <p className={message.startsWith('Password updated') ? 'success' : 'warning'}>{message}</p>}
         {!ready && !checking && <Link href="/forgot-password">Request another recovery email</Link>}
-        <Link href="/client/login">Back to sign in</Link>
+        <Link href={portal === 'hq' ? '/hq/login' : '/client/login'}>Back to sign in</Link>
       </form>
     </main>
   );
