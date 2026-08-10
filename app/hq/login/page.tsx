@@ -7,6 +7,8 @@ export default async function Page() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (user) {
+    const { data: invitation } = await supabase.rpc('current_staff_invitation_onboarding_v1');
+    if (invitation) redirect('/hq/onboarding');
     const { data: route } = await supabase.rpc('staff_workspace_route');
     if (route) redirect(String(route));
     await supabase.auth.signOut();

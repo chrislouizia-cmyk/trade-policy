@@ -5,30 +5,22 @@ import {
 } from 'next/server';
 
 import {
+  getHQEntryDestination,
   getHostnameRoutingDecision,
-  isPortalHostname,
+  isHQEntryPath,
 } from '@/lib/hostname-routing';
+import { getCanonicalAppUrls } from '@/lib/app-urls';
 
-function redirectWithNext(
-  request: NextRequest,
-  destination: string,
-) {
-  const url = request.nextUrl.clone();
+function redirectToOrigin(request: NextRequest, origin: string) {
+  const destination = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin);
+  return NextResponse.redirect(destination);
+}
 
-  url.pathname = destination;
-  url.search = '';
-
+function redirectToLogin(request: NextRequest, origin: string, pathname: string) {
+  const destination = new URL(pathname, origin);
   const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-
-  if (
-    requestedPath &&
-    requestedPath !== destination &&
-    requestedPath !== '/'
-  ) {
-    url.searchParams.set('next', requestedPath);
-  }
-
-  return NextResponse.redirect(url);
+  if (requestedPath !== pathname && requestedPath !== '/') destination.searchParams.set('next', requestedPath);
+  return NextResponse.redirect(destination);
 }
 
 function unavailable(
@@ -64,8 +56,7 @@ export async function updateSession(
 
   const routingDecision =
     getHostnameRoutingDecision(host, pathname);
-
-  const isPortal = isPortalHostname(host);
+  const canonicalUrls = getCanonicalAppUrls();
 
   const publicPaths = new Set([
     '/',
@@ -165,17 +156,38 @@ export async function updateSession(
     user = null;
   }
 
+  if (routingDecision.mode === 'hq' && isHQEntryPath(pathname)) {
+    let pendingInvitation = false;
+    let workspaceRoute: string | null = null;
+    if (user) {
+      const [{data:invitation},{data:route}] = await Promise.all([
+        supabase.rpc('current_staff_invitation_onboarding_v1'),
+        supabase.rpc('staff_workspace_route'),
+      ]);
+      pendingInvitation = Boolean(invitation);
+      workspaceRoute = typeof route === 'string' ? route : null;
+    }
+    const destination = getHQEntryDestination({
+      pathname,
+      authenticated: Boolean(user),
+      pendingInvitation,
+      workspaceRoute,
+      accessError: request.nextUrl.searchParams.get('error') === 'access',
+    });
+    if (destination) return NextResponse.redirect(new URL(destination, canonicalUrls.hq));
+  }
+
   if (!user && !isPublic) {
     const isStaffPath =
       pathname.startsWith('/hq') ||
       pathname.startsWith('/admin') ||
-      pathname.startsWith('/staff');
+      pathname.startsWith('/staff') ||
+      pathname.startsWith('/api/hq');
 
-    return redirectWithNext(
+    return redirectToLogin(
       request,
-      isStaffPath
-        ? '/hq/login'
-        : '/client/login',
+      isStaffPath ? canonicalUrls.hq : canonicalUrls.portal,
+      isStaffPath ? '/hq/login' : '/client/login',
     );
   }
 
@@ -188,28 +200,12 @@ export async function updateSession(
     return NextResponse.redirect(url);
   }
 
-  if (
-    routingDecision.redirectToPortal &&
-    isPortal
-  ) {
-    const url = request.nextUrl.clone();
-
-    url.protocol = 'https:';
-    url.host = 'portal.tradepolice.app';
-
-    return NextResponse.redirect(url);
+  if (routingDecision.redirectTarget === 'portal') {
+    return redirectToOrigin(request, canonicalUrls.portal);
   }
 
-  if (
-    !isPortal &&
-    routingDecision.isPortalPath
-  ) {
-    const url = request.nextUrl.clone();
-
-    url.protocol = 'https:';
-    url.host = 'portal.tradepolice.app';
-
-    return NextResponse.redirect(url);
+  if (routingDecision.redirectTarget === 'hq') {
+    return redirectToOrigin(request, canonicalUrls.hq);
   }
 
   return response;
