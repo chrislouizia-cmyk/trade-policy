@@ -4,13 +4,11 @@ import fs from 'node:fs';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
 
-test('route and strategy loading use accessible skeletons',()=>{
-  const routeLoading=read('app/loading.tsx');
+test('navigation preserves the current route while component loading remains accessible',()=>{
   const strategyBuilder=read('components/StrategyBuilder.tsx');
-  assert.match(routeLoading,/route-skeleton/);
-  assert.match(routeLoading,/aria-busy="true"/);
+  assert.equal(fs.existsSync('app/loading.tsx'),false);
   assert.match(strategyBuilder,/strategy-builder-skeleton/);
-  assert.doesNotMatch(routeLoading,/spinner/i);
+  assert.match(strategyBuilder,/aria-busy="true"/);
   assert.doesNotMatch(strategyBuilder,/spinner/i);
 });
 test('strategy save and market analysis provide truthful progress feedback',()=>{
