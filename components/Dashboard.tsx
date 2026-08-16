@@ -16,15 +16,21 @@ type Props = {
 export default function Dashboard(p: Props) {
   const setupComplete=Boolean(p.account&&p.strategy&&p.hasTrade);
   return (
-    <div className="stack">
+    <div className="stack dashboard-shell">
       <section className="dashboard-hero card command-center-hero">
         <div className="dashboard-hero-copy">
+          <div className="dashboard-hero-meta">
+            <span className="status-pill info">Live workspace</span>
+          </div>
           <span className="eyebrow">TRADE POLICE COMMAND CENTER</span>
           <h1>Make the next decision with your rules in view.</h1>
           <p>Check current market evidence, run the final risk check, and understand exactly why the result passed or stopped.</p>
           <small>Every trade remains under review until the evidence is clear.</small>
         </div>
-        <a className="button-link primary dashboard-primary-action" href="/validate">Check a setup</a>
+        <div className="dashboard-hero-actions">
+          <a className="button-link primary dashboard-primary-action" href="/validate">Check a setup</a>
+          <a className="button-link secondary dashboard-secondary-action" href="/active-trade">Review active trade</a>
+        </div>
       </section>
 
       {!setupComplete&&<OnboardingChecklist

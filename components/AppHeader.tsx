@@ -32,15 +32,17 @@ export default async function AppHeader({
   return (
     <>
       <header className="app-shell-header client-header">
-        <div className="client-greeting-row">
-          <div className="client-greeting">
+        <div className="client-greeting-row client-shell-top">
+          <div className="client-greeting personal-greeting">
             <strong>{greeting()}, {displayName}.</strong>
             <small>{description}</small>
           </div>
-          <TradePoliceShield />
+          <div className="shell-header-actions">
+            <TradePoliceShield />
+          </div>
         </div>
 
-        <div className="app-brand-row">
+        <div className="app-brand-row shell-brand-row">
           <Link href="/dashboard" className="app-brand">
             <span className="brand-mark">TP</span>
             <span>
@@ -48,13 +50,13 @@ export default async function AppHeader({
               <small>No trade without evidence.</small>
             </span>
           </Link>
-          <div className="app-user">
+          <div className="app-user shell-user-controls">
             <KeyboardShortcuts />
             <SignOutButton />
           </div>
         </div>
 
-        <nav className="primary-nav" aria-label="Primary navigation">
+        <nav className="primary-nav shell-primary-nav" aria-label="Primary navigation">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/validate">Decision</Link>
           <Link href="/active-trade">Active Trade{activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}</Link>
