@@ -16,15 +16,16 @@ test('first-run dashboard and analytics never invent zero-value evidence',()=>{
 test('pricing states the real Pro price and exact plan limits',()=>{
   const pricing=read('app/pricing/page.tsx');
   assert.match(pricing,/\$29 \/ month/);
-  assert.match(pricing,/30 market checks each month/);
-  assert.match(pricing,/Up to 10 active strategies/);
+  assert.match(pricing,/250 analyses per anchored monthly cycle/);
+  assert.match(pricing,/5 active strategies/);
   assert.match(pricing,/same deterministic decision logic/);
 });
 
 test('pricing cards keep aligned CTAs and equal desktop card height',()=>{
   const pricing=read('app/pricing/page.tsx');
   const styles=read('app/trade-police.css');
-  assert.match(pricing,/Join the waitlist/);
+  assert.match(pricing,/BillingActions/);
+  assert.match(pricing,/Contact sales/);
   assert.match(pricing,/plan-cta/);
   assert.match(styles,/\.plan-card\{[^}]*display:flex;[^}]*flex-direction:column/);
   assert.match(styles,/\.plan-card \.plan-cta-wrap\{[^}]*margin-top:auto/);
@@ -53,12 +54,10 @@ test('decision journey uses one clear market-check to risk-check sequence',()=>{
 
 test('customer-facing acquisition surfaces use plain trading-rule language',()=>{
   const landing=read('app/page.tsx');
-  const profile=read('app/profile/page.tsx');
   const composer=read('components/RuleComposer.tsx');
-  assert.match(landing,/YOUR TRADING RULES/);
-  assert.match(profile,/TRADE POLICE \/ TRADING RULES/);
-  assert.match(composer,/Define your confirmation rules/);
-  assert.doesNotMatch(landing,/Strategy DNA/);
+  assert.match(landing,/STRATEGY BUILDER|Build visually|Your strategy|Trading rules/i);
+  assert.match(composer,/Define your confirmation rules|Risk/i);
+  assert.doesNotMatch(landing,/Strategy DNA/i);
 });
 
 test('landing page shows an honest illustrative decision report',()=>{

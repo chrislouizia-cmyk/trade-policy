@@ -1,18 +1,56 @@
 import 'server-only';
-import {billingConfig} from './config';
+import {billingConfig,type BillingInterval,type PublicPlan} from './config';
 import {stripeClient} from './stripe';
-import {StripeBillingError,validateProPrice,type VerifiedPrice} from './stripe-verification';
+import {StripeBillingError,validateConfiguredPrice,type VerifiedPrice} from './stripe-verification';
 
 const VALIDATION_TTL_MS=5*60*1000;
-let cached:{value:VerifiedPrice;expiresAt:number}|null=null;
-let pending:Promise<VerifiedPrice>|null=null;
+const cache=new Map<string,{value:VerifiedPrice;expiresAt:number}>();
+const pending=new Map<string,Promise<VerifiedPrice>>();
 
-export async function getValidatedProPrice():Promise<VerifiedPrice>{
-  const config=billingConfig();if(!config)throw new StripeBillingError('PRICE_CONFIGURATION_INVALID',false);
-  if(cached&&cached.expiresAt>Date.now())return cached.value;
-  if(pending)return pending;
-  pending=(async()=>{const price=await stripeClient().prices.retrieve(config.proPriceId,{expand:['product']});let value:VerifiedPrice;try{value=validateProPrice(price,config.proPriceId,config.secretKey)}catch(error){if(error instanceof StripeBillingError)throw new StripeBillingError(error.code,true);throw error}cached={value,expiresAt:Date.now()+VALIDATION_TTL_MS};return value})().finally(()=>{pending=null});
-  return pending;
+export function getStripePriceId(plan:PublicPlan, interval:BillingInterval): string | null {
+  const config=billingConfig();
+  if(!config) return null;
+  const map={
+    PRO:{ monthly: config.proMonthlyPriceId, annual: config.proAnnualPriceId },
+    ELITE:{ monthly: config.eliteMonthlyPriceId, annual: config.eliteAnnualPriceId },
+    TEAM:{ monthly: config.teamMonthlyPriceId, annual: config.teamAnnualPriceId },
+  } as const satisfies Record<PublicPlan, Record<BillingInterval, string | undefined>>;
+  return map[plan][interval] ?? null;
 }
 
-export function clearValidatedProPriceCache(){cached=null;pending=null}
+export async function getValidatedPrice(plan:PublicPlan, interval:BillingInterval):Promise<VerifiedPrice>{
+  const config=billingConfig();
+  if(!config)throw new StripeBillingError('PRICE_CONFIGURATION_INVALID',false);
+  const priceId=getStripePriceId(plan, interval);
+  if(!priceId)throw new StripeBillingError('PRICE_CONFIGURATION_INVALID',false);
+  const cacheKey=`${plan}:${interval}`;
+  const cached=cache.get(cacheKey);
+  if(cached&&cached.expiresAt>Date.now())return cached.value;
+  const existingPending=pending.get(cacheKey);
+  if(existingPending)return existingPending;
+  const task=(async()=>{
+    const price=await stripeClient().prices.retrieve(priceId,{expand:['product']});
+    let value:VerifiedPrice;
+    try{value=validateConfiguredPrice(price,priceId,config.secretKey,plan,interval)}catch(error){
+      if(error instanceof StripeBillingError)throw new StripeBillingError(error.code,true);
+      throw error;
+    }
+    cache.set(cacheKey,{value,expiresAt:Date.now()+VALIDATION_TTL_MS});
+    return value;
+  })();
+  pending.set(cacheKey,task);
+  try{return await task;}finally{pending.delete(cacheKey);}
+}
+
+export async function getValidatedProPrice():Promise<VerifiedPrice>{
+  return getValidatedPrice('PRO','monthly');
+}
+
+export function clearValidatedPriceCache(){
+  cache.clear();
+  pending.clear();
+}
+
+export function clearValidatedProPriceCache(){
+  clearValidatedPriceCache();
+}

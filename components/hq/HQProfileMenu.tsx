@@ -18,6 +18,6 @@ export default function HQProfileMenu({displayName,role}:{displayName:string;rol
 
   return <div className="hq-profile-menu" ref={root}>
     <button className="hq-profile-trigger" type="button" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}><span><strong>{displayName}</strong><small>{role.replaceAll('_',' ')}</small></span><b aria-hidden="true">⌄</b></button>
-    {open&&<div className="hq-profile-popover" role="menu"><strong>{displayName}</strong><span>{role.replaceAll('_',' ')}</span><a href="/profile" role="menuitem">Profile</a><SignOutButton /></div>}
+    {open&&<div className="hq-profile-popover" role="menu"><strong>{displayName}</strong><span>{role.replaceAll('_',' ')}</span><a href="/profile" role="menuitem">Profile</a><SignOutButton portal="hq" /></div>}
   </div>;
 }

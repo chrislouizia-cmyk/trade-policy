@@ -6,6 +6,9 @@ export type PlanCode =
   | 'TEAM'
   | 'FOUNDER';
 
+export const PUBLIC_PLAN_CODES = ['FREE', 'PRO', 'ELITE', 'TEAM'] as const;
+export type PublicPlanCode = (typeof PUBLIC_PLAN_CODES)[number];
+
 export type PlanDefinition = {
   code: PlanCode;
   name: string;
@@ -15,6 +18,43 @@ export type PlanDefinition = {
   canUseExpandedHistory: boolean;
   canUseExpandedAnalytics: boolean;
   checkoutEnabled: boolean;
+};
+
+export const PUBLIC_PLAN_PRICING: Record<PublicPlanCode, {
+  monthly: string;
+  annual: string;
+  monthlyAnalysisLimit: number | null;
+  maximumActiveStrategies: number | null;
+  summary: string;
+}> = {
+  FREE: {
+    monthly: '$0',
+    annual: '$0',
+    monthlyAnalysisLimit: 15,
+    maximumActiveStrategies: 1,
+    summary: 'Build discipline with a first strategy and a small evaluation budget.',
+  },
+  PRO: {
+    monthly: '$29 / month',
+    annual: '$279 / year',
+    monthlyAnalysisLimit: 250,
+    maximumActiveStrategies: 5,
+    summary: 'For active individual traders who need a reliable review loop.',
+  },
+  ELITE: {
+    monthly: '$59 / month',
+    annual: '$569 / year',
+    monthlyAnalysisLimit: 1000,
+    maximumActiveStrategies: 10,
+    summary: 'For highly active traders who need substantially more capacity.',
+  },
+  TEAM: {
+    monthly: '$149 / month',
+    annual: '$1,429 / year',
+    monthlyAnalysisLimit: null,
+    maximumActiveStrategies: null,
+    summary: 'For desks, teams, educators, or organizations with shared workflows.',
+  },
 };
 
 export const PLANS: Record<PlanCode, PlanDefinition> = {

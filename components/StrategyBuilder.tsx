@@ -12,6 +12,7 @@ import StopLimitBuilder from '@/components/StopLimitBuilder';
 import StrategyPersonalization from '@/components/StrategyPersonalization';
 import StrategyLearningConfirmation from '@/components/StrategyLearningConfirmation';
 import MethodologyVerification from '@/components/MethodologyVerification';
+import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
 import { normalizeStrategyProfile } from '@/lib/strategy-policy';
@@ -126,6 +127,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [learningConfirmation, setLearningConfirmation] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
+  const [v2EntryOpen, setV2EntryOpen] = useState(true);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const quickstartRequested = searchParams.get('quickstart') === '1';
 
@@ -237,6 +239,13 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     const next=cloneDefault();
     next.id=undefined;next.name=draft.profile.name;next.description=draft.profile.description;next.isDefault=true;next.instruments=selection.instruments;next.instrumentTradeLimits={};
     setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits([]);setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
+  }
+
+  function handleV2Apply(nextProfile: StrategyProfile, nextRules: StrategyRule[], nextMethodologies: any[]) {
+    setProfile({ ...nextProfile, strategyMethodologies: nextMethodologies });
+    setRules(nextRules.length ? nextRules : DEFAULT_RULES);
+    setV2EntryOpen(false);
+    setBuilderStep('review');
   }
 
   async function save() {
@@ -398,6 +407,9 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   if (loading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');window.location.assign('/validate')}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
   if (learningConfirmation) return <StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/>;
+  if (v2EntryOpen) {
+    return <StrategyBuilderV2 profile={profile} onApply={handleV2Apply} onCancel={() => { setV2EntryOpen(false); setBuilderStep('identity'); }} />;
+  }
 
   return (
     <div className="strategy-builder-layout">

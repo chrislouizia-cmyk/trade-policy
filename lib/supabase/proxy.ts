@@ -23,6 +23,10 @@ function redirectToLogin(request: NextRequest, origin: string, pathname: string)
   return NextResponse.redirect(destination);
 }
 
+function isMissingSession(error: { name?: string; code?: string }) {
+  return error.name === 'AuthSessionMissingError' || error.code === 'session_not_found';
+}
+
 function unavailable(
   request: NextRequest,
   isPublic: boolean,
@@ -61,6 +65,8 @@ export async function updateSession(
   const publicPaths = new Set([
     '/',
     '/access',
+    '/about',
+    '/faq',
     '/pricing',
     '/legal',
     '/client/login',
@@ -85,7 +91,7 @@ export async function updateSession(
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error(
-      '[auth-debug] Missing Supabase environment variables',
+      '[auth] Missing Supabase environment variables',
     );
 
     return unavailable(request, isPublic);
@@ -138,20 +144,22 @@ export async function updateSession(
     } = await supabase.auth.getUser();
 
     if (error) {
-      console.warn(
-        '[auth-debug] Session could not be verified:',
-        error.message,
-      );
+      if (!isMissingSession(error)) {
+        console.error('[auth] Session verification failed', {
+          name: error.name,
+          code: error.code,
+          status: error.status,
+        });
+      }
 
       user = null;
     } else {
       user = data.user;
     }
   } catch (error) {
-    console.error(
-      '[auth-debug] getUser threw:',
-      error,
-    );
+    console.error('[auth] Session verification threw', {
+      name: error instanceof Error ? error.name : 'UnknownAuthError',
+    });
 
     user = null;
   }
@@ -206,6 +214,11 @@ export async function updateSession(
 
   if (routingDecision.redirectTarget === 'hq') {
     return redirectToOrigin(request, canonicalUrls.hq);
+  }
+
+  if (!isPublic) {
+    response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
   }
 
   return response;

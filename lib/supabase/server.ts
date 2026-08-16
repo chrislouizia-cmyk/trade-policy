@@ -5,9 +5,8 @@ export async function createClient() {
   const cookieStore = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  console.log('[auth-debug] createClient', { hasUrl: Boolean(url), hasAnonKey: Boolean(anonKey), cookieCount: cookieStore.getAll().length, cookieNames: cookieStore.getAll().map((cookie) => cookie.name) });
   if (!url || !anonKey) {
-    throw new Error(`Missing Supabase server config: url=${Boolean(url)} anonKey=${Boolean(anonKey)}`);
+    throw new Error('Missing Supabase server configuration.');
   }
   return createServerClient(
     url,
