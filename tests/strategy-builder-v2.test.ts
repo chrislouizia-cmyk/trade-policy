@@ -12,6 +12,77 @@ import {
 } from '../lib/strategy-builder-v2.ts';
 
 import { createPersistedV2RuleTree, type RuleSelection } from '../lib/strategy-builder-v2.ts';
+import { mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
+import { resolveBuilderEntryMode } from '../lib/strategy-builder-entry.ts';
+
+test('new strategy entry routes into the V2 builder while existing profiles stay on compatibility mode', () => {
+  assert.equal(resolveBuilderEntryMode({ existingStrategyId: null, isNewStrategyRequest: true }), true);
+  assert.equal(resolveBuilderEntryMode({ existingStrategyId: 'abc123', isNewStrategyRequest: true }), false);
+  assert.equal(resolveBuilderEntryMode({ existingStrategyId: null, isNewStrategyRequest: false }), false);
+});
+
+test('ui path preserves XAUUSD and keeps the copilot draft in review until explicit approval', () => {
+  const currentDraft: StrategyCopilotDraft = {
+    name: 'Gold London Flow',
+    instrument: 'XAUUSD',
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' },
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'CHoCH' },
+      { key: 'order-block', label: 'Order Block', capability: 'MANUAL', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'OB' },
+      { key: 'support-zone', label: 'Support Zone', capability: 'MANUAL', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'Support/Resistance' },
+    ],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch', 'support-zone', 'order-block'] },
+    riskPercent: 1,
+    minimumRR: 2,
+    notes: ['Initial AI draft'],
+  };
+
+  const firstTurn = normalizeStrategyCopilotReply({
+    message: 'Got it. I drafted a gold London/NY strategy.',
+    intent: 'UPDATE',
+    strategyDraft: currentDraft,
+    changes: ['Session set to London + New York', 'Risk set to 1%', 'Minimum RR set to 2:1'],
+    unresolvedQuestions: [],
+  }, currentDraft);
+
+  const secondTurn = normalizeStrategyCopilotReply({
+    message: 'Actually, only London. CHoCH must be M5, and confirmation can be either Order Block or Support/Resistance.',
+    intent: 'UPDATE',
+    strategyDraft: {
+      name: 'Gold London Flow',
+      instrument: 'XAUUSD',
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [
+        { key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'choch', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'order-block', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+        { key: 'support-zone', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+      ],
+      logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch', 'order-block', 'support-zone'] },
+      riskPercent: 1,
+      minimumRR: 2,
+      notes: ['Refined to London only'],
+    },
+    changes: ['Session changed to London', 'CHoCH locked to M5', 'Confirmation logic narrowed to ANY(Order Block, Support/Resistance)'],
+    unresolvedQuestions: [],
+  }, firstTurn.strategyDraft);
+
+  assert.equal(firstTurn.strategyDraft.instrument, 'XAUUSD');
+  assert.equal(secondTurn.strategyDraft.instrument, 'XAUUSD');
+  assert.deepEqual(secondTurn.strategyDraft.sessions, ['London']);
+  assert.ok(secondTurn.strategyDraft.rules.some((rule) => rule.key === 'liquidity-sweep' && rule.requirement === 'REQUIRED'));
+  assert.ok(secondTurn.strategyDraft.rules.some((rule) => rule.key === 'choch' && rule.timeframe === 'M5'));
+  assert.ok(secondTurn.strategyDraft.rules.some((rule) => rule.key === 'order-block' && rule.group === 'ANY'));
+  assert.ok(secondTurn.strategyDraft.rules.some((rule) => rule.key === 'support-zone' && rule.requirement === 'OPTIONAL'));
+  assert.equal(secondTurn.strategyDraft.logicTree.logic, 'ALL');
+  assert.ok(secondTurn.strategyDraft.logicTree.children.includes('order-block'));
+  assert.equal(secondTurn.strategyDraft.riskPercent, 1);
+  assert.equal(secondTurn.strategyDraft.minimumRR, 2);
+  assert.ok(secondTurn.changes.some((change) => change.includes('London')));
+});
 
 test('V2 exposes the required methodologies and rule libraries', () => {
   const ids = METHODOLOGY_LIBRARY.map((library) => library.id);
@@ -230,4 +301,318 @@ test('health summary counts rules and unresolved conflicts', () => {
   assert.equal(summary.descriptive, 1);
   assert.equal(summary.required, 1);
   assert.equal(summary.optional, 1);
+});
+
+test('copilot merge preserves previous draft and updates a single rule within the same session', () => {
+  const base: StrategyCopilotDraft = {
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'sweep' },
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'choch' },
+      { key: 'order-block', label: 'Order Block', capability: 'MANUAL', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'ob' },
+      { key: 'fair-value-gap', label: 'Fair Value Gap', capability: 'AUTOMATIC', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'fvg' },
+    ],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['Initial draft'],
+  };
+
+  const nextDraft: StrategyCopilotDraft = {
+    sessions: ['London'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'choch' },
+      { key: 'fair-value-gap', label: 'Fair Value Gap', capability: 'AUTOMATIC', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'fvg' },
+    ],
+    logicTree: { logic: 'ALL', children: ['choch'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['Updated to London only'],
+  };
+
+  const merged = mergeStrategyCopilotDraft(base, nextDraft);
+
+  assert.ok(merged.rules.some((rule) => rule.key === 'liquidity-sweep'));
+  assert.ok(merged.rules.some((rule) => rule.key === 'choch'));
+  assert.ok(merged.rules.some((rule) => rule.key === 'fair-value-gap'));
+  assert.deepEqual(merged.sessions, ['London']);
+  assert.equal(merged.minimumRR, 3);
+});
+
+test('copilot normalization rejects hallucinated rule IDs and keeps descriptive rules optional', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London'],
+    timeframes: ['M5'],
+    rules: [],
+    logicTree: { logic: 'ALL', children: [] },
+    notes: [],
+  };
+
+  assert.throws(() => normalizeStrategyCopilotReply({
+    message: 'bad',
+    intent: 'CREATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [{ key: 'ghost-rule', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: [],
+    },
+    changes: [],
+    unresolvedQuestions: [],
+  }, previous), /unknown rule/i);
+
+  const reply = normalizeStrategyCopilotReply({
+    message: 'Draft created',
+    intent: 'CREATE',
+    strategyDraft: {
+      name: 'London Flow',
+      instrument: 'XAUUSD',
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [{ key: 'custom-rule', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ALL' }],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: ['Custom descriptive note'],
+    },
+    changes: ['Added custom rule'],
+    unresolvedQuestions: [],
+  }, previous);
+
+  assert.equal(reply.strategyDraft.rules[0].capability, 'DESCRIPTIVE');
+  assert.equal(reply.strategyDraft.rules[0].requirement, 'OPTIONAL');
+});
+
+test('valid AI draft accepts the canonical London gold example while preserving the V2 catalog constraints', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' },
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'CHoCH' },
+    ],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['Original draft'],
+  };
+
+  const reply = normalizeStrategyCopilotReply({
+    message: 'I trade gold during London and New York. I want liquidity sweep and CHoCH, but I do not need both Order Block and FVG.',
+    intent: 'UPDATE',
+    strategyDraft: {
+      name: 'Gold London Flow',
+      instrument: 'XAUUSD',
+      sessions: ['London', 'New York'],
+      timeframes: ['M5'],
+      rules: [
+        { key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'choch', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'order-block', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+        { key: 'fair-value-gap', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+      ],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: ['Updated gold flow'],
+    },
+    changes: ['Matched the canonical gold flow'],
+    unresolvedQuestions: [],
+  }, previous);
+
+  assert.equal(reply.strategyDraft.instrument, 'XAUUSD');
+  assert.deepEqual(reply.strategyDraft.sessions, ['London', 'New York']);
+  assert.ok(reply.strategyDraft.rules.some((rule) => rule.key === 'liquidity-sweep' && rule.group === 'ALL'));
+  assert.ok(reply.strategyDraft.rules.some((rule) => rule.key === 'choch' && rule.group === 'ALL'));
+  assert.ok(reply.strategyDraft.rules.some((rule) => rule.key === 'order-block' && rule.group === 'ANY'));
+  assert.ok(reply.strategyDraft.rules.some((rule) => rule.key === 'fair-value-gap' && rule.group === 'ANY'));
+  assert.equal(reply.strategyDraft.riskPercent, 0.5);
+});
+
+test('unsupported methodology, detector, and instrument values fail closed', () => {
+  assert.throws(() => normalizeStrategyCopilotReply({
+    message: 'unsupported',
+    intent: 'CREATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      methodology: 'quantum-signal',
+      detectorIds: ['bogus-detector'],
+      instrument: 'BTCUSD',
+      rules: [{ key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: ['bad'],
+    },
+    changes: [],
+    unresolvedQuestions: [],
+  }), /Unsupported methodology|Unsupported detector|Unsupported instrument/i);
+
+  assert.throws(() => normalizeStrategyCopilotReply({
+    message: 'unsupported',
+    intent: 'CREATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      methodologies: ['unsupported-method'],
+      rules: [{ key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: ['bad'],
+    },
+    changes: [],
+    unresolvedQuestions: [],
+  }), /Unsupported methodology/i);
+});
+
+test('AI draft cannot override risk settings and preserves prior valid values across turns', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London'],
+    timeframes: ['M5'],
+    rules: [{ key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' }],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep'] },
+    riskPercent: 0.75,
+    minimumRR: 3,
+    notes: ['Safe prior'],
+  };
+
+  const reply = normalizeStrategyCopilotReply({
+    message: 'Actually just London and make the risk 5%.',
+    intent: 'UPDATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [{ key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      riskPercent: 5,
+      minimumRR: 10,
+      notes: ['tried to override risk'],
+    },
+    changes: ['Risk controls attempted'],
+    unresolvedQuestions: [],
+  }, previous);
+
+  assert.equal(reply.strategyDraft.riskPercent, 0.75);
+  assert.equal(reply.strategyDraft.minimumRR, 3);
+  assert.deepEqual(reply.strategyDraft.sessions, ['London']);
+});
+
+test('extractStructuredDraftFromText preserves prior draft while adjusting sessions and optional semantics for the next turn', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' },
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'CHoCH' },
+      { key: 'order-block', label: 'Order Block', capability: 'MANUAL', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'OB' },
+      { key: 'fair-value-gap', label: 'Fair Value Gap', capability: 'AUTOMATIC', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY', description: 'FVG' },
+    ],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch', 'order-block', 'fair-value-gap'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['initial'],
+  };
+
+  const next = normalizeStrategyCopilotReply({
+    message: 'Actually, only London, CHoCH is M5, and FVG is optional.',
+    intent: 'UPDATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [
+        { key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'choch', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' },
+        { key: 'fair-value-gap', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+      ],
+      riskPercent: 0.5,
+      minimumRR: 3,
+      notes: ['follow up'],
+    },
+    changes: ['Updated to London only'],
+    unresolvedQuestions: [],
+  }, previous);
+
+  assert.deepEqual(next.strategyDraft.sessions, ['London']);
+  assert.ok(next.strategyDraft.rules.some((rule) => rule.key === 'choch' && rule.timeframe === 'M5'));
+  assert.ok(next.strategyDraft.rules.some((rule) => rule.key === 'fair-value-gap' && rule.requirement === 'OPTIONAL'));
+  assert.equal(next.strategyDraft.riskPercent, 0.5);
+});
+
+test('strategy health and conflict detection still run on the canonical V2 draft', () => {
+  const rules = [
+    { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M15', group: 'ALL' },
+    { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M15', group: 'ALL' },
+    { key: 'order-block', label: 'Order Block', capability: 'MANUAL', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+    { key: 'fair-value-gap', label: 'Fair Value Gap', capability: 'AUTOMATIC', requirement: 'OPTIONAL', timeframe: 'M5', group: 'ANY' },
+  ] satisfies RuleSelection[];
+
+  const conflicts = detectStrategyConflicts({ selectedRules: rules, riskPercent: 0.5, minimumRR: 3 });
+  const summary = buildHealthSummary({ selectedRules: rules, conflicts });
+
+  assert.equal(summary.totalRules, 4);
+  assert.equal(summary.warningText, 'No unresolved conflicts');
+  assert.deepEqual(conflicts, []);
+});
+
+test('malformed AI payloads fail closed without mutating the prior draft', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London'],
+    timeframes: ['M5'],
+    rules: [{ key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' }],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['safe'],
+  };
+
+  assert.throws(() => normalizeStrategyCopilotReply({
+    message: 'bad',
+    intent: 'CREATE',
+    strategyDraft: null,
+    changes: [],
+    unresolvedQuestions: [],
+  }, previous), /no strategy draft/i);
+
+  assert.throws(() => normalizeStrategyCopilotReply({
+    message: 'bad',
+    intent: 'CREATE',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [{ key: 'ghost-rule', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      notes: [],
+    },
+    changes: [],
+    unresolvedQuestions: [],
+  }, previous), /unknown rule/i);
+});
+
+test('legacy strategies remain unaffected by the AI draft normalization layer', () => {
+  const previous: StrategyCopilotDraft = {
+    sessions: ['London'],
+    timeframes: ['M5'],
+    rules: [{ key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'legacy' }],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['legacy strategy'],
+  };
+
+  const reply = normalizeStrategyCopilotReply({
+    message: 'Legacy strategy should be preserved',
+    intent: 'CLARIFY',
+    strategyDraft: {
+      sessions: ['London'],
+      timeframes: ['M5'],
+      rules: [{ key: 'liquidity-sweep', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL' }],
+      notes: ['legacy means no drift'],
+    },
+    changes: ['No-op'],
+    unresolvedQuestions: [],
+  }, previous);
+
+  assert.equal(reply.strategyDraft.rules[0].key, 'liquidity-sweep');
+  assert.equal(reply.strategyDraft.riskPercent, 0.5);
+  assert.equal(reply.strategyDraft.minimumRR, 3);
 });

@@ -60,10 +60,23 @@ export default function StrategyBuilderV2({
   const [minimumRR, setMinimumRR] = useState<number>(Number(profile.minimumRR ?? 3));
   const [stopLogic, setStopLogic] = useState<string>('Structured stop');
   const [targetLogic, setTargetLogic] = useState<string>('RR target');
-  const [copilotInput, setCopilotInput] = useState('I trade XAUUSD in London and New York. I want Liquidity Sweep and CHoCH. Either Order Block or FVG is enough. Risk 0.5% and minimum RR 1:3.');
+  const [copilotInput, setCopilotInput] = useState('I trade gold during London and New York. I look for liquidity sweeps and CHoCH on M5. After that I want either an order block or support/resistance. Risk 0.5% and minimum RR 1:3.');
   const [copilotConversation, setCopilotConversation] = useState<Array<{ heading: string; text: string }>>([
-    { heading: 'Trade Police', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft.' },
+    { heading: 'Strategy Copilot', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft you can review and refine.' },
   ]);
+  const [copilotDraft, setCopilotDraft] = useState(() => ({
+    name: 'Draft from description',
+    instrument: selectedInstruments[0] ?? 'XAUUSD',
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: createDefaultRuleSelection(),
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch'] },
+    notes: ['Draft ready for review'],
+    riskPercent: Number(profile.maximumRiskPercent ?? 0.5),
+    minimumRR: Number(profile.minimumRR ?? 3),
+  }));
+  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [copilotApproved, setCopilotApproved] = useState(false);
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [ruleMenuOpen, setRuleMenuOpen] = useState<string | null>(null);
 
@@ -197,27 +210,23 @@ export default function StrategyBuilderV2({
   }
 
   function buildCopilotApply() {
-    const parsed = parseCopilotPrompt(copilotInput);
-    const draftRules: RuleSelection[] = parsed.selectedRuleKeys.map((key) => {
-      const definition = allRulesByKey[key];
-      if (!definition) return null;
-      return {
-        key: definition.key,
-        label: definition.label,
-        capability: definition.capability,
-        requirement: definition.capability === 'DESCRIPTIVE' ? 'OPTIONAL' : 'REQUIRED',
-        timeframe: executionTimeframe,
-        group: parsed.groupMode,
-        description: definition.description,
-      };
-    }).filter(Boolean) as RuleSelection[];
+    const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
+    const draftInstrument = copilotDraft.instrument && ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', 'NAS100'].includes(copilotDraft.instrument)
+      ? copilotDraft.instrument
+      : (selectedInstruments[0] ?? 'XAUUSD');
+    const draftSessions = copilotDraft.sessions.length ? copilotDraft.sessions : sessions;
+    const draftRisk = typeof copilotDraft.riskPercent === 'number' ? copilotDraft.riskPercent : riskPercent;
+    const draftMinimumRR = typeof copilotDraft.minimumRR === 'number' ? copilotDraft.minimumRR : minimumRR;
 
-    const nextMethodologies: StrategyMethodology[] = selectedLibraries.length
-      ? selectedLibraries.map((library) => ({
-          category: library.label,
-          rules: library.rules.filter((rule) => draftRules.some((selection) => selection.key === rule.key)).map((rule) => rule.key),
-        }))
-      : [{ category: 'Drafted from description', rules: draftRules.map((rule) => rule.key) }];
+    setSelectedInstruments([draftInstrument]);
+    setSessions(draftSessions.map((session) => session));
+    setSelectedRuleSelections(draftRules);
+    setRiskPercent(draftRisk);
+    setMinimumRR(draftMinimumRR);
+
+    const nextMethodologies: StrategyMethodology[] = draftRules.length
+      ? [{ category: 'AI Strategy Copilot', rules: draftRules.map((rule) => rule.key) }]
+      : [{ category: 'Drafted from description', rules: [] }];
 
     const nextRules: StrategyRule[] = draftRules.map((rule) => {
       const definition = allRulesByKey[rule.key];
@@ -229,7 +238,7 @@ export default function StrategyBuilderV2({
         mandatory: rule.requirement === 'REQUIRED' && state.isDescriptive === false,
         weight: definition?.capability === 'AUTOMATIC' ? 10 : definition?.capability === 'MANUAL' ? 8 : definition?.capability === 'EXTERNAL' ? 6 : 4,
         minimumConfidence: definition?.capability === 'AUTOMATIC' ? 72 : 60,
-        timeframeRole: executionTimeframe.includes('H') ? 'MACRO' : 'TRIGGER',
+        timeframeRole: rule.timeframe.includes('H') ? 'MACRO' : 'TRIGGER',
         evaluationMode: state.evaluationMode,
       };
     });
@@ -237,11 +246,12 @@ export default function StrategyBuilderV2({
     const nextProfile: StrategyProfile = {
       ...profile,
       name: profile.name || 'Copilot Draft Strategy',
-      description: `${copilotInput}\n\nStructured interpretation: ${draftRules.map((rule) => rule.label).join(', ') || 'general directional flow'}.`,
-      instruments: selectedInstruments,
+      description: `${copilotInput}\n\nAI draft: ${draftRules.map((rule) => rule.label).join(', ') || 'general directional flow'}.`,
+      instruments: [draftInstrument],
+      allowedSessions: draftSessions,
       strategyMethodologies: nextMethodologies,
-      maximumRiskPercent: riskPercent,
-      minimumRR,
+      maximumRiskPercent: draftRisk,
+      minimumRR: draftMinimumRR,
       requireTrendAlignment: true,
     };
 
@@ -511,28 +521,98 @@ export default function StrategyBuilderV2({
 
       {path === 'copilot' && (
         <div className="strategy-v2-panel">
-          <h3>Describe Your Strategy — Beta</h3>
-          <p className="muted">This plain-language assistant helps draft a strategy from your notes. Review the draft before saving; this is not an AI-backed live copilot and the deterministic engine remains authoritative.</p>
+          <h3>AI Strategy Copilot — Beta</h3>
+          <p className="muted">Describe how you trade in plain language. Trade Police turns your description into a structured draft that you can review and modify before applying.</p>
+          <p className="muted small">The deterministic trading engine remains authoritative. AI cannot activate or modify a strategy without your approval.</p>
           <textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} />
           <div className="button-row">
-            <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'Trader', text: copilotInput }])}>Add note</button>
-            <button type="button" className="primary" onClick={() => {
-              addCopilotTurn();
-              buildCopilotApply();
-            }}>Generate structured draft</button>
+            <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }])}>Add note</button>
+            <button type="button" className="primary" disabled={copilotBusy} onClick={async () => {
+              if (!copilotInput.trim()) return;
+              setCopilotBusy(true);
+              setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }]);
+              try {
+                const response = await fetch('/api/strategy-copilot', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    sessionId: 'strategy-builder-v2',
+                    message: copilotInput,
+                    previousDraft: copilotDraft,
+                  }),
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                  throw new Error(payload?.error || 'AI draft unavailable');
+                }
+                const nextDraft = payload.strategyDraft ?? copilotDraft;
+                setCopilotDraft(nextDraft);
+                setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
+                setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
+                setSelectedRuleSelections(nextDraft.rules.length ? nextDraft.rules : selectedRuleSelections);
+                setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
+                setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
+                setCopilotConversation((current) => [
+                  ...current,
+                  { heading: 'Strategy Copilot', text: payload.message || 'Got it. I drafted the following strategy for review.' },
+                  ...((Array.isArray(payload.changes) && payload.changes.length)
+                    ? [{ heading: 'Changes detected', text: payload.changes.join(' • ') }]
+                    : []),
+                ]);
+                setCopilotApproved(false);
+              } catch (error) {
+                setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The copilot is unavailable right now.' }]);
+              } finally {
+                setCopilotBusy(false);
+              }
+            }}>{copilotBusy ? 'Thinking…' : 'Generate structured draft'}</button>
           </div>
           <div className="copilot-log">
-            {copilotConversation.map((entry) => (
-              <div key={`${entry.heading}-${entry.text}`} className="copilot-message">
+            {copilotConversation.map((entry, index) => (
+              <div key={`${entry.heading}-${index}`} className="copilot-message">
                 <strong>{entry.heading}</strong>
                 <p>{entry.text}</p>
               </div>
             ))}
           </div>
+
+          <div className="draft-review-panel">
+            <h4>Draft summary</h4>
+            <div className="grid grid-2">
+              <div><span className="muted">Instrument</span><strong>{copilotDraft.instrument ?? 'Not set'}</strong></div>
+              <div><span className="muted">Session</span><strong>{copilotDraft.sessions.join(' + ') || 'Not set'}</strong></div>
+              <div><span className="muted">Risk</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : 'Not set'}</strong></div>
+              <div><span className="muted">Minimum RR</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : 'Not set'}</strong></div>
+            </div>
+            <div className="rule-list">
+              {copilotDraft.rules.map((rule) => (
+                <div key={rule.key} className="rule-row">
+                  <div className="rule-main">
+                    <strong>{rule.label}</strong>
+                    <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.requirement}</span>
+                  </div>
+                  <div className="rule-controls">
+                    <span>{rule.group}</span>
+                    <span>{rule.timeframe}</span>
+                    <span>{rule.capability}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="muted">Logic: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
+          </div>
+
           <div className="button-row">
             <button type="button" onClick={onCancel}>Back</button>
-            <button type="button" className="primary" onClick={buildCopilotApply}>Approve strategy</button>
+            <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
+              if (!copilotApproved) return;
+              buildCopilotApply();
+            }}>Approve & Apply</button>
           </div>
+          <label className="check-row">
+            <input type="checkbox" checked={copilotApproved} onChange={(event) => setCopilotApproved(event.target.checked)} />
+            <span>I review and explicitly approve this draft before applying it to the deterministic engine.</span>
+          </label>
         </div>
       )}
 

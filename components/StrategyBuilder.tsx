@@ -16,6 +16,7 @@ import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
 import { normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { resolveBuilderEntryMode } from '@/lib/strategy-builder-entry';
 import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
@@ -127,7 +128,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [learningConfirmation, setLearningConfirmation] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
-  const [v2EntryOpen, setV2EntryOpen] = useState(true);
+  const [v2EntryOpen, setV2EntryOpen] = useState(() => resolveBuilderEntryMode({ existingStrategyId: undefined, isNewStrategyRequest: true }));
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const quickstartRequested = searchParams.get('quickstart') === '1';
 
@@ -188,6 +189,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
 
   async function openProfile(target: StrategyProfile) {
     setProfile(target);
+    setV2EntryOpen(false);
     if (!target.id) return;
     const supabase = createClient();
     const [{ data: sessionRows }, { data: ruleRows }, { data: stopRows }, { data: instrumentRows }] = await Promise.all([
@@ -223,7 +225,9 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
     setRules(DEFAULT_RULES);
     setStopLimits([]);
-    setMessage('Creating a new strategy profile.');
+    setV2EntryOpen(true);
+    setBuilderStep('identity');
+    setMessage('Creating a new strategy profile in the V2 builder.');
   }
 
   function useStarterRules(confirmed = false){
