@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {getCanonicalAppUrls} from '../lib/app-urls.ts';
+import {getHostnameRoutingDecision} from '../lib/hostname-routing.ts';
 
 const route=readFileSync(new URL('../app/api/hq/staff/invite/route.ts',import.meta.url),'utf8');
 const workspace=readFileSync(new URL('../components/hq/TeamWorkspace.tsx',import.meta.url),'utf8');
@@ -28,8 +29,12 @@ test('staff invitations always use the canonical HQ onboarding callback',()=>{
  assert.match(route,/\/auth\/callback\?next=\/hq\/onboarding/);
  assert.doesNotMatch(route,/new URL\(request\.url\)\.origin.*auth\/callback/);
 });
-test('canonical URL helper and callback keep production HQ authentication on the HQ origin',()=>{
+test('canonical URL helper keeps production auth on the canonical hosts while Preview stays on the active deployment origin',()=>{
  assert.deepEqual(getCanonicalAppUrls({NEXT_PUBLIC_SITE_URL:'https://site.example',NEXT_PUBLIC_APP_URL:'https://portal.example',NEXT_PUBLIC_HQ_URL:'https://hq.example'}),{site:'https://site.example',portal:'https://portal.example',hq:'https://hq.example'});
+ assert.deepEqual(getCanonicalAppUrls({VERCEL_ENV:'preview',NEXT_PUBLIC_VERCEL_URL:'trade-police-preview-123.vercel.app',NEXT_PUBLIC_SITE_URL:'https://portal.example',NEXT_PUBLIC_APP_URL:'https://portal.tradepolice.app',NEXT_PUBLIC_HQ_URL:'https://hq.tradepolice.app'}),{site:'https://trade-police-preview-123.vercel.app',portal:'https://trade-police-preview-123.vercel.app',hq:'https://trade-police-preview-123.vercel.app'});
+ assert.equal(getHostnameRoutingDecision('trade-police-preview-123.vercel.app','/client/login').redirectTarget, undefined);
+ assert.equal(getHostnameRoutingDecision('portal.tradepolice.app','/client/login').redirectTarget, undefined);
+ assert.equal(getHostnameRoutingDecision('tradepolice.app','/client/login').redirectTarget, 'portal');
  assert.match(callback,/next\.startsWith\('\/hq'\) \? urls\.hq : urls\.portal/);
 });
 test('password recovery preserves HQ and client destinations',()=>{
