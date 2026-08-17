@@ -1504,6 +1504,10 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
   overscroll-behavior: contain;
   padding: 20px;
 }
+.full-report-overlay{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:16px;box-sizing:border-box;overflow:hidden;background:rgba(3,7,12,.82);backdrop-filter:blur(4px)}
+.full-report-modal{width:min(1100px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;border:1px solid var(--border);border-radius:16px;background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.48)}
+.full-report-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 20px;border-bottom:1px solid var(--border);background:var(--panel)}
+.full-report-header p{margin:0}.full-report-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px}
 .trade-reasoning-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -597,13 +597,13 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       </section>
     </div>,document.body)}
 
-    {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
-      <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
-      <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
+    {showReasoning&&createPortal(<div className="full-report-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
+      <section className="full-report-modal" role="dialog" aria-modal="true" aria-labelledby="full-report-title">
+      <header className="full-report-header"><div><p className="brand" id="full-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
       <span className="sr-only">AI explanation cannot override the result.</span>
-      <div className="reasoning-modal-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative ?? undefined} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
+      <div className="full-report-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative ?? undefined} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
       </section>
-    </div>}
+    </div>,document.body)}
 
   </div>;
 }
