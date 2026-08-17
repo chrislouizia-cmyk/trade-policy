@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
@@ -141,6 +142,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [overrideConfirmation,setOverrideConfirmation]=useState('');
   const [tradeActionMode,setTradeActionMode]=useState<'SELECT'|'ACTIVATE'|'OVERRIDE'|'MISSED'|null>(null);
   const [tradeActionContext,setTradeActionContext]=useState<{againstVerdict:boolean;reason:string|null;confirmed:boolean}>({againstVerdict:false,reason:null,confirmed:false});
+  const [tradeActionError,setTradeActionError]=useState('');
   const [candidateApplied,setCandidateApplied]=useState('');
   const [activationSuccess,setActivationSuccess]=useState<string| null>(null);
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
@@ -156,6 +158,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const tradeActionModalRef=useRef<HTMLElement>(null);
   const tradeActionCloseRef=useRef<HTMLButtonElement>(null);
   const tradeActionReasonRef=useRef<HTMLTextAreaElement>(null);
+  const tradeSubmissionRef=useRef(false);
   const analysisAttemptActive=useRef(false);
   const reportSaveStatusRef=useRef<HTMLDivElement>(null);
   const reportIdempotencyRef=useRef<string>('');
@@ -232,7 +235,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     const previousOverflow=document.body.style.overflow;
     const previouslyFocused=document.activeElement instanceof HTMLElement?document.activeElement:null;
     document.body.style.overflow='hidden';
-    window.requestAnimationFrame(()=>{(tradeActionMode==='OVERRIDE'?tradeActionReasonRef.current:tradeActionCloseRef.current)?.focus()});
+    window.requestAnimationFrame(()=>{
+      if(tradeActionMode==='OVERRIDE')tradeActionReasonRef.current?.focus({preventScroll:true});
+      else tradeActionCloseRef.current?.focus();
+    });
     const close=(event:KeyboardEvent)=>{
       if(event.key==='Escape'){event.preventDefault();closeTradeActionModal();return;}
       if(event.key!=='Tab')return;
@@ -332,7 +338,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   }
 
   function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; setSelectedInstrument(analysis.instrument as Instrument); set('entry',c.entryLow??c.entryHigh); set('stopLoss',c.stopLoss); set('takeProfit',c.takeProfit); const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction; setCandidateApplied('Candidate applied.');}
-  function closeTradeActionModal(){setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null,confirmed:false});}
+  function closeTradeActionModal(){setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null,confirmed:false});setTradeActionError('');}
+  function setTradeActionFailure(message:string){setTradeActionError(message);setError(message);}
   function getFieldValue(name:string){const element=document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null; return element?.value ?? '';}
   async function saveSuggestion(index:number){
     const c=analysis?.candidates[index]; if(!c||!analysis)return;
@@ -340,17 +347,19 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     if(error){setError(error.message);return;} await loadHistory();
   }
   async function saveTakenTrade(mode:'ACTIVATE'|'OVERRIDE'){
-    if(!result){setError('Run the final risk check before recording the trade.');return;}
+    if(tradeSubmissionRef.current)return;
+    if(!result){setTradeActionFailure('Run the final risk check before recording the trade.');return;}
     const isOverride=mode==='OVERRIDE';
     const isReady=authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
-    if(!isOverride && !isReady){setError(authorizationEligibility?.message ?? 'This setup is not currently eligible for final authorization.');return;}
-    if(isOverride && !['WAIT','BLOCKED'].includes(authorizationEligibility?.state ?? '')){setError('This decision is not eligible for Take anyway.');return;}
-    if(isOverride && result.overrideAllowed===false){setError('This risk-control verdict cannot be overridden.');return;}
+    if(!isOverride && !isReady){setTradeActionFailure(authorizationEligibility?.message ?? 'This setup is not currently eligible for final authorization.');return;}
+    if(isOverride && !['WAIT','BLOCKED'].includes(authorizationEligibility?.state ?? '')){setTradeActionFailure('This decision is not eligible for Take anyway.');return;}
+    if(isOverride && result.overrideEligible!==true){setTradeActionFailure('This risk-control verdict cannot be overridden.');return;}
     const get=(name:string)=>(document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null)?.value||'';
     const overrideReason = tradeActionContext.reason?.trim() || null;
-    if(!tradeActionContext.confirmed){setError(isOverride?'You must acknowledge that you are overriding your rules.':'You must confirm that you entered this trade in your broker or prop-firm account.');return;}
-    if(isOverride && !overrideReason){setError('A reason is required to take a trade against the verdict.');return;}
-    setSavingTrade(true);setError('');setActivationSuccess(null);
+    if(!tradeActionContext.confirmed){setTradeActionFailure(isOverride?'You must acknowledge that you are overriding your rules.':'You must confirm that you entered this trade in your broker or prop-firm account.');return;}
+    if(isOverride && !overrideReason){setTradeActionFailure('A reason is required to take a trade against the verdict.');return;}
+    tradeSubmissionRef.current=true;
+    setSavingTrade(true);setError('');setTradeActionError('');setActivationSuccess(null);
     try{
       const originalReason=result.vetoes[0]||result.observations[0]||(result.verdict==='AUTHORIZED'?'All configured authorization rules passed.':'The setup did not pass final authorization.');
       const balanceAtEntry=selectedAccount?.currentBalance??Number(get('accountBalance'));
@@ -368,13 +377,15 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         });
         throw new Error(message);
       }
-      if(!data||typeof data!=='object'||!('trade' in data))throw new Error('The trade response was incomplete. Refresh History before trying again.');
+      const activation=data as {trade?:{id?:unknown};lifecycleStatus?:unknown;activeTradeCreated?:unknown}|null;
+      if(!activation||typeof activation.trade?.id!=='string'||activation.lifecycleStatus!=='ACTIVE'||activation.activeTradeCreated!==true)throw new Error('Trade Police could not confirm an active trade was created. The override was not completed; please try again.');
       await loadHistory();
       setActivationSuccess('Trade added to Manage Trades.');
       closeTradeActionModal();
-      if(isOverride){setOverrideConfirmation('Recorded as a non-compliant override trade.');window.setTimeout(()=>{window.location.href='/active-trade'},900);} else window.location.href='/active-trade';
-    }catch(e:any){setError(e.message||'Could not save executed trade.');}
-    finally{setSavingTrade(false);}
+      if(isOverride)setOverrideConfirmation('Recorded as a non-compliant override trade.');
+      window.location.assign('/active-trade');
+    }catch(e:unknown){setTradeActionFailure(e instanceof Error?e.message:'Could not save executed trade.');}
+    finally{tradeSubmissionRef.current=false;setSavingTrade(false);}
   }
 
   async function markTradeMissed(){
@@ -466,7 +477,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const authorizationEligibility = result?.authorizationEligibility ?? null;
   const hasExecutableSetup = Boolean(explanation && analysis?.status === 'VALID_ANALYSIS' && analysis?.candidates?.length);
   const isAuthorizationEligible = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
-  const canTakeAnyway = hasExecutableSetup && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' && ['WAIT','BLOCKED'].includes(authorizationEligibility.state) && result?.overrideAllowed !== false;
+  const canTakeAnyway = hasExecutableSetup && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' && ['WAIT','BLOCKED'].includes(authorizationEligibility.state) && result?.overrideEligible === true;
   const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
   const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
   const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
@@ -476,7 +487,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     explanation,
     isAnalyzing: analyzing,
     isSaving: savingTrade,
-  }), [authorizationEligibility, hasExecutableSetup, explanation, analyzing, savingTrade]);
+    overrideEligible: result?.overrideEligible === true,
+  }), [authorizationEligibility, hasExecutableSetup, explanation, analyzing, savingTrade, result?.overrideEligible]);
   const decisionPanel = explanation ? <DecisionHero
     analyzing={analyzing}
     explanation={explanation}
@@ -572,18 +584,18 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       <section className="workspace-section compact-history-card"><h3>LAST 3 TRADES</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
     </div>
 
-{tradeActionMode&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)closeTradeActionModal();}}>
+{tradeActionMode&&createPortal(<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)closeTradeActionModal();}}>
       <section ref={tradeActionModalRef} className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="trade-action-title">
         <header className="reasoning-modal-header"><div><p className="brand" id="trade-action-title">TRADE ACTION</p><p className="reasoning-panel-copy">Choose whether this decision becomes an active trade or is recorded as missed.</p></div><button ref={tradeActionCloseRef} className="reasoning-modal-close" type="button" aria-label="Close trade action" onClick={closeTradeActionModal}>×</button></header>
         <div className="reasoning-modal-body">
           <p className="muted">This action is recorded server-side and linked to the originating decision report. Applying the setup parameters only updates the order ticket and never activates the trade.</p>
           {tradeActionMode==='SELECT'&&<div className="reasoning-section"><h3>Was the trade taken or missed?</h3><p className="muted">Choose the next step. The primary decision CTA is trade activation, not setup reuse.</p><div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode(activationUiState.activationMode==='READY'?'ACTIVATE':'OVERRIDE')} disabled={savingTrade || (!canTakeTrade && !canTakeAnyway)}>{activationUiState.activationMode==='READY'?'Take Trade':'Take Anyway'}</button><button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>Mark as missed</button></div></div>}
           {tradeActionMode==='ACTIVATE'&&<div className="reasoning-section"><h3>Take trade confirmation</h3><div className="trade-confirmation-summary"><p><strong>Account</strong> {selectedAccount?.name ?? 'Manual'}</p><p><strong>Instrument</strong> {getFieldValue('instrument')}</p><p><strong>Direction</strong> {getFieldValue('direction')}</p><p><strong>Entry</strong> {getFieldValue('entry')}</p><p><strong>Stop loss</strong> {getFieldValue('stopLoss')}</p><p><strong>Take profit</strong> {getFieldValue('takeProfit')}</p><p><strong>Risk/reward</strong> {result?.rr ? `1:${result.rr}` : '—'}</p><p><strong>Source</strong> {result?.reportSourceId ? `Decision ${result.reportSourceId}` : 'Pending'}</p></div><label className="check-row"><input type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I confirm that I entered this trade in my broker or prop-firm account.</span></label><div className="discipline-action-row"><button type="button" onClick={()=>void saveTakenTrade('ACTIVATE')} disabled={savingTrade || !tradeActionContext.confirmed}>Confirm take trade</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
-          {tradeActionMode==='OVERRIDE'&&<div className="reasoning-section take-anyway-confirmation"><h3>Take anyway confirmation</h3><div className="take-anyway-warning" id="take-anyway-warning" role="alert"><span aria-hidden="true">!</span><div><strong>You are overriding your strategy rules.</strong><p>This trade does not satisfy the current strategy verdict. It will be recorded as an override and linked to the originating decision report.</p></div></div><div className="discipline-action-row take-anyway-actions"><button className="danger take-anyway-confirm-button" type="button" aria-describedby="take-anyway-warning take-anyway-reason-help" onClick={()=>void saveTakenTrade('OVERRIDE')} disabled={savingTrade || !tradeActionContext.confirmed || !tradeActionContext.reason?.trim()}>{savingTrade?'Recording override…':'Confirm take anyway'}<span aria-hidden="true">→</span></button><button className="secondary" type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}<label htmlFor="take-anyway-reason">Why are you taking this trade despite the current verdict?<textarea ref={tradeActionReasonRef} id="take-anyway-reason" aria-describedby="take-anyway-reason-help take-anyway-warning" value={tradeActionContext.reason ?? ''} onChange={(event)=>setTradeActionContext(current=>({...current,reason:event.target.value}))} rows={4} placeholder="Describe the override reason and the conditions you are accepting." required/></label><small id="take-anyway-reason-help" className="take-anyway-help">A reason and acknowledgement are required before this trade can be recorded.</small><label className="check-row take-anyway-acknowledgement"><input id="take-anyway-acknowledgement" type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I acknowledge that I am overriding my rules and accepting the non-compliant outcome.</span></label></div>}
+          {tradeActionMode==='OVERRIDE'&&<div className="reasoning-section take-anyway-confirmation"><h3>Take anyway confirmation</h3><div className="take-anyway-warning" id="take-anyway-warning" role="alert"><span aria-hidden="true">!</span><div><strong>You are overriding your strategy rules.</strong><p>This trade does not satisfy the current strategy verdict. It will be recorded as an override and linked to the originating decision report.</p></div></div>{tradeActionError?<p className="take-anyway-submit-error" role="alert">{tradeActionError}</p>:null}<div className="discipline-action-row take-anyway-actions"><button className="danger take-anyway-confirm-button" type="button" aria-describedby="take-anyway-warning take-anyway-reason-help" aria-busy={savingTrade} onClick={()=>void saveTakenTrade('OVERRIDE')} disabled={savingTrade || !tradeActionContext.confirmed || !tradeActionContext.reason?.trim()}>{savingTrade?'Taking trade…':'Confirm take anyway'}<span aria-hidden="true">→</span></button><button className="secondary" type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}<label htmlFor="take-anyway-reason">Why are you taking this trade despite the current verdict?<textarea ref={tradeActionReasonRef} id="take-anyway-reason" aria-describedby="take-anyway-reason-help take-anyway-warning" value={tradeActionContext.reason ?? ''} onChange={(event)=>setTradeActionContext(current=>({...current,reason:event.target.value}))} rows={4} placeholder="Describe the override reason and the conditions you are accepting." required/></label><small id="take-anyway-reason-help" className="take-anyway-help">A reason and acknowledgement are required before this trade can be recorded.</small><label className="check-row take-anyway-acknowledgement"><input id="take-anyway-acknowledgement" type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I acknowledge that I am overriding my rules and accepting the non-compliant outcome.</span></label></div>}
           {tradeActionMode==='MISSED'&&<div className="reasoning-section"><h3>Mark as missed confirmation</h3><p>This records the lifecycle outcome as missed without creating an active trade.</p><div className="discipline-action-row"><button type="button" onClick={()=>void markTradeMissed()} disabled={savingTrade}>Confirm missed trade</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
         </div>
       </section>
-    </div>}
+    </div>,document.body)}
 
     {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
       <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">

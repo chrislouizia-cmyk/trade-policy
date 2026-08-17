@@ -53,7 +53,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
-  const displayDecision = displayVerdict === 'READY' ? (finalized ? 'TAKE TRADE' : 'READY FOR FINAL CHECK') : displayVerdict.replaceAll('_',' ');
+  const displayDecision = displayVerdict === 'READY' ? 'READY' : displayVerdict.replaceAll('_',' ');
   const instruction = displayVerdict === 'WAIT' ? 'Do not risk your money yet.' : displayVerdict === 'BLOCKED' ? 'This setup conflicts with a mandatory trading rule.' : displayVerdict === 'READY' ? (finalized ? 'Final risk controls permit this trade.' : 'Setup evidence is complete. Run the final risk check before entering the trade.') : explanation.headline;
   const readinessAllowed=!['DATA_UNAVAILABLE','MARKET_CLOSED'].includes(displayVerdict);
   const analysis={provider:explanation.dataStatus.provider,latestCandleTimestamp:explanation.dataStatus.lastVerifiedCandleAt,calculatedAt:explanation.dataStatus.calculationCompletedAt};
@@ -65,9 +65,8 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
     <div className="decision-hero-primary">
       {instrument?<p className="decision-panel-instrument">{instrument}{direction?` · ${direction}`:''}{setupType?` · ${setupType}`:''}</p>:null}
       <p className="brand">DECISION / SETUP READINESS</p>
-      <h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Current decision: </span>{displayDecision}</h1>
-      <h2>{instruction}</h2>
-      <p className="decision-primary-reason">{explanation.primaryReason}</p>
+      <div className="decision-hero-verdict-column"><h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Current decision: </span>{displayDecision}</h1></div>
+      <div className="decision-hero-explanation-column"><h2>{instruction}</h2><p className="decision-primary-reason">{explanation.primaryReason}</p></div>
       {readinessAllowed&&<p className="required-rule-count"><strong>Setup evidence: {explanation.confirmedRequiredCount} of {explanation.totalRequiredCount}</strong> required rules confirmed</p>}
       <dl className="decision-panel-metrics">
         <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>

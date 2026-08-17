@@ -19,12 +19,14 @@ export function resolveTradeActivationUiState({
   explanation,
   isAnalyzing = false,
   isSaving = false,
+  overrideEligible = false,
 }: {
   authorizationEligibility: TradeAuthorizationEligibility | null;
   hasExecutableSetup: boolean;
   explanation: { verdict?: string | null } | null;
   isAnalyzing?: boolean;
   isSaving?: boolean;
+  overrideEligible?: boolean;
 }): TradeActivationUiState {
   const state = authorizationEligibility?.state;
   const allowed = authorizationEligibility?.allowed === true;
@@ -32,7 +34,7 @@ export function resolveTradeActivationUiState({
   const isRenderableVerdict = Boolean(verdict && !['NO_SETUP', 'DATA_UNAVAILABLE', 'MARKET_CLOSED', 'STRATEGY_INCOMPLETE'].includes(verdict));
   const isReady = allowed && state === 'READY';
   const requiresOverrideReason =
-    authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' &&
+    overrideEligible && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' &&
     (state === 'WAIT' || state === 'BLOCKED');
   const hasIntegrity = Boolean(authorizationEligibility && (isReady || requiresOverrideReason));
   const showCta = Boolean(isRenderableVerdict && explanation && hasIntegrity && hasExecutableSetup);
@@ -55,7 +57,7 @@ export function resolveTradeActivationUiState({
       showCta: true,
       actionLabel: 'Take Anyway',
       actionHint: 'Record the trade as an override and move to Active Trade.',
-      actionTone: state === 'BLOCKED' ? 'danger' : 'warning',
+      actionTone: 'warning',
       primaryActionDisabled: Boolean(isAnalyzing || isSaving),
       activationMode: 'OVERRIDE',
       requiresOverrideReason: true,

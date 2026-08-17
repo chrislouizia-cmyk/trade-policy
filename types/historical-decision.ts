@@ -21,7 +21,7 @@ export type HistoricalDecisionReportSnapshot = {
   requiredRules: HistoricalDecisionEvidenceItem[]; helpfulConfirmations: HistoricalDecisionEvidenceItem[];
   blockingConditions: HistoricalDecisionEvidenceItem[]; unavailableEvidence: HistoricalDecisionEvidenceItem[];
   notRequiredEvidence?: HistoricalDecisionEvidenceItem[];
-  finalRiskCheck?: { status: 'NOT_RUN'|'PASSED'|'FAILED'|'INCOMPLETE'; entryPrice?: number; stopPrice?: number; targetPrice?: number; riskReward?: number; riskPercent?: number; blockingReasons: string[] };
+  finalRiskCheck?: { status: 'NOT_RUN'|'PASSED'|'FAILED'|'INCOMPLETE'; entryPrice?: number; stopPrice?: number; targetPrice?: number; riskReward?: number; riskPercent?: number; blockingReasons: string[]; overrideEligible:boolean; overrideBlockers:Array<{id:string;label:string;reason:string}>; vetoes:Array<{id:string;label:string;overrideable:boolean;actual?:string;limit?:string;source?:string;reason:string}> };
   integrityStatement: string; limitations: string[]; deterministicFingerprint: string; createdAt: string;
 };
 

@@ -258,6 +258,7 @@ export type TradeInput = {
 };
 
 export type ScoreItem = { label: string; earned: number; possible: number };
+export type FinalRiskBlock = { id:string; name:string; actual:string; required:string; operator:string; source:string; reason:string; overrideable:boolean };
 export type TradeResult = {
   score: number;
   grade: 'A+' | 'A' | 'B' | 'C';
@@ -266,6 +267,9 @@ export type TradeResult = {
   riskAmount: number;
   stopDistance: number;
   vetoes: string[];
+  finalRiskBlocks?: FinalRiskBlock[];
+  overrideEligible?: boolean;
+  overrideBlockers?: Array<{id:string;label:string;reason:string}>;
   observations: string[];
   scoreItems: ScoreItem[];
   direction?: Direction;

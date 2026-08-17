@@ -3,6 +3,8 @@ import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { canActivateTradeFromDecision, evaluateTradeAuthorizationEligibility } from '@/lib/server/trade-lifecycle';
 import { buildActiveTradeRow } from '@/lib/server/trade-activation';
+import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/schema';
+import { deterministicFingerprint } from '@/lib/historical-decisions/fingerprint';
 
 export async function POST(request: Request) {
   let cleanup:{supabase:Awaited<ReturnType<typeof createClient>>;userId:string;tradeRecordId:string}|null=null;
@@ -12,7 +14,18 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     const body = await request.json();
     const mode = body.mode === 'MISSED' ? 'MISSED' : 'ACTIVATE';
-    const allowOverride = body.activationMode === 'OVERRIDE' && ['WAIT','BLOCKED','REJECTED'].includes(String(body.originalVerdict ?? body.verdict ?? 'READY'));
+    const overrideIntent = body.activationMode === 'OVERRIDE';
+    let allowOverride=false;
+    if(overrideIntent){
+      if(typeof body.sourceDecisionId!=='string')return NextResponse.json({error:'Re-run Final Risk Check before overriding.'},{status:409});
+      const {data:source,error:sourceError}=await supabase.from('decision_report_sources').select('snapshot_json,user_id').eq('id',body.sourceDecisionId).eq('user_id',user.id).maybeSingle();
+      if(sourceError)throw sourceError;
+      const parsed=historicalDecisionSnapshotV1Schema.safeParse(source?.snapshot_json);
+      const snapshot=parsed.success?parsed.data:null;
+      if(!snapshot||snapshot.userId!==user.id||deterministicFingerprint(snapshot as unknown as Record<string,unknown>)!==snapshot.deterministicFingerprint)return NextResponse.json({error:'This decision was created before authoritative override eligibility was available. Re-run Final Risk Check before overriding.'},{status:409});
+      if(snapshot.finalRiskCheck?.overrideEligible!==true)return NextResponse.json({error:'This decision is blocked by non-overrideable risk controls.',overrideBlockers:snapshot.finalRiskCheck?.overrideBlockers??[]},{status:409});
+      allowOverride=true;
+    }
     const entry = Number(body.entry), stopLoss = Number(body.stopLoss), takeProfit = Number(body.takeProfit);
     const riskPercent = Number(body.riskPercent ?? 0.5), initialRR = Number(body.initialRR);
     if (!body.instrument || !['BUY','SELL'].includes(body.direction) || typeof body.highImpactNews !== 'boolean' || ![entry,stopLoss,takeProfit,riskPercent,initialRR].every(Number.isFinite)) {
@@ -133,7 +146,7 @@ export async function POST(request: Request) {
       current_price:entry, current_r:0, analysis:{ original_analysis:body.initialAnalysis ?? null, original_verdict:body.originalVerdict ?? null, original_verdict_reason:body.originalVerdictReason ?? null, override_reason:body.overrideReason ?? null }
     });
     if(eventError)console.error('[ACTIVE_TRADE_EVENT_FAILED]',{tradeId:trade.id,message:eventError.message});
-    return NextResponse.json({ trade, auditEventRecorded:!eventError, decisionCheck });
+    return NextResponse.json({ trade, lifecycleStatus:decisionCheck.status, activeTradeCreated:decisionCheck.createActiveTrade===true, auditEventRecorded:!eventError, decisionCheck });
   } catch (error) {
     if(cleanup&&error&&typeof error==='object'&&'code' in error&&(error as {code?:string}).code==='23505'){
       await cleanup.supabase.from('trade_records').delete().eq('id',cleanup.tradeRecordId).eq('user_id',cleanup.userId).eq('source','EXECUTED').eq('status','OPEN');

@@ -40,6 +40,30 @@ test('optional failures are confluence and do not lower required readiness',()=>
   assert.equal(result.percentage,100);assert.deepEqual(result.required,{passed:1,failed:0,pending:0});assert.deepEqual(result.optional,{passed:0,failed:1,pending:0});
 });
 
+test('optional pending or failed evidence never changes an otherwise ready required setup',()=>{
+  const rules=[legacy('structure.bos',true,30),legacy('structure.choch',true,30),legacy('smart-money.liquidity-sweep',true,40),legacy('smart-money.fair-value-gap',false,10)];
+  const pending=evaluateTradingDnaRuntime(rules,{facts:{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true}});
+  pending.status='PENDING';
+  assert.equal(calculateLiveSetupReadiness(pending).state,'READY');
+  const failed=evaluateTradingDnaRuntime(rules,{facts:{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,'smart-money.fair-value-gap':false}});
+  failed.status='FAIL';
+  assert.equal(calculateLiveSetupReadiness(failed).state,'READY');
+});
+
+test('optional displacement pending or failed stays visible without blocking three confirmed required rules',()=>{
+  const required=[legacy('structure.bos',true),legacy('structure.choch',true),legacy('smart-money.liquidity-sweep',true)];
+  const pending=run([...required,legacy('displacement',false)],{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true});
+  assert.equal(pending.state,'READY');assert.deepEqual(pending.required,{passed:3,failed:0,pending:0});assert.deepEqual(pending.optional,{passed:0,failed:0,pending:1});
+  const failed=run([...required,legacy('displacement',false)],{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,displacement:false});
+  assert.equal(failed.state,'READY');assert.deepEqual(failed.optional,{passed:0,failed:1,pending:0});
+});
+
+test('required displacement remains a required WAIT or NOT_READY condition',()=>{
+  const required=[legacy('structure.bos',true),legacy('structure.choch',true),legacy('smart-money.liquidity-sweep',true),legacy('displacement',true)];
+  assert.equal(run(required,{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true}).state,'WAITING_FOR_CONFIRMATION');
+  assert.equal(run(required,{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,displacement:false}).state,'NOT_READY');
+});
+
 test('manual external and unavailable automatic required evidence remain pending',()=>{
   const result=run([legacy('risk.stop-placement',true,10,'MANUAL'),legacy('external.economic-calendar',true,10,'EXTERNAL'),legacy('trend.ema',true,10)],{});
   assert.deepEqual(result.required,{passed:0,failed:0,pending:3});assert.equal(result.percentage,0);assert.equal(result.state,'WAITING_FOR_CONFIRMATION');
@@ -53,10 +77,10 @@ test('required FAIL is NOT READY, all pending waits, all passing is READY',()=>{
 
 test('no required rules requires configuration rather than returning 100',()=>{const result=run([legacy('structure.bos',false)],{'structure.bos':true});assert.equal(result.percentage,null);assert.equal(result.state,'CONFIGURATION_REQUIRED')});
 
-test('nested ALL and ANY retain runtime group semantics',()=>{
+test('nested ALL and ANY retain runtime group semantics while readiness still reports each required condition',()=>{
   const bos=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.bos')!,'bos');const choch=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.choch')!,'choch');
   let any=createComposerGroup('alternatives','ANY');any=appendComposerNode(any,'alternatives',bos);any=appendComposerNode(any,'alternatives',choch);let root=appendComposerNode(createComposerGroup(),'root',any);
-  const rules=strategyRulesFromComposerTree(root),report=evaluateTradingDnaRuntime(rules,{facts:{bos:true,choch:false}});assert.equal(report.status,'PASS');assert.equal(calculateLiveSetupReadiness(report).state,'READY');
+  const rules=strategyRulesFromComposerTree(root),report=evaluateTradingDnaRuntime(rules,{facts:{bos:true,choch:false}});assert.equal(report.status,'PASS');assert.equal(calculateLiveSetupReadiness(report).state,'NOT_READY');
   root={...root,children:[{...any,logic:'ALL'}]};assert.equal(evaluateTradingDnaRuntime(strategyRulesFromComposerTree(root),{facts:{bos:true,choch:false}}).status,'FAIL');
 });
 

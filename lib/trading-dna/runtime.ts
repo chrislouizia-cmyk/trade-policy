@@ -76,5 +76,7 @@ export function buildTradingDnaRuntimeContext(input:TradeInput,profile:StrategyP
 }
 
 export function applyTradingDnaRuntime(result:TradeResult,report:TradingDnaEvidenceReport):TradeResult{
-  const verdict:Verdict=report.status==='FAIL'?'REJECTED':report.status==='PENDING'&&result.verdict==='AUTHORIZED'?'WAIT':result.verdict;const failures=report.conditions.filter(item=>item.required&&item.status==='FAIL').map(item=>`${item.label}: ${item.reason}`);const pending=report.conditions.filter(item=>item.required&&item.status==='PENDING').map(item=>`${item.label}: ${item.reason}`);return {...result,verdict,vetoes:[...new Set([...result.vetoes,...failures])],observations:[...new Set([...result.observations,...pending])]};
+  const requiredFailed=report.conditions.some(condition=>condition.required&&condition.status==='FAIL');
+  const requiredPending=report.conditions.some(condition=>condition.required&&condition.status==='PENDING');
+  const verdict:Verdict=requiredFailed?'REJECTED':requiredPending&&result.verdict==='AUTHORIZED'?'WAIT':result.verdict;const failures=report.conditions.filter(item=>item.required&&item.status==='FAIL').map(item=>`${item.label}: ${item.reason}`);const pending=report.conditions.filter(item=>item.required&&item.status==='PENDING').map(item=>`${item.label}: ${item.reason}`);return {...result,verdict,vetoes:[...new Set([...result.vetoes,...failures])],observations:[...new Set([...result.observations,...pending])]};
 }

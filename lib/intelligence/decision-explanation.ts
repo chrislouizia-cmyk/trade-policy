@@ -29,6 +29,13 @@ function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorization
   if(['DATA_UNAVAILABLE','INSUFFICIENT_DATA','ANALYSIS_FAILED'].includes(analysis.status))return 'DATA_UNAVAILABLE';
   if(['STRATEGY_UNSUPPORTED','STRATEGY_INCOMPLETE'].includes(analysis.status))return 'STRATEGY_INCOMPLETE';
   if(analysis.status==='NO_RELEVANT_EVIDENCE')return 'NO_SETUP';
+  const requiredConditions=evidenceReport?.conditions.filter(condition=>condition.required)??[];
+  if(requiredConditions.some(condition=>condition.status==='FAIL'))return 'BLOCKED';
+  if(requiredConditions.some(condition=>condition.status==='PENDING'))return 'WAIT';
+  // Before the final risk check, setup readiness is determined exclusively by
+  // the required evidence report. A candidate is only a market suggestion and
+  // must not turn a complete required setup back into WAIT.
+  if(!result&&requiredConditions.length>0)return 'READY';
   if(authorizationEligibility){
     if(authorizationEligibility.state==='BLOCKED'||authorizationEligibility.state==='DATA_UNAVAILABLE')return authorizationEligibility.state==='BLOCKED'?'BLOCKED':'DATA_UNAVAILABLE';
     if(authorizationEligibility.state==='WAIT')return 'WAIT';
@@ -37,7 +44,6 @@ function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorization
   if(result?.verdict==='AUTHORIZED')return 'READY';
   if(result?.verdict==='REJECTED')return 'BLOCKED';
   if(result?.verdict==='WAIT')return 'WAIT';
-  if(evidenceReport&&evidenceReport.status!=='PASS')return 'WAIT';
   return analysis.candidates.some(candidate=>candidate.status==='READY')?'READY':'WAIT';
 }
 
@@ -107,7 +113,7 @@ function missingConfirmationItems(analysis:ChartAnalysis,authorizationEligibilit
   }));
 }
 
-function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanationItem[],authorizationEligibility?:TradeAuthorizationEligibility):string{
+function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanationItem[],result:TradeResult|null,authorizationEligibility?:TradeAuthorizationEligibility):string{
   if(verdict==='DATA_UNAVAILABLE')return 'Primary reason: Current market data could not be verified.';
   if(verdict==='MARKET_CLOSED')return 'Primary reason: No fresh completed candles are available while the market is closed.';
   if(verdict==='STRATEGY_INCOMPLETE'){
@@ -120,10 +126,9 @@ function primaryReason(verdict:DecisionExplanationVerdict,items:DecisionExplanat
   }
   const blocking=items.find(item=>item.required&&item.state==='BLOCKED');
   if(blocking)return `Primary reason: ${blocking.plainLanguageDescription}`;
+  if(verdict==='BLOCKED'&&result?.vetoes.length)return `Primary reason: ${result.vetoes[0]}`;
   const missing=items.find(item=>item.required&&item.state==='MISSING');
   if(missing)return `Primary reason: ${missing.plainLanguageDescription}`;
-  const optional=items.find(item=>!item.required&&item.state==='MISSING');
-  if(optional)return `Primary reason: ${optional.plainLanguageDescription}`;
   if(verdict==='NO_SETUP')return 'Primary reason: The saved setup is not present in the current market evidence.';
   return verdict==='READY'?'Every required rule that Trade Police can verify is confirmed.':'Primary reason: Required confirmation is incomplete.';
 }
@@ -133,7 +138,7 @@ export function buildDecisionExplanation({analysis,result,narrative,evidenceRepo
   const baseItems=evidenceReport?.conditions.map(condition=>itemFor(condition,analysis,narrative))??fallbackItems(analysis,strategy);
   const items=stableItems([...baseItems,...missingConfirmationItems(analysis,authorizationEligibility)]);
   const required=items.filter(item=>item.required),optional=items.filter(item=>!item.required);
-  const primary=primaryReason(verdict,items,authorizationEligibility);
+  const primary=primaryReason(verdict,items,result,authorizationEligibility);
   const primaryItem=items.find(item=>primary.includes(item.plainLanguageDescription));
   const nextAction=copy[verdict].nextAction===UNKNOWN_TRIGGER?(primaryItem?.nextAction??UNKNOWN_TRIGGER):copy[verdict].nextAction;
   const candleDate=new Date(analysis.latestCandleTimestamp),age=Number.isFinite(candleDate.getTime())?Math.max(0,Math.floor((now.getTime()-candleDate.getTime())/1000)):undefined;

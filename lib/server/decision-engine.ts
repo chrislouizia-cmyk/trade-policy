@@ -1,9 +1,10 @@
 import 'server-only';
 
-import type { EvidenceKey, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
+import type { EvidenceKey, FinalRiskBlock, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
 import type { DailyTradeContext } from '@/lib/server/daily-trade-context';
 import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
 import { evaluateRequiredRules, ruleLabel } from '@/lib/manual-confirmations';
+import { isStopDistanceWithinMaximum, meetsMinimumRiskReward, normalizedRiskReward } from '@/lib/trade-risk';
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
@@ -63,6 +64,20 @@ function protectedFloor(profile: StrategyProfile, realizedDailyPnl: number): num
   return 0;
 }
 
+function describeFinalRiskBlock({veto,input,profile,riskDistance,instrumentStopLimit,configuredStop,overrideable}:{veto:string;input:TradeInput;profile:StrategyProfile;riskDistance:number;instrumentStopLimit:number;configuredStop:NonNullable<StrategyProfile['stopLimitSettings']>[number]|undefined;overrideable:boolean}):FinalRiskBlock{
+  if(veto==='Stop distance exceeds this strategy maximum.'){
+    const unit=configuredStop?.method??'PRICE',configured=configuredStop?.maximumValue??profile.stopLimits[input.instrument];
+    return {id:'STOP_MAXIMUM',name:'Maximum stop distance',actual:`${round(riskDistance,5)} price (${input.direction}: |${input.entry} − ${input.stopLoss}|)`,required:`${configured??'not configured'} ${unit} = ${round(instrumentStopLimit,5)} price`,operator:'actual stop distance ≤ configured maximum',source:configuredStop?`Strategy stopLimitSettings for ${input.instrument} (${unit})`:`Strategy stopLimits.${input.instrument}`,reason:veto,overrideable};
+  }
+  if(veto.startsWith('RR is '))return {id:'RR_MINIMUM',name:'Minimum risk/reward',actual:String(round(Math.abs(input.takeProfit-input.entry)/Math.abs(input.entry-input.stopLoss))),required:String(profile.minimumRR),operator:'actual RR ≥ minimum RR',source:'Strategy minimumRR',reason:veto,overrideable};
+  if(veto.startsWith('Risk exceeds '))return {id:'RISK_MAXIMUM',name:'Maximum risk percentage',actual:`${input.riskPercent}%`,required:`${profile.maximumRiskPercent}%`,operator:'actual risk ≤ configured maximum',source:'Strategy maximumRiskPercent',reason:veto,overrideable};
+  if(veto==='Session is not allowed by this strategy.')return {id:'SESSION_ALLOWED',name:'Allowed trading session',actual:input.session,required:profile.allowedSessions.join(', '),operator:'actual session ∈ allowed sessions',source:'Strategy allowedSessions',reason:veto,overrideable};
+  if(veto==='High-impact news conflict detected.')return {id:'HIGH_IMPACT_NEWS',name:'High-impact news filter',actual:String(input.highImpactNews),required:'false',operator:'news conflict = false',source:'Strategy avoidHighImpactNews',reason:veto,overrideable};
+  if(veto==='Required timeframe alignment is missing.')return {id:'TREND_ALIGNMENT_REQUIRED',name:'Required timeframe alignment',actual:`H4=${input.h4TrendAligned}; H1=${input.h1TrendAligned}`,required:'H4=true and H1=true',operator:'both timeframes must align',source:'Strategy requireTrendAlignment',reason:veto,overrideable};
+  if(veto==='Live strategy confidence is required before authorization.')return {id:'LIVE_CONFIDENCE_REQUIRED',name:'Live strategy confidence',actual:String(input.setupConfidence??'missing'),required:`≥ ${profile.aiBehavior?.confidenceThreshold??80}%`,operator:'confidence must be supplied',source:'Strategy aiBehavior.confidenceThreshold',reason:veto,overrideable};
+  return {id:`CONTROL_${veto.replace(/[^A-Z0-9]+/gi,'_').replace(/^_|_$/g,'').slice(0,64)}`,name:'Final risk control',actual:'See final risk input',required:'See saved strategy control',operator:'Control-specific validation',source:'Saved strategy and final risk input',reason:veto,overrideable};
+}
+
 export function validateTradeWithStrategy(
   input: TradeInput,
   profile: StrategyProfile,
@@ -75,14 +90,17 @@ export function validateTradeWithStrategy(
   const instrumentStopPreferred = configuredStop?.preferredValue ? stopValueInPrice(profile, input, configuredStop.preferredValue) : null;
   const riskDistance = Math.abs(input.entry - input.stopLoss);
   const rewardDistance = Math.abs(input.takeProfit - input.entry);
-  const rr = riskDistance > 0 ? rewardDistance / riskDistance : 0;
+  // Evaluate the same normalized value we present to the trader. Without this,
+  // an exact 1:3 setup can be represented as 2.999999... by binary floating
+  // point arithmetic, displayed as 3, and incorrectly vetoed.
+  const rr = normalizedRiskReward(input.entry,input.stopLoss,input.takeProfit);
   const evidenceKeys = Object.keys(profile.evidenceWeights) as EvidenceKey[];
   const riskAmount = round(input.accountBalance * (input.riskPercent / 100));
 
   const contextItems = [
     {
       label: `RR at least 1:${policy.minimumRR}`,
-      earned: rr >= policy.minimumRR ? 7 : 0,
+      earned: meetsMinimumRiskReward(rr,policy.minimumRR) ? 7 : 0,
       possible: 7,
     },
     {
@@ -147,7 +165,7 @@ export function validateTradeWithStrategy(
   const requiredRules=evaluateRequiredRules(rules,input.manualConfirmations??[],input as unknown as Record<string,unknown>);
   for(const rule of requiredRules.filter(rule=>rule.state==='FAILED'))vetoes.push(rule.mode==='MANUAL'?`${rule.label} failed manual confirmation.`:`${rule.label} is mandatory.`);
   mandatoryPending=requiredRules.some(rule=>rule.state==='NOT_EVALUATED');
-  if (rr < policy.minimumRR) {
+  if (!meetsMinimumRiskReward(rr,policy.minimumRR)) {
     vetoes.push(`RR is ${round(rr)}; strategy minimum is ${policy.minimumRR}.`);
   }
   if (input.riskPercent > policy.maximumRisk) {
@@ -156,7 +174,7 @@ export function validateTradeWithStrategy(
   if (!policy.allowedSessions.includes(input.session)) {
     vetoes.push('Session is not allowed by this strategy.');
   }
-  if (riskDistance > instrumentStopLimit) {
+  if (!isStopDistanceWithinMaximum(riskDistance,instrumentStopLimit)) {
     vetoes.push('Stop distance exceeds this strategy maximum.');
   }
   if (instrumentStopMinimum > 0 && riskDistance < instrumentStopMinimum) {
@@ -275,6 +293,8 @@ export function validateTradeWithStrategy(
 
   const verdict = vetoes.length > 0 ? 'REJECTED' : baseVerdict;
 
+  const uniqueVetoes=[...new Set(vetoes)],finalRiskBlocks=uniqueVetoes.map(veto=>describeFinalRiskBlock({veto,input,profile,riskDistance,instrumentStopLimit,configuredStop,overrideable:overrideAllowed}));
+  const overrideEligible=finalRiskBlocks.every(block=>block.overrideable);
   return {
     score,
     grade,
@@ -282,7 +302,10 @@ export function validateTradeWithStrategy(
     rr: round(rr),
     riskAmount,
     stopDistance: round(riskDistance, 5),
-    vetoes: [...new Set(vetoes)],
+    vetoes: uniqueVetoes,
+    finalRiskBlocks,
+    overrideEligible,
+    overrideBlockers:finalRiskBlocks.filter(block=>!block.overrideable).map(block=>({id:block.id,label:block.name,reason:block.reason})),
     observations,
     scoreItems,
     direction: input.direction,

@@ -59,13 +59,13 @@ test('one decision card owns preliminary, final and risk-check states directly b
   assert.match(livePanel, /<TradingViewChart[^>]+\/>[\s\S]{0,100}decisionContent/);
   assert.match(hero, /Run Final Risk Check/);
   assert.match(hero, /form="final-risk-check"/);
-  assert.match(hero, /finalized \? 'TAKE TRADE' : 'READY FOR FINAL CHECK'/);
+  assert.match(hero, /displayVerdict === 'READY' \? 'READY'/);
   assert.doesNotMatch(validator, /authorization-inline-result|AUTHORIZATION RESULT/);
   assert.equal((validator.match(/<DecisionHero/g) ?? []).length, 1);
 });
 
 test('setup readiness and final authorization use distinct presentation states', () => {
-  assert.match(hero, /finalized \? 'TAKE TRADE' : 'READY FOR FINAL CHECK'/);
+  assert.match(hero, /displayVerdict === 'READY' \? 'READY'/);
   assert.match(hero, /Setup evidence is complete\. Run the final risk check before entering the trade\./);
   assert.match(hero, /finalized \? 'Final risk controls permit this trade\.'/);
   assert.doesNotMatch(hero, /\? 'APPROVED'/);
@@ -77,6 +77,9 @@ test('setup readiness and final authorization use distinct presentation states',
   assert.match(css, /\.decision-explanation-hero \.decision-hero-verdict\{[^}]*min-width:190px[^}]*white-space:nowrap[^}]*word-break:normal[^}]*overflow-wrap:normal/);
   assert.match(css, /@media\(max-width:1100px\)[^{]*\{[^}]*\.decision-explanation-hero\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(css, /@media\(max-width:767px\)[\s\S]*\.decision-explanation-hero \.decision-hero-actions\{grid-template-columns:1fr\}/);
+  assert.match(hero, /decision-hero-verdict-column/);
+  assert.match(hero, /decision-hero-explanation-column/);
+  assert.match(css, /@media\(max-width:960px\)[^{]*\{[^}]*\.decision-hero-primary\{grid-template-columns:minmax\(0,1fr\)\}/);
 });
 
 test('override remains a secondary labeled action governed by existing eligibility', () => {

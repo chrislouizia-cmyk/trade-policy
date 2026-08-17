@@ -17,11 +17,13 @@ test('WAIT exposes Take Anyway before the override reason is entered', () => {
     },
     hasExecutableSetup: true,
     explanation,
+    overrideEligible: true,
   });
 
   assert.equal(state.showCta, true);
   assert.equal(state.activationMode, 'OVERRIDE');
   assert.equal(state.actionLabel, 'Take Anyway');
+  assert.equal(state.actionTone, 'warning');
 });
 
 test('READY exposes Take Trade', () => {
@@ -57,11 +59,25 @@ test('BLOCKED exposes Take Anyway when an override reason is required', () => {
     },
     hasExecutableSetup: true,
     explanation: { verdict: 'BLOCKED' },
+    overrideEligible: true,
   });
 
   assert.equal(state.showCta, true);
   assert.equal(state.activationMode, 'OVERRIDE');
   assert.equal(state.actionLabel, 'Take Anyway');
+  assert.equal(state.actionTone, 'warning');
+});
+
+test('override reason requirement alone cannot expose Take Anyway', () => {
+  const state = resolveTradeActivationUiState({
+    authorizationEligibility: { allowed:false, eligible:false, state:'BLOCKED', reasonCode:'OVERRIDE_REASON_REQUIRED', message:'A reason is required.', createActiveTrade:false, missingMandatoryConfirmations:[] },
+    hasExecutableSetup: true,
+    explanation: { verdict:'BLOCKED' },
+    overrideEligible: false,
+  });
+  assert.equal(state.showCta, false);
+  assert.equal(state.activationMode, 'NONE');
+  assert.equal(state.actionLabel, null);
 });
 
 test('WAIT without the explicit override-reason contract exposes no activation CTA', () => {

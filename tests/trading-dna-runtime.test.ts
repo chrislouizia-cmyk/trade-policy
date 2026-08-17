@@ -70,6 +70,25 @@ test('optional failures remain visible but do not block entry',()=>{
   assert.equal(applyTradingDnaRuntime(baseResult,report).verdict,'AUTHORIZED');
 });
 
+test('optional pending evidence cannot turn an authorized result into WAIT',()=>{
+  const report={status:'PENDING' as const,summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[
+    {id:'required',ruleId:'required',label:'Required rule',status:'PASS' as const,required:true,evaluationType:'AUTOMATIC' as const,operator:'IS_TRUE' as const,actual:true,expected:[],reason:'Confirmed.',groupPath:['root']},
+    {id:'optional',ruleId:'optional',label:'Optional rule',status:'PENDING' as const,required:false,evaluationType:'EXTERNAL' as const,operator:'EXISTS' as const,actual:null,expected:[],reason:'Optional integration pending.',groupPath:['root']},
+  ]};
+  const applied=applyTradingDnaRuntime(baseResult,report);
+  assert.equal(applied.verdict,'AUTHORIZED');
+  assert.equal(applied.observations.some(item=>/Optional integration pending/.test(item)),false);
+});
+
+test('optional displacement cannot create a final risk block, while required displacement can',()=>{
+  const required={id:'required',ruleId:'required',label:'Required rule',status:'PASS' as const,required:true,evaluationType:'AUTOMATIC' as const,operator:'IS_TRUE' as const,actual:true,expected:[],reason:'Confirmed.',groupPath:['root']};
+  const optionalDisplacement={id:'displacement',ruleId:'displacement',label:'Displacement',status:'PENDING' as const,required:false,evaluationType:'AUTOMATIC' as const,operator:'CONFIRMED' as const,actual:null,expected:[],reason:'Displacement has not supplied evidence yet.',groupPath:['root']};
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'PENDING',summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[required,optionalDisplacement]}).verdict,'AUTHORIZED');
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'FAIL',summary:'',generatedAt:'',counts:{passed:1,failed:1,pending:0},groups:[],conditions:[required,{...optionalDisplacement,status:'FAIL' as const,actual:false}]}).vetoes.length,0);
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'PENDING',summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[required,{...optionalDisplacement,required:true}]}).verdict,'WAIT');
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'FAIL',summary:'',generatedAt:'',counts:{passed:1,failed:1,pending:0},groups:[],conditions:[required,{...optionalDisplacement,required:true,status:'FAIL' as const,actual:false}]}).verdict,'REJECTED');
+});
+
 test('validation API returns the runtime report before Decision Narrative generation',()=>{
   assert.match(api,/evaluateTradingDnaRuntime/);assert.match(api,/applyTradingDnaRuntime/);assert.match(api,/evidenceReport/);assert.match(api,/legacyDecisionStrategy/);assert.match(api,/!rule\.ruleKey\.startsWith\('dna\.v1\.'\)/);
   assert.ok(api.indexOf('applyTradingDnaRuntime')<api.indexOf('buildDecisionNarrative({'));
