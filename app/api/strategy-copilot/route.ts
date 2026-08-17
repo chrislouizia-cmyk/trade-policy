@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { buildStrategyCopilotInstructions, ensureStrategyCopilotSession, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, strategyCopilotSchema } from '@/lib/strategy-copilot';
+import { buildStrategyCopilotInstructions, emptyStrategyCopilotDraft, ensureStrategyCopilotSession, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, strategyCopilotSchema } from '@/lib/strategy-copilot';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +21,8 @@ export async function POST(request: Request) {
     if (!body?.message) {
       return NextResponse.json({ error: 'A message is required.' }, { status: 400 });
     }
+
+    const configuredModel = (process.env.OPENAI_MODEL ?? process.env.OPENAI_VISION_MODEL ?? 'gpt-5-mini').trim();
 
     if (!process.env.OPENAI_API_KEY) {
       const fallbackDraft = body.previousDraft ? {
@@ -43,7 +45,17 @@ export async function POST(request: Request) {
         strategyDraft: fallbackDraft,
         changes: ['AI drafting unavailable'],
         unresolvedQuestions: ['OpenAI API key is not configured.'],
-      });
+      }, { status: 503 });
+    }
+
+    if (!configuredModel) {
+      return NextResponse.json({
+        message: 'OpenAI model is not configured for strategy drafting.',
+        intent: 'CLARIFY',
+        strategyDraft: body.previousDraft ? mergeStrategyCopilotDraft(emptyStrategyCopilotDraft(), body.previousDraft as any) : emptyStrategyCopilotDraft(),
+        changes: ['AI model configuration missing'],
+        unresolvedQuestions: ['OpenAI model configuration is missing.'],
+      }, { status: 500 });
     }
 
     const sessionId = body.sessionId || `strategy-copilot-${user.id}-${Date.now()}`;
@@ -57,7 +69,7 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-5-mini',
+        model: configuredModel,
         input: [{
           role: 'system',
           content: [{
@@ -94,12 +106,33 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const rawErrorText = await response.text().catch(() => '');
+      const upstreamError = (() => {
+        try {
+          const parsed = JSON.parse(rawErrorText);
+          return parsed?.error?.message || parsed?.message || rawErrorText || `OpenAI request failed with HTTP ${response.status}.`;
+        } catch {
+          return rawErrorText || `OpenAI request failed with HTTP ${response.status}.`;
+        }
+      })();
+
+      console.error('[strategy-copilot] OpenAI upstream failure', {
+        status: response.status,
+        statusText: response.statusText,
+        model: configuredModel,
+        keyPresent: Boolean(process.env.OPENAI_API_KEY),
+        error: upstreamError,
+      });
+
       return NextResponse.json({
         message: 'The strategy copilot is temporarily unavailable. Your last draft is still available for review.',
         intent: 'CLARIFY',
         strategyDraft: previousDraft,
-        changes: ['AI provider request failed'],
-        unresolvedQuestions: ['The AI provider did not respond successfully.'],
+        changes: [`AI provider request failed (${response.status})`],
+        unresolvedQuestions: [upstreamError],
+        upstreamStatus: response.status,
+        upstreamError,
+        model: configuredModel,
       }, { status: 502 });
     }
 

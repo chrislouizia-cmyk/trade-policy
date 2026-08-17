@@ -21,6 +21,8 @@ import {
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 type StepKey = 1 | 2 | 3 | 4 | 5;
 
+const CREATION_MODE_SEQUENCE: CreationPath[] = ['visual', 'copilot', 'methodology', 'blank'];
+
 const STEP_LABELS: Record<StepKey, string> = {
   1: 'Your Style',
   2: 'When You Trade',
@@ -47,7 +49,7 @@ export default function StrategyBuilderV2({
   onApply: (nextProfile: StrategyProfile, nextRules: StrategyRule[], nextMethodologies: StrategyMethodology[]) => void;
   onCancel: () => void;
 }) {
-  const [path, setPath] = useState<CreationPath>('visual');
+  const [path, setPath] = useState<CreationPath | null>(null);
   const [step, setStep] = useState<StepKey>(1);
   const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(defaultMethodologies);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>(profile.instruments?.length ? profile.instruments : ['XAUUSD']);
@@ -75,6 +77,8 @@ export default function StrategyBuilderV2({
     riskPercent: Number(profile.maximumRiskPercent ?? 0.5),
     minimumRR: Number(profile.minimumRR ?? 3),
   }));
+  const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
+  const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [copilotApproved, setCopilotApproved] = useState(false);
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
@@ -323,12 +327,23 @@ export default function StrategyBuilderV2({
         </div>
       </div>
 
-      <div className="button-row">
-        <button type="button" onClick={() => setPath('visual')}>Build Visually</button>
-        <button type="button" onClick={() => setPath('copilot')}>Describe Your Strategy — Beta</button>
-        <button type="button" onClick={() => setPath('methodology')}>Start From a Methodology</button>
-        <button type="button" onClick={() => setPath('blank')}>Start Blank</button>
+      <div className="button-row" aria-label="Create strategy modes">
+        {CREATION_MODE_SEQUENCE.map((mode) => (
+          <button key={mode} type="button" onClick={() => setPath(mode)}>
+            {mode === 'visual' && 'Build visually'}
+            {mode === 'copilot' && 'Describe your strategy — Beta'}
+            {mode === 'methodology' && 'Start from a methodology'}
+            {mode === 'blank' && 'Start blank'}
+          </button>
+        ))}
       </div>
+
+      {!path && (
+        <div className="strategy-v2-panel">
+          <h3>Create Strategy</h3>
+          <p className="muted">Choose how you want to begin. No mode opens automatically.</p>
+        </div>
+      )}
 
       {path === 'visual' && (
         <div className="strategy-v2-panel">
@@ -527,7 +542,7 @@ export default function StrategyBuilderV2({
           <textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} />
           <div className="button-row">
             <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }])}>Add note</button>
-            <button type="button" className="primary" disabled={copilotBusy} onClick={async () => {
+            <button type="button" className="primary" disabled={copilotBusy || !copilotInput.trim()} onClick={async () => {
               if (!copilotInput.trim()) return;
               setCopilotBusy(true);
               setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }]);
@@ -559,6 +574,8 @@ export default function StrategyBuilderV2({
                     ? [{ heading: 'Changes detected', text: payload.changes.join(' • ') }]
                     : []),
                 ]);
+                setCopilotRefinementInput('');
+                setCopilotReviewVisible(true);
                 setCopilotApproved(false);
               } catch (error) {
                 setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The copilot is unavailable right now.' }]);
@@ -576,43 +593,98 @@ export default function StrategyBuilderV2({
             ))}
           </div>
 
-          <div className="draft-review-panel">
-            <h4>Draft summary</h4>
-            <div className="grid grid-2">
-              <div><span className="muted">Instrument</span><strong>{copilotDraft.instrument ?? 'Not set'}</strong></div>
-              <div><span className="muted">Session</span><strong>{copilotDraft.sessions.join(' + ') || 'Not set'}</strong></div>
-              <div><span className="muted">Risk</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : 'Not set'}</strong></div>
-              <div><span className="muted">Minimum RR</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : 'Not set'}</strong></div>
+          {copilotDraft.rules.length > 0 && (
+            <div className="strategy-v2-panel">
+              <h4>Refine your strategy</h4>
+              <p className="muted">Add more detail to adjust the draft without restarting the flow.</p>
+              <textarea value={copilotRefinementInput} onChange={(event) => setCopilotRefinementInput(event.target.value)} rows={4} placeholder="Add XAUUSD, London and New York sessions, require a liquidity sweep, FVG minimum 8 points, and minimum risk of 0.5%." />
+              <div className="button-row">
+                <button type="button" onClick={() => setCopilotReviewVisible((current) => !current)}>{copilotReviewVisible ? 'Hide review' : 'Review draft'}</button>
+                <button type="button" className="primary" disabled={copilotBusy || !copilotRefinementInput.trim()} onClick={async () => {
+                  if (!copilotRefinementInput.trim()) return;
+                  setCopilotBusy(true);
+                  try {
+                    const response = await fetch('/api/strategy-copilot', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        sessionId: 'strategy-builder-v2',
+                        message: copilotRefinementInput,
+                        previousDraft: copilotDraft,
+                      }),
+                    });
+                    const payload = await response.json();
+                    if (!response.ok) {
+                      throw new Error(payload?.error || 'AI refinement unavailable');
+                    }
+                    const nextDraft = payload.strategyDraft ?? copilotDraft;
+                    setCopilotDraft(nextDraft);
+                    setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
+                    setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
+                    setSelectedRuleSelections(nextDraft.rules.length ? nextDraft.rules : selectedRuleSelections);
+                    setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
+                    setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
+                    setCopilotConversation((current) => [
+                      ...current,
+                      { heading: 'You', text: copilotRefinementInput },
+                      { heading: 'Strategy Copilot', text: payload.message || 'I updated the draft to reflect your refinement.' },
+                    ]);
+                    setCopilotRefinementInput('');
+                    setCopilotReviewVisible(true);
+                    setCopilotApproved(false);
+                  } catch (error) {
+                    setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The draft could not be updated.' }]);
+                  } finally {
+                    setCopilotBusy(false);
+                  }
+                }}>Apply / Update Draft</button>
+              </div>
             </div>
-            <div className="rule-list">
-              {copilotDraft.rules.map((rule) => (
-                <div key={rule.key} className="rule-row">
-                  <div className="rule-main">
-                    <strong>{rule.label}</strong>
-                    <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.requirement}</span>
-                  </div>
-                  <div className="rule-controls">
-                    <span>{rule.group}</span>
-                    <span>{rule.timeframe}</span>
-                    <span>{rule.capability}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="muted">Logic: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
-          </div>
+          )}
 
-          <div className="button-row">
-            <button type="button" onClick={onCancel}>Back</button>
-            <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
-              if (!copilotApproved) return;
-              buildCopilotApply();
-            }}>Approve & Apply</button>
-          </div>
-          <label className="check-row">
-            <input type="checkbox" checked={copilotApproved} onChange={(event) => setCopilotApproved(event.target.checked)} />
-            <span>I review and explicitly approve this draft before applying it to the deterministic engine.</span>
-          </label>
+          {copilotReviewVisible && copilotDraft.rules.length > 0 && (
+            <div className="draft-review-panel">
+              <h4>Draft summary</h4>
+              <div className="grid grid-2">
+                <div><span className="muted">Instrument</span><strong>{copilotDraft.instrument ?? 'Not set'}</strong></div>
+                <div><span className="muted">Session</span><strong>{copilotDraft.sessions.join(' + ') || 'Not set'}</strong></div>
+                <div><span className="muted">Risk</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : 'Not set'}</strong></div>
+                <div><span className="muted">Minimum RR</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : 'Not set'}</strong></div>
+              </div>
+              <div className="rule-list">
+                {copilotDraft.rules.map((rule) => (
+                  <div key={rule.key} className="rule-row">
+                    <div className="rule-main">
+                      <strong>{rule.label}</strong>
+                      <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.requirement}</span>
+                    </div>
+                    <div className="rule-controls">
+                      <span>{rule.group}</span>
+                      <span>{rule.timeframe}</span>
+                      <span>{rule.capability}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="muted">Logic: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
+            </div>
+          )}
+
+          {copilotDraft.rules.length > 0 && (
+            <div>
+              <div className="button-row">
+                <button type="button" onClick={() => setPath('copilot')}>Back</button>
+                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
+                  if (!copilotApproved) return;
+                  buildCopilotApply();
+                }}>Approve & Apply</button>
+              </div>
+              <label className="check-row">
+                <input type="checkbox" checked={copilotApproved} onChange={(event) => setCopilotApproved(event.target.checked)} />
+                <span>I review and explicitly approve this draft before applying it to the deterministic engine.</span>
+              </label>
+            </div>
+          )}
         </div>
       )}
 
@@ -622,10 +694,11 @@ export default function StrategyBuilderV2({
           <p className="muted">Select a methodology library, then keep only the concepts you actually use.</p>
           {methodRow}
           <div className="button-row">
-            <button type="button" onClick={onCancel}>Back</button>
+            <button type="button" onClick={() => setPath('methodology')}>Back</button>
             <button type="button" className="primary" onClick={() => {
               setSelectedRuleSelections((current) => buildDraftFromSelection(selectedMethodologyIds, current.map((rule) => rule.key), current).rules);
-              setStep(3);
+              setPath('visual');
+              setStep(1);
             }}>Apply methodology set</button>
           </div>
         </div>
@@ -636,8 +709,11 @@ export default function StrategyBuilderV2({
           <h3>Start Blank</h3>
           <p className="muted">Open the established builder and build the strategy from a blank configuration.</p>
           <div className="button-row">
-            <button type="button" onClick={onCancel}>Back</button>
-            <button type="button" className="primary" onClick={() => onApply(profile, [], [])}>Continue with blank builder</button>
+            <button type="button" onClick={() => setPath('blank')}>Back</button>
+            <button type="button" className="primary" onClick={() => {
+              setPath('visual');
+              setStep(1);
+            }}>Continue with blank builder</button>
           </div>
         </div>
       )}

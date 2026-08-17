@@ -128,7 +128,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [learningConfirmation, setLearningConfirmation] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
-  const [v2EntryOpen, setV2EntryOpen] = useState(() => resolveBuilderEntryMode({ existingStrategyId: undefined, isNewStrategyRequest: true }));
+  const [v2EntryOpen, setV2EntryOpen] = useState(false);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const quickstartRequested = searchParams.get('quickstart') === '1';
 
@@ -182,8 +182,17 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setProfiles(mapped);
     const target = mapped.find((item) => item.id === selectId) ?? mapped.find((item) => item.isDefault) ?? mapped[0];
 
-    if (target) await openProfile(target);
-    else startNew();
+    if (target) {
+      await openProfile(target);
+    } else {
+      setV2EntryOpen(false);
+      setBuilderStep('identity');
+      setProfile(createEmptyStrategyProfile());
+      setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
+      setRules(DEFAULT_RULES);
+      setStopLimits([]);
+      setMessage('No saved strategies yet. Create a new strategy to begin.');
+    }
     setLoading(false);
   }
 
@@ -227,7 +236,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setStopLimits([]);
     setV2EntryOpen(true);
     setBuilderStep('identity');
-    setMessage('Creating a new strategy profile in the V2 builder.');
+    setMessage('Choose a creation mode to start your new strategy.');
   }
 
   function useStarterRules(confirmed = false){
@@ -418,7 +427,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   return (
     <div className="strategy-builder-layout">
       <aside className="card strategy-sidebar">
-        <div className="sidebar-head"><div><p className="muted">MY TRADING RULES</p><h2>Strategies</h2></div><button type="button" onClick={startNew}>+ Create</button></div>
+        <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
         <div className="strategy-list">
           {activeProfiles.map((item) => (
             <button type="button" className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => void openProfile(item)}>
@@ -435,7 +444,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
-        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">FASTEST PATH TO A FIRST DECISION</p><h2>Start with transparent starter rules</h2><p>Load a conservative example for XAUUSD, review every rule, then save it as your own. The template does not bypass confirmation and never changes how verdicts are calculated.</p><div className="button-row"><button className="primary" type="button" onClick={() => useStarterRules()}>Use starter rules</button><button type="button" onClick={startNew}>Build from scratch</button></div></section>}
+        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">MY STRATEGIES</p><h2>No saved strategies yet</h2><p>Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>Create New Strategy</button><button type="button" onClick={() => useStarterRules()}>Use starter rules</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">
           <div className="conversation-prompt"><span aria-hidden="true">TP</span><div><p className="muted">LET'S START WITH YOUR APPROACH</p><h2>What do you call the way you trade?</h2><p>Describe it in your own terms. I’ll turn your answers into rules I can check consistently.</p></div>{profile.isDefault && <strong className="badge authorized">ACTIVE</strong>}</div>

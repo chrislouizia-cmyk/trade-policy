@@ -7,3 +7,13 @@ export function resolveBuilderEntryMode({
 }) {
   return Boolean(isNewStrategyRequest) && !existingStrategyId;
 }
+
+export function shouldAutoOpenCreatorOnEmptyLanding({
+  hasExistingProfiles,
+  isUserInitiated,
+}: {
+  hasExistingProfiles: boolean;
+  isUserInitiated: boolean;
+}) {
+  return isUserInitiated && !hasExistingProfiles;
+}

@@ -40,6 +40,21 @@ export function emptyStrategyCopilotDraft(): StrategyCopilotDraft {
   return { sessions: [], timeframes: [], rules: [], logicTree: { logic: 'ALL', children: [] }, notes: [] };
 }
 
+export function hasGeneratedStrategyDraft(draft: StrategyCopilotDraft | null | undefined): boolean {
+  if (!draft) return false;
+  return Array.isArray(draft.rules) && draft.rules.length > 0;
+}
+
+export function canReviewStrategyDraft(draft: StrategyCopilotDraft | null | undefined): boolean {
+  if (!draft) return false;
+  return hasGeneratedStrategyDraft(draft) && (
+    (Array.isArray(draft.sessions) && draft.sessions.length > 0) ||
+    (Array.isArray(draft.timeframes) && draft.timeframes.length > 0) ||
+    typeof draft.riskPercent === 'number' ||
+    typeof draft.minimumRR === 'number'
+  );
+}
+
 export function ensureStrategyCopilotSession(sessionId: string): StrategyCopilotSessionState {
   const existing = sessionStore.get(sessionId);
   if (existing) return existing;
@@ -211,7 +226,7 @@ export const strategyCopilotSchema = {
     strategyDraft: {
       type: 'object',
       additionalProperties: false,
-      required: ['sessions', 'timeframes', 'rules', 'notes'],
+      required: ['sessions', 'timeframes', 'rules', 'logicTree', 'notes'],
       properties: {
         name: { type: ['string', 'null'] },
         instrument: { type: ['string', 'null'] },
@@ -234,6 +249,7 @@ export const strategyCopilotSchema = {
         logicTree: {
           type: 'object',
           additionalProperties: false,
+          required: ['logic', 'children'],
           properties: {
             logic: { type: 'string', enum: ['ALL', 'ANY'] },
             children: { type: 'array', items: { type: 'string' } },

@@ -12,13 +12,64 @@ import {
 } from '../lib/strategy-builder-v2.ts';
 
 import { createPersistedV2RuleTree, type RuleSelection } from '../lib/strategy-builder-v2.ts';
-import { mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
+import { canReviewStrategyDraft, emptyStrategyCopilotDraft, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
 import { resolveBuilderEntryMode } from '../lib/strategy-builder-entry.ts';
+import { STRATEGY_CREATION_MODE_LABELS, canReachFinalReviewDirectlyFromSelector, getStrategyCreationModes } from '../lib/strategy-creation-flow.ts';
 
 test('new strategy entry routes into the V2 builder while existing profiles stay on compatibility mode', () => {
   assert.equal(resolveBuilderEntryMode({ existingStrategyId: null, isNewStrategyRequest: true }), true);
   assert.equal(resolveBuilderEntryMode({ existingStrategyId: 'abc123', isNewStrategyRequest: true }), false);
   assert.equal(resolveBuilderEntryMode({ existingStrategyId: null, isNewStrategyRequest: false }), false);
+});
+
+test('copilot refinement lifecycle requires an initial draft before refinement and keeps review available', () => {
+  const empty = emptyStrategyCopilotDraft();
+  assert.equal(hasGeneratedStrategyDraft(empty), false);
+  assert.equal(canReviewStrategyDraft(empty), false);
+
+  const draft: StrategyCopilotDraft = {
+    name: 'Gold London Flow',
+    instrument: 'XAUUSD',
+    sessions: ['London', 'New York'],
+    timeframes: ['M5'],
+    rules: [
+      { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'Sweep' },
+      { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', requirement: 'REQUIRED', timeframe: 'M5', group: 'ALL', description: 'CHoCH' },
+    ],
+    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch'] },
+    riskPercent: 0.5,
+    minimumRR: 3,
+    notes: ['Initial draft generated'],
+  };
+
+  assert.equal(hasGeneratedStrategyDraft(draft), true);
+  assert.equal(canReviewStrategyDraft(draft), true);
+
+  const refined = mergeStrategyCopilotDraft(draft, {
+    ...draft,
+    sessions: ['London'],
+    notes: ['Refined for London only'],
+  });
+
+  assert.deepEqual(refined.sessions, ['London']);
+  assert.equal(hasGeneratedStrategyDraft(refined), true);
+  assert.equal(canReviewStrategyDraft(refined), true);
+});
+
+test('strategy creation selector exposes the required four modes in the exact order and never auto-opens a mode', () => {
+  const modes = getStrategyCreationModes();
+  assert.deepEqual(modes, ['visual', 'copilot', 'methodology', 'blank']);
+  assert.deepEqual(modes.map((mode) => STRATEGY_CREATION_MODE_LABELS[mode]), [
+    'Build visually',
+    'Describe your strategy — Beta',
+    'Start from a methodology',
+    'Start blank',
+  ]);
+  assert.equal(canReachFinalReviewDirectlyFromSelector(null), false);
+  assert.equal(canReachFinalReviewDirectlyFromSelector('visual'), false);
+  assert.equal(canReachFinalReviewDirectlyFromSelector('copilot'), false);
+  assert.equal(canReachFinalReviewDirectlyFromSelector('methodology'), false);
+  assert.equal(canReachFinalReviewDirectlyFromSelector('blank'), false);
 });
 
 test('ui path preserves XAUUSD and keeps the copilot draft in review until explicit approval', () => {
