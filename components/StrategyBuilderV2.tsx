@@ -70,8 +70,11 @@ export default function StrategyBuilderV2({
     { heading: 'Strategy Copilot', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft you can review and refine.' },
   ]);
   const [copilotDraft, setCopilotDraft] = useState<StrategyCopilotDraft>(() => ({
+    ...emptyStrategyCopilotDraft(),
     name: 'Draft from description',
-    ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '', riskPercent: 0, minimumRR: 0,
+    instrument: '',
+    riskPercent: 0,
+    minimumRR: 0,
   }));
   const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
