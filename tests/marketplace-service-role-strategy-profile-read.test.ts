@@ -3,7 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 
 const migration = readFileSync(
-  new URL('../supabase/migrations/055_marketplace_service_role_strategy_profile_read.sql', import.meta.url),
+  new URL('../supabase/migrations/056_marketplace_service_role_strategy_profile_read.sql', import.meta.url),
   'utf8'
 );
 
