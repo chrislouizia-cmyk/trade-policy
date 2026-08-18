@@ -26,20 +26,21 @@ type Incident = {
   created_at: string;
   resolved_at?: string | null;
 };
-type Metric = { label: string; value: unknown; sub: string };
+type Metric = { label: string; value: unknown; sub: string; href?:string };
 
 function display(value: unknown) {
   return typeof value === "number" ? String(value) : "—";
 }
 function MetricCard({ metric }: { metric: Metric }) {
   const available = typeof metric.value === "number";
-  return (
+  const card=(
     <div className="card metric hq-executive-metric">
       <span>{metric.label}</span>
       <strong>{display(metric.value)}</strong>
       <small>{available ? metric.sub : "Not available yet"}</small>
     </div>
   );
+  return metric.href?<Link className="hq-metric-link" href={metric.href} aria-label={`${metric.label}: view matching detail`}>{card}</Link>:card;
 }
 function IncidentRows({ rows, empty }: { rows: Incident[]; empty: string }) {
   return rows.length === 0 ? (
@@ -92,21 +93,25 @@ export default function AdminDashboard({
       label: "Active customers",
       value: overview.active_customers_7d,
       sub: "Activity in the last 7 days",
+      href:"/hq/customers?sort=last_activity",
     },
     {
       label: "Analyses today",
       value: overview.analyses_today,
       sub: "Market analysis events today",
+      href:"/hq/system",
     },
     {
       label: "Open trades",
       value: overview.open_trades,
       sub: "Across customer accounts",
+      href:"/hq/system",
     },
     {
       label: "Strategies",
       value: overview.strategies,
       sub: "Active, non-archived profiles",
+      href:"/hq/system/strategy-compatibility?status=ACTIVE",
     },
   ];
   const secondary: Metric[] = [
@@ -124,11 +129,13 @@ export default function AdminDashboard({
       label: "Open feedback",
       value: overview.open_feedback,
       sub: "Open or under review",
+      href:"/hq/support",
     },
     {
       label: "Open incidents",
       value: overview.open_incidents,
       sub: "Unresolved system incidents",
+      href:"/hq/system/queue?status=OPEN",
     },
   ];
   const actions = [

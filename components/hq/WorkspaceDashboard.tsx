@@ -8,6 +8,7 @@ type WorkspaceConfig={
   capabilities:string[];
   restrictions:string[];
 };
+const cardDestination:Record<string,string>={open_cases:'/hq/compliance/cases?status=OPEN',high_priority:'/hq/compliance/cases?severity=HIGH',open_incidents:'/hq/system/queue?status=OPEN',audit_events_7d:'/hq/compliance',open_tickets:'/hq/support',assigned_to_me:'/hq/support',open_feedback:'/hq/support',customers:'/hq/customers',failed_actions_today:'/hq/system/queue?status=OPEN',analyses_today:'/hq/system',critical_incidents:'/hq/system/queue?severity=CRITICAL',new_customers_30d:'/hq/customers',trial_customers:'/hq/customers',active_subscriptions:'/hq/customers',open_leads:'/hq/sales',converted_leads:'/hq/sales'};
 
 const roleCopy:Record<string,WorkspaceConfig>={
   HEAD_OF_SALES:{
@@ -63,7 +64,7 @@ export default function WorkspaceDashboard({overview,role}:{overview:Overview;ro
     </section>
 
     <div className="grid grid-3 metric-grid hq-metric-grid">
-      {c.cards.map(([label,key,sub])=><div className="card metric hq-metric" key={key}><span className="muted">{label}</span><strong>{String(overview[key]??0)}</strong><small>{sub}</small></div>)}
+      {c.cards.map(([label,key,sub])=>{const href=cardDestination[key],card=<div className="card metric hq-metric"><span className="muted">{label}</span><strong>{String(overview[key]??0)}</strong><small>{sub}</small></div>;return href?<a className="hq-metric-link" key={key} href={href} aria-label={`${label}: view matching detail`}>{card}</a>:<div key={key}>{card}</div>})}
     </div>
 
     <div className="grid grid-2 hq-access-grid">
