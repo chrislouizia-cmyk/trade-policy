@@ -83,8 +83,8 @@ test('missing profile and invalid organization choices return actionable errors'
  assert.match(route,/Permission profile is required\./);assert.match(migration,/selected position does not belong to this department/);
  assert.match(migration,/selected manager is inactive or ineligible/);
 });
-test('unauthorized callers are rejected server-side',()=>{
- assert.match(route,/has_staff_permission/);assert.match(route,/\['OWNER','SECURITY_ADMIN'\]/);
+test('staff-management permission authorizes invitation actions server-side',()=>{
+ assert.match(route,/has_staff_permission/);assert.doesNotMatch(route,/\['OWNER','SECURITY_ADMIN'\]/);
  assert.match(route,/You are not authorized to invite employees/);
 });
 test('Auth failure and rate limits become visible delivery failures',()=>{
@@ -113,7 +113,7 @@ test('provisioning states and service role access remain explicit and least priv
  for(const status of ['PENDING','ACCEPTED','DELIVERY_FAILED','PERSISTENCE_FAILED','REVOKED'])assert.match(onboardingMigration,new RegExp(status));
  assert.match(onboardingMigration,/grant select on table public\.staff_invitations to service_role/);
  assert.doesNotMatch(onboardingMigration,/grant .*staff_invitations.* to (?:anon|authenticated)/);
- assert.match(pending,/Copy status\/details/);assert.match(pending,/Resend Invite/);
+ assert.match(pending,/Copy status\/details/);assert.match(pending,/Resend invitation/);
 });
 test('route performs no direct queries against protected organizational tables',()=>{
  assert.doesNotMatch(route,/\.from\(['"](?:staff_invitations|staff_roles|org_departments|org_positions|permission_profiles|organization_members|admin_access_logs)['"]\)/);

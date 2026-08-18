@@ -31,9 +31,9 @@ export async function POST(request:Request){
  try{
   const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();
   if(!user)return jsonError('Authentication required.',401,requestId,'AUTH_REQUIRED');
-  const [{data:role,error:roleError},{data:allowed,error:permissionError}]=await Promise.all([supabase.rpc('current_staff_role'),supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);
-  if(roleError||permissionError){serverLog('error','authorization_lookup_failed',{requestId,roleError:roleError?.message,permissionError:permissionError?.message});return jsonError('Employee invitation authorization could not be verified.',500,requestId,'AUTHORIZATION_LOOKUP_FAILED')}
-  if(!allowed||!['OWNER','SECURITY_ADMIN'].includes(role))return jsonError('You are not authorized to invite employees.',403,requestId,'FORBIDDEN');
+  const [{data:allowed,error:permissionError}]=await Promise.all([supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);
+  if(permissionError){serverLog('error','authorization_lookup_failed',{requestId,permissionError:permissionError?.message});return jsonError('Employee invitation authorization could not be verified.',500,requestId,'AUTHORIZATION_LOOKUP_FAILED')}
+  if(!allowed)return jsonError('You are not authorized to invite employees.',403,requestId,'FORBIDDEN');
   let body:unknown;try{body=await request.json()}catch{return jsonError('Invitation request is not valid JSON.',400,requestId,'INVALID_JSON')}
   const parsed=InviteSchema.safeParse(body);if(!parsed.success)return jsonError(parsed.error.issues[0]?.message??'Invalid invitation.',400,requestId,'VALIDATION_FAILED');
   input=parsed.data;
@@ -75,8 +75,8 @@ export async function PATCH(request:Request){
  const requestId=crypto.randomUUID();
  try{
   const supabase=await createClient(),{data:{user}}=await supabase.auth.getUser();if(!user)return jsonError('Authentication required.',401,requestId,'AUTH_REQUIRED');
-  const [{data:role},{data:allowed}]=await Promise.all([supabase.rpc('current_staff_role'),supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);
-  if(!allowed||!['OWNER','SECURITY_ADMIN'].includes(role))return jsonError('You are not authorized to manage invitations.',403,requestId,'FORBIDDEN');
+  const [{data:allowed}]=await Promise.all([supabase.rpc('has_staff_permission',{p_permission:'staff.manage'})]);
+  if(!allowed)return jsonError('You are not authorized to manage invitations.',403,requestId,'FORBIDDEN');
   const parsed=ActionSchema.safeParse(await request.json());if(!parsed.success)return jsonError('Invalid invitation action.',400,requestId,'INVALID_ACTION');
   const admin=createAdminClient();
   if(parsed.data.action==='revoke'){
