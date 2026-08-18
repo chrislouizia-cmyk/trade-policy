@@ -78,6 +78,7 @@ export default function StrategyBuilderV2({
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [copilotApproved, setCopilotApproved] = useState(false);
+  const [copilotApplyError, setCopilotApplyError] = useState('');
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [ruleMenuOpen, setRuleMenuOpen] = useState<string | null>(null);
 
@@ -170,6 +171,7 @@ export default function StrategyBuilderV2({
   function buildVisualApply() { onApply(v2StateToPersistedStrategy(profile, currentState())); }
 
   function buildCopilotApply() {
+    if (!contextTimeframe || !executionTimeframe) { setCopilotApplyError('Choose both context and execution timeframes before applying this strategy.'); return; }
     const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
     const draftInstrument = copilotDraft.instrument && ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', 'NAS100'].includes(copilotDraft.instrument)
       ? copilotDraft.instrument
@@ -184,7 +186,7 @@ export default function StrategyBuilderV2({
     setRiskPercent(draftRisk);
     setMinimumRR(draftMinimumRR);
 
-    onApply(v2StateToPersistedStrategy(profile, currentState({ instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
+    setCopilotApplyError(''); onApply(v2StateToPersistedStrategy(profile, currentState({ instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
   }
 
   function addCopilotTurn() {
@@ -597,6 +599,8 @@ export default function StrategyBuilderV2({
 
           {copilotDraft.rules.length > 0 && (
             <div>
+              <div className="grid grid-2"><label>Context timeframe<select value={contextTimeframe} onChange={event=>setContextTimeframe(event.target.value)}><option value="">Choose context timeframe</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>Execution timeframe<select value={executionTimeframe} onChange={event=>setExecutionTimeframe(event.target.value)}><option value="">Choose execution timeframe</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
+              {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
               <div className="button-row">
                 <button type="button" onClick={() => setPath('copilot')}>Back</button>
                 <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
