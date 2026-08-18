@@ -68,7 +68,8 @@ export default function ResetPasswordPage() {
           }
           return;
         }
-        window.history.replaceState({}, document.title, '/reset-password');
+        const nextPortal = queryParams.get('portal') === 'hq' ? 'hq' : 'client';
+        window.history.replaceState({}, document.title, `/reset-password?portal=${nextPortal}`);
       }
 
       const { data, error } = await supabase.auth.getSession();

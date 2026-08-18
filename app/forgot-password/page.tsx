@@ -29,15 +29,16 @@ export default function ForgotPasswordPage() {
 
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get('email') ?? '').trim();
-    const redirectTo = `${window.location.origin}/reset-password?portal=${portal}`;
+    const redirectTo = new URL('/auth/callback', window.location.origin);
+    redirectTo.searchParams.set('next', `/reset-password?portal=${portal}`);
     const supabase = createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectTo.toString() });
 
     if (error) {
       setIsError(true);
       setMessage(error.message);
     } else {
-      setMessage('Recovery email sent. Open the newest email and use its link to choose a new password.');
+      setMessage('If this email is tied to an account, a secure recovery link has been sent. Please check your email and spam folder.');
     }
     setLoading(false);
   }

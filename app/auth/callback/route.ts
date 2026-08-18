@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get('token_hash');
   const type = url.searchParams.get('type');
   const next = safeNext(url.searchParams.get('next'));
+  const portal = url.searchParams.get('portal') ?? new URLSearchParams(next.split('?')[1] ?? '').get('portal');
   const supabase = await createClient();
 
   let errorMessage: string | null = null;
@@ -31,12 +32,14 @@ export async function GET(request: Request) {
   } else {
     const target = new URL('/reset-password', url.origin);
     target.searchParams.set('error', 'invalid-link');
+    if (portal) target.searchParams.set('portal', portal);
     return NextResponse.redirect(target);
   }
 
   if (errorMessage) {
     const target = new URL('/reset-password', url.origin);
     target.searchParams.set('error', errorMessage);
+    if (portal) target.searchParams.set('portal', portal);
     return NextResponse.redirect(target);
   }
 
@@ -45,6 +48,7 @@ export async function GET(request: Request) {
   if(user&&(type==='signup'||(next==='/onboarding'&&recentlyCreated)))await recordServerBetaEvent(user.id,'SIGNUP_COMPLETED');
   const urls = getCanonicalAppUrls();
   const isProductionDomain = url.hostname === 'tradepolice.app' || url.hostname.endsWith('.tradepolice.app');
-  const destinationOrigin = isProductionDomain ? (next.startsWith('/hq') ? urls.hq : urls.portal) : url.origin;
+  const isHQRecovery = portal === 'hq' || next.includes('portal=hq') || next.startsWith('/hq');
+  const destinationOrigin = isProductionDomain ? (isHQRecovery ? urls.hq : urls.portal) : url.origin;
   return NextResponse.redirect(new URL(next, destinationOrigin));
 }
