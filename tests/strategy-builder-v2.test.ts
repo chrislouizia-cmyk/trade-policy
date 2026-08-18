@@ -56,6 +56,15 @@ test('copilot refinement lifecycle requires an initial draft before refinement a
   assert.equal(canReviewStrategyDraft(refined), true);
 });
 
+test('an empty Copilot draft does not replace approved risk or RR with zero', () => {
+  const approved = normalizeStrategyCopilotReply({
+    message: 'Drafted.', intent: 'CREATE', changes: [], unresolvedQuestions: [],
+    strategyDraft: { name: 'London setup', instrument: 'XAUUSD', sessions: ['London', 'New York'], timeframes: ['M5'], rules: [], logicTree: { logic: 'ALL', children: [] }, riskPercent: 0.5, minimumRR: 2, notes: [] },
+  }, emptyStrategyCopilotDraft());
+  assert.equal(approved.strategyDraft.riskPercent, 0.5);
+  assert.equal(approved.strategyDraft.minimumRR, 2);
+});
+
 test('strategy creation selector exposes the required four modes in the exact order and never auto-opens a mode', () => {
   const modes = getStrategyCreationModes();
   assert.deepEqual(modes, ['visual', 'copilot', 'methodology', 'blank']);
