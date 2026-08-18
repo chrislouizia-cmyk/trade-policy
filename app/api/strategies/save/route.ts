@@ -111,37 +111,31 @@ export async function POST(request: Request) {
       const maximumActiveStrategies =
         billing.entitlements.maximumActiveStrategies;
 
-      if (maximumActiveStrategies === null) {
-        return apiError(
-          'BILLING_UNAVAILABLE',
-          'The active strategy limit is unavailable.',
-          500,
-        );
-      }
+      if (maximumActiveStrategies !== null) {
+        const { count, error: countError } = await supabase
+          .from('strategy_profiles')
+          .select('id', {
+            count: 'exact',
+            head: true,
+          })
+          .eq('user_id', user.id)
+          .eq('is_archived', false);
 
-      const { count, error: countError } = await supabase
-        .from('strategy_profiles')
-        .select('id', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('user_id', user.id)
-        .eq('is_archived', false);
+        if (countError) {
+          return apiError(
+            'STRATEGY_COUNT_FAILED',
+            countError.message,
+            500,
+          );
+        }
 
-      if (countError) {
-        return apiError(
-          'STRATEGY_COUNT_FAILED',
-          countError.message,
-          500,
-        );
-      }
-
-      if ((count ?? 0) >= maximumActiveStrategies) {
-        return apiError(
-          'STRATEGY_LIMIT_REACHED',
-          `Your ${billing.plan} plan allows ${maximumActiveStrategies} active strategies. Archive one or upgrade to continue.`,
-          403,
-        );
+        if ((count ?? 0) >= maximumActiveStrategies) {
+          return apiError(
+            'STRATEGY_LIMIT_REACHED',
+            `Your ${billing.plan} plan allows ${maximumActiveStrategies} active strategies. Archive one or upgrade to continue.`,
+            403,
+          );
+        }
       }
     }
 
