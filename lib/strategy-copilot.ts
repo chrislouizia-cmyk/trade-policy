@@ -226,7 +226,7 @@ export const strategyCopilotSchema = {
     strategyDraft: {
       type: 'object',
       additionalProperties: false,
-      required: ['sessions', 'timeframes', 'rules', 'logicTree', 'notes'],
+      required: ['name', 'instrument', 'sessions', 'timeframes', 'rules', 'logicTree', 'riskPercent', 'minimumRR', 'notes'],
       properties: {
         name: { type: ['string', 'null'] },
         instrument: { type: ['string', 'null'] },
