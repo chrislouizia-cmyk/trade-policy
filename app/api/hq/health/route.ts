@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import {createClient} from '@/lib/supabase/server';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {billingConfig,billingEnabled} from '@/lib/billing/config';
+import {gmailOAuthConfigured} from '@/lib/server/gmail-delivery';
 
 export const runtime='nodejs';
 type Status='operational'|'degraded'|'unavailable'|'not_configured'|'not_monitored';
@@ -27,7 +28,7 @@ export async function GET(){
   if(!process.env.OPENAI_API_KEY)services.openAI={status:'not_configured',message:'API key is not configured'};
   else try{const check=await timed(async signal=>{const response=await fetch('https://api.openai.com/v1/models',{signal,headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},cache:'no-store'});if(!response.ok)throw new Error('Provider rejected probe');return true});services.openAI=success(check.latencyMs,'Authenticated API available')}catch(error){services.openAI=unavailable(error)}
   try{const check=await timed(async()=>{const {runDeterministicEngineHealthCheck}=await import('@/lib/server/engine-health-check');return runDeterministicEngineHealthCheck()});services.tradingEngine={...success(check.latencyMs,'Deterministic self-check passed'),status:'operational'}}catch{services.tradingEngine={status:'unavailable',message:'Deterministic self-check failed'}}
-  services.email={status:'not_configured',message:'No email provider connected'};
+  services.email=gmailOAuthConfigured()?{status:'operational',message:'Gmail OAuth delivery is configured'}:{status:'not_configured',message:'Gmail OAuth delivery is not configured'};
   await Promise.all(Object.entries(services).map(([service,value])=>supabase.rpc('staff_record_service_health',{p_service:service,p_status:value.status,p_latency_ms:value.latencyMs??null,p_message:value.message}))).catch(()=>undefined);
   const privateBeta:Record<string,OperationalCheck>={
     supabase:{status:services.supabase.status==='unavailable'?'UNAVAILABLE':services.supabase.status==='degraded'?'DEGRADED':'HEALTHY',message:'Authenticated database health probe'},
