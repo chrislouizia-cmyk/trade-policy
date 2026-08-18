@@ -1,7 +1,7 @@
 import {toHQStrategySummary,type HQStrategySource,type HQStrategySummary} from '@/lib/hq/strategy-summary';
 
 type Admin={from:(table:string)=>any};
-export type HQStrategyDirectoryFilters=Readonly<{q?:string;customer?:string;instrument?:string;methodology?:string;status?:string;engineVersion?:string;health?:string;timeframe?:string;strategyId?:string;ownerId?:string}>;
+export type HQStrategyDirectoryFilters=Readonly<{q?:string;customer?:string;instrument?:string;methodology?:string;status?:string;engineVersion?:string;health?:string;timeframe?:string;strategyId?:string;ownerId?:string;sort?:string}>;
 
 const newest=(values:(string|null|undefined)[])=>values.filter((value):value is string=>Boolean(value)).sort().at(-1)??null;
 const eventCounts=(rows:readonly any[],idField:string,ids:readonly string[])=>{
@@ -30,11 +30,20 @@ export async function loadHQStrategyDirectory(admin:Admin,filters:HQStrategyDire
   if(ownerError||ruleError||analysisError||decisionError||tradeError||eventError)throw ownerError??ruleError??analysisError??decisionError??tradeError??eventError;
   const ownerMap=new Map<string,string|null>((owners??[]).map((owner:any):[string,string|null]=>[String(owner.id),owner.display_name||owner.email||null]));
   const analysis=eventCounts(analyses??[],'strategy_profile_id',ids),decision=eventCounts(decisions??[],'strategy_id',ids),trade=eventCounts(trades??[],'strategy_profile_id',ids),event=eventCounts(events??[],'playbook_id',ids);
-  return rows.map(row=>{
+  const filtered=rows.map(row=>{
     const a=analysis.get(row.id)!,d=decision.get(row.id)!,t=trade.get(row.id)!,e=event.get(row.id)!;
     return toHQStrategySummary(row,ownerMap.get(row.user_id)??null,(rules??[]).filter((rule:any)=>rule.strategy_id===row.id),{analyses:a.count,decisions:d.count,tradesTaken:t.count,users:(a.count||d.count||t.count||e.count)?1:0,lastUsedAt:newest([a.lastUsedAt,d.lastUsedAt,t.lastUsedAt,e.lastUsedAt])});
   }).filter(summary=>{
     const q=filters.q?.trim(),timeframes=Object.values(summary.timeframeRoles).filter(Boolean) as string[];
     return matches(summary.name,q)&&matches(summary.customer.name,filters.customer)&&(!filters.instrument||summary.instruments.includes(filters.instrument.toUpperCase()))&&(!filters.methodology||matches(summary.category,filters.methodology)||summary.methodologies.some(item=>matches(item,filters.methodology)))&&(!filters.status||summary.state===filters.status.toUpperCase())&&(!filters.engineVersion||String(summary.engineVersion??'')===filters.engineVersion)&&(!filters.health||summary.health.state===filters.health.toUpperCase())&&(!filters.timeframe||timeframes.includes(filters.timeframe));
+  });
+  const sort=filters.sort?.toUpperCase()??'RECENTLY_ACTIVE';
+  return filtered.sort((a,b)=>{
+    if(sort==='MOST_USED')return b.usage.analyses+b.usage.decisions+b.usage.tradesTaken-(a.usage.analyses+a.usage.decisions+a.usage.tradesTaken);
+    if(sort==='LEAST_USED')return a.usage.analyses+a.usage.decisions+a.usage.tradesTaken-(b.usage.analyses+b.usage.decisions+b.usage.tradesTaken);
+    if(sort==='RECENTLY_CREATED')return String(b.createdAt??'').localeCompare(String(a.createdAt??''));
+    if(sort==='HEALTH_ISSUES')return Number(a.health.state==='HEALTHY')-Number(b.health.state==='HEALTHY');
+    if(sort==='INACTIVE_OR_ABANDONED')return Number(b.usage.activityState==='ACTIVE')-Number(a.usage.activityState==='ACTIVE');
+    return String(b.usage.lastUsedAt??b.updatedAt??'').localeCompare(String(a.usage.lastUsedAt??a.updatedAt??''));
   });
 }

@@ -24,12 +24,12 @@ export default function HQNav({permissions}:{permissions:string[]}){
   const mobilePrimary=links.filter(([label])=>primaryMobileLabels.has(label));
   const mobileMore=links.filter(([label])=>!primaryMobileLabels.has(label));
   const operations=links.find(([label])=>label==='System Operations');
-  const desktopPrimary=[...mobilePrimary.slice(0,3),...(operations?[operations]:[]),...mobilePrimary.slice(3)];
-  const desktopMore=links.filter(item=>!desktopPrimary.includes(item));
-  const desktopMoreActive=desktopMore.some(([,href])=>isActive(href));
+  // Desktop is the operational surface: do not hide primary workspaces behind
+  // an interaction-only "More" menu. CSS may still wrap on narrow widths.
+  const desktopPrimary=links;
   const mobileMoreActive=mobileMore.some(([,href])=>isActive(href));
   return <>
-    <nav className="hq-nav hq-desktop-nav" aria-label="Trade Police HQ">{desktopPrimary.map(link)}{desktopMore.length>0&&<details className="hq-more-menu hq-desktop-more"><summary className={desktopMoreActive?'active':undefined}>More</summary><div>{desktopMore.map(link)}</div></details>}</nav>
+    <nav className="hq-nav hq-desktop-nav" aria-label="Trade Police HQ">{desktopPrimary.map(link)}</nav>
     <nav className="hq-mobile-nav" aria-label="Trade Police HQ mobile navigation">
       {mobilePrimary.map(link)}
       {mobileMore.length>0&&<details className="hq-more-menu"><summary className={mobileMoreActive?'active':undefined}>More</summary><div>{mobileMore.map(link)}</div></details>}
