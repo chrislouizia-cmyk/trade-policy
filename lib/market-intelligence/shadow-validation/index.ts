@@ -6,3 +6,4 @@ export * from './shadow-summary.ts';
 export * from './shadow-validator.ts';
 export * from './order-block-shadow.ts';
 export * from './order-block-shadow-metrics.ts';
+export * from './order-block-promotion-readiness.ts';
