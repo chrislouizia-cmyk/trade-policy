@@ -11,6 +11,7 @@ const allLinks = [
   ['Compliance','/hq/compliance','compliance.view'],
   ['Support','/hq/support','support.view'],
   ['System Operations','/hq/system','system.health'],
+  ['Marketplace','/hq/marketplace','marketplace.lab'],
   ['Constitution','/hq/constitution','hq.view'],
 ] as const;
 

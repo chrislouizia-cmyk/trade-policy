@@ -6,6 +6,7 @@ import {memberAccessState} from '../lib/hq/member-access-state.ts';
 const read=(file:string)=>readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
 
 test('employee operational access is derived from enablement and invitation/login evidence',()=>{
+  assert.equal(memberAccessState({employeeEnabled:true,isCanonicalOwner:true}),'ACTIVE');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'PENDING'}),'INVITED');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'ACCEPTED'}),'PENDING');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'ACCEPTED',lastActiveAt:'2026-08-18T10:00:00Z'}),'ACTIVE');
@@ -15,7 +16,7 @@ test('employee operational access is derived from enablement and invitation/logi
 
 test('HQ desktop navigation keeps primary operational workspaces out of More',()=>{
   const source=read('components/hq/HQNav.tsx');
-  for(const label of ['Customers','Sales','System Operations','Compliance','Team','Support'])assert.match(source,new RegExp(`'${label}'`));
+  for(const label of ['Customers','Sales','System Operations','Marketplace','Compliance','Team','Support'])assert.match(source,new RegExp(`'${label}'`));
   assert.doesNotMatch(source,/desktopMore/);
 });
 

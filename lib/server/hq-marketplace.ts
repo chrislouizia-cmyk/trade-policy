@@ -10,7 +10,9 @@ export async function getHQMarketplaceContext(){
     supabase.rpc('is_owner'),supabase.rpc('has_staff_permission',{p_permission:'sales.view'}),supabase.rpc('has_staff_permission',{p_permission:'compliance.view'}),supabase.rpc('current_staff_role'),supabase.rpc('current_staff_permissions'),
   ]);
   if(!(owner||sales||compliance))redirect('/hq/login?error=access');
-  return {supabase,user,role:String(role??'HQ'),displayName:await getUserDisplayName(supabase,user),permissions:(permissions??[]).map((row:any)=>String(row.permission_key))};
+  const marketplacePermissions=(permissions??[]).map((row:any)=>String(row.permission_key));
+  marketplacePermissions.push('marketplace.lab');
+  return {supabase,user,role:String(role??'HQ'),displayName:await getUserDisplayName(supabase,user),permissions:marketplacePermissions};
 }
 
 const strings=(value:unknown)=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string').slice(0,12):[];
