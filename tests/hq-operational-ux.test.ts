@@ -9,6 +9,7 @@ test('employee operational access is derived from enablement and invitation/logi
   assert.equal(memberAccessState({employeeEnabled:true,isCanonicalOwner:true}),'ACTIVE');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'PENDING'}),'INVITED');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'ACCEPTED'}),'PENDING');
+  assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'ACCEPTED',hasConfirmedAuth:true,hasSignedIn:true}),'ACTIVE');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'ACCEPTED',lastActiveAt:'2026-08-18T10:00:00Z'}),'ACTIVE');
   assert.equal(memberAccessState({employeeEnabled:false,invitationStatus:'ACCEPTED',lastActiveAt:'2026-08-18T10:00:00Z'}),'REVOKED');
   assert.equal(memberAccessState({employeeEnabled:true,invitationStatus:'DELIVERY_FAILED'}),'FAILED');

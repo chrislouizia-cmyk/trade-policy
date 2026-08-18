@@ -36,11 +36,13 @@ test('canonical URL helper keeps production auth on the canonical hosts while Pr
  assert.equal(getHostnameRoutingDecision('trade-police-preview-123.vercel.app','/client/login').redirectTarget, undefined);
  assert.equal(getHostnameRoutingDecision('portal.tradepolice.app','/client/login').redirectTarget, undefined);
  assert.equal(getHostnameRoutingDecision('tradepolice.app','/client/login').redirectTarget, 'portal');
- assert.match(callback,/next\.startsWith\('\/hq'\) \? urls\.hq : urls\.portal/);
+ assert.match(callback,/isHQRecovery|destinationOrigin.*urls\.hq.*urls\.portal/);
 });
 test('password recovery preserves HQ and client destinations',()=>{
- assert.match(forgotPassword,/portal.*=== 'hq'/);
- assert.match(forgotPassword,/reset-password\?portal=\$\{portal\}/);
+ assert.match(forgotPassword,/auth\/callback/);
+ assert.match(forgotPassword,/next', `\/reset-password\?portal=\$\{portal\}`/);
+ assert.match(callback,/isHQRecovery/);
+ assert.match(callback,/portal === 'hq'/);
  assert.match(resetPassword,/\/hq\/login\?password=updated/);
  assert.match(resetPassword,/\/client\/login\?password=updated/);
 });
@@ -52,6 +54,17 @@ test('pending staff must set a password before atomic acceptance',()=>{
  assert.match(onboardingMigration,/status='ACCEPTED'/);
  assert.match(onboardingMigration,/organization_members set status='ACTIVE'/);
  assert.match(onboardingMigration,/ACCEPT_STAFF_INVITATION/);
+});
+
+test('recovery request message stays generic and never reveals account existence',()=>{
+ assert.match(forgotPassword,/If this email is tied to an account, a secure recovery link has been sent\./);
+ assert.doesNotMatch(forgotPassword,/This email does not exist|account does not exist|not found/);
+});
+
+test('recovery page handles invalid or expired links and password updates without creating a second Auth user',()=>{
+ assert.match(resetPassword,/invalid-link/);
+ assert.match(resetPassword,/updateUser\(\{ password \}\)/);
+ assert.doesNotMatch(resetPassword,/signUp\(|createUser\(|admin\.auth\.admin\.createUser/);
 });
 test('invitation acceptance is idempotent and pending staff have no HQ permissions',()=>{
  assert.match(onboardingMigration,/if invitation\.status='ACCEPTED'/);
