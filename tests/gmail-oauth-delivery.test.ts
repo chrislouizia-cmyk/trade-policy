@@ -17,3 +17,12 @@ test('missing OAuth configuration and Gmail failures fail closed',async()=>{
   await assert.rejects(()=>getGmailAccessToken(config,async()=>new Response('{}',{status:400})),/GMAIL_AUTH_FAILED/);
   await assert.rejects(()=>sendWithGmail({to:'a@example.com',subject:'A',body:'B'},{config,fetcher:async(input)=>String(input).includes('/token')?new Response(JSON.stringify({access_token:'fresh'}),{status:200}):new Response('{}',{status:500})}),/GMAIL_DELIVERY_FAILED/);
 });
+test('delivery emits safe stage diagnostics and preserves only external HTTP statuses',async()=>{
+  const stages:Array<[string,number|undefined]>=[];
+  await sendWithGmail({to:'a@example.com',subject:'A',body:'B'},{config,fetcher:async(input)=>String(input).includes('/token')?new Response(JSON.stringify({access_token:'fresh'}),{status:200}):new Response(JSON.stringify({id:'ok'}),{status:200}),onStage:(stage,status)=>stages.push([stage,status])});
+  assert.deepEqual(stages,[['GMAIL_CONFIG_OK',undefined],['TOKEN_EXCHANGE_START',undefined],['TOKEN_EXCHANGE_OK',200],['GMAIL_SEND_START',undefined],['GMAIL_SEND_ACCEPTED',200]]);
+  const unavailable:string[]=[];await assert.rejects(()=>sendWithGmail({to:'a@example.com',subject:'A',body:'B'},{config:null,onStage:stage=>unavailable.push(stage)}),/GMAIL_NOT_CONFIGURED/);assert.deepEqual(unavailable,['GMAIL_CONFIG_MISSING']);
+});
+test('upstream errors carry safe classified code and external status only',async()=>{
+  await assert.rejects(async()=>{try{await getGmailAccessToken(config,async()=>new Response('{}',{status:400}));}catch(error:any){assert.equal(error.code,'GMAIL_AUTH_FAILED');assert.equal(error.externalStatus,400);throw error;}},/GMAIL_AUTH_FAILED/);
+});

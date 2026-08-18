@@ -32,3 +32,9 @@ test('composer requires confirmation, shows a sending state, and preserves sent 
   assert.match(composer,/confirm\(`Send this email to \$\{customer\.email\}\?`\)/);assert.match(composer,/Sending…/);assert.match(composer,/Created: \{date\(initial\?\.created_at\)\}/);assert.match(composer,/Updated: \{date\(initial\?\.updated_at\)\}/);assert.match(composer,/initial\?\.sent_by/);
   assert.match(migration,/Recipient is required/);assert.match(migration,/provider_message_id/);assert.match(migration,/sales_email_delivery_audit/);
 });
+test('send route emits safe stage diagnostics and maps unknown exceptions to INTERNAL_DELIVERY_ERROR',()=>{
+  for(const stage of ['RESERVATION_START','RESERVATION_OK','PERSISTENCE_COMPLETE'])assert.match(route,new RegExp(stage));
+  for(const stage of ['GMAIL_CONFIG_OK','GMAIL_CONFIG_MISSING','TOKEN_EXCHANGE_START','TOKEN_EXCHANGE_OK','GMAIL_SEND_START','GMAIL_SEND_ACCEPTED'])assert.match(gmail,new RegExp(stage));
+  assert.match(route,/FAILED:\$\{code\}/);assert.match(route,/INTERNAL_DELIVERY_ERROR/);assert.match(route,/externalStatus/);
+  assert.doesNotMatch(route,/recipient_email.*console/);assert.doesNotMatch(route,/subject.*console/);assert.doesNotMatch(route,/reserved\.body.*console/);
+});
