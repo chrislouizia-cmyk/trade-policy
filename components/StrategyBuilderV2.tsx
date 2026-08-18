@@ -16,6 +16,7 @@ import {
   type RuleSelection,
 } from '@/lib/strategy-builder-v2';
 import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
+import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 type StepKey = 1 | 2 | 3 | 4 | 5;
@@ -68,9 +69,9 @@ export default function StrategyBuilderV2({
   const [copilotConversation, setCopilotConversation] = useState<Array<{ heading: string; text: string }>>([
     { heading: 'Strategy Copilot', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft you can review and refine.' },
   ]);
-  const [copilotDraft, setCopilotDraft] = useState(() => ({
+  const [copilotDraft, setCopilotDraft] = useState<StrategyCopilotDraft>(() => ({
     name: 'Draft from description',
-    instrument: '', sessions: [], timeframes: [], rules: [], logicTree: { logic: 'ALL', children: [] }, notes: [], riskPercent: 0, minimumRR: 0,
+    ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '', riskPercent: 0, minimumRR: 0,
   }));
   const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
@@ -109,7 +110,7 @@ export default function StrategyBuilderV2({
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
   }
   function initializeCopilotMode() {
-    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setCopilotInput(''); setCopilotDraft({name:'',instrument:'',sessions:[],timeframes:[],rules:[],logicTree:{logic:'ALL',children:[]},notes:[],riskPercent:0,minimumRR:0}); setCopilotReviewVisible(false); setCopilotApproved(false);
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setCopilotInput(''); setCopilotDraft({ ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '', riskPercent: 0, minimumRR: 0 }); setCopilotReviewVisible(false); setCopilotApproved(false);
   }
   function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
   function initializeBlankMode() { initializeCopilotMode(); }
