@@ -368,46 +368,28 @@ export function safeDescriptiveState(ruleKey: string, capability: Capability): {
   };
 }
 
-export type PersistedV2RuleTree = {
-  kind: 'GROUP';
-  id: string;
-  logic: RuleGroupType;
-  children: Array<
-    | { kind: 'CONDITION'; id: string; ruleId: string; group: RuleGroupType; requirement: RuleRequirement }
-    | PersistedV2RuleTree
-  >;
-};
+export type PersistedV2RuleTreeNode={type:'CONDITION';ruleKey:string;requirement:RuleRequirement;timeframe?:string}|{type:'GROUP';logic:RuleGroupType;children:PersistedV2RuleTreeNode[]};
+export type PersistedV2RuleTree={type:'GROUP';logic:RuleGroupType;children:PersistedV2RuleTreeNode[]};
+export function normalizePersistedV2RuleTree(value:unknown):PersistedV2RuleTree{
+ const node=(input:unknown):PersistedV2RuleTreeNode=>{if(!input||typeof input!=='object')throw new Error('Invalid V2 rule tree node.');const v=input as any;if(v.type==='CONDITION'){if(typeof v.ruleKey!=='string'||!v.ruleKey)throw new Error('V2 rule tree condition requires ruleKey.');return {type:'CONDITION',ruleKey:v.ruleKey,requirement:v.requirement==='OPTIONAL'?'OPTIONAL':'REQUIRED',...(typeof v.timeframe==='string'?{timeframe:v.timeframe}:{})}}if(v.type==='GROUP'){if((v.logic!=='ALL'&&v.logic!=='ANY')||!Array.isArray(v.children)||!v.children.length)throw new Error('Invalid V2 rule tree group.');return {type:'GROUP',logic:v.logic,children:v.children.map(node)}}if(v.kind==='CONDITION')return node({type:'CONDITION',ruleKey:v.ruleId,requirement:v.requirement});if(v.kind==='GROUP')return node({type:'GROUP',logic:v.logic,children:v.children});throw new Error('Unknown V2 rule tree node.');};const root=node(value);if(root.type!=='GROUP')throw new Error('V2 rule tree root must be a group.');return root;
+}
 
 export function createPersistedV2RuleTree(selectedRules: RuleSelection[]): PersistedV2RuleTree {
   const allRules = selectedRules.filter((rule) => rule.group === 'ALL');
   const anyRules = selectedRules.filter((rule) => rule.group === 'ANY');
 
-  const children: PersistedV2RuleTree['children'] = allRules.map((rule) => ({
-    kind: 'CONDITION',
-    id: `condition-${rule.key}`,
-    ruleId: rule.key,
-    group: rule.group,
-    requirement: rule.requirement,
-  }));
+  const children: PersistedV2RuleTree['children'] = allRules.map((rule) => ({type:'CONDITION',ruleKey:rule.key,requirement:rule.requirement,timeframe:rule.timeframe}));
 
   if (anyRules.length) {
     children.push({
-      kind: 'GROUP',
-      id: 'any-conditions',
+      type: 'GROUP',
       logic: 'ANY',
-      children: anyRules.map((rule) => ({
-        kind: 'CONDITION',
-        id: `condition-${rule.key}`,
-        ruleId: rule.key,
-        group: rule.group,
-        requirement: rule.requirement,
-      })),
+      children: anyRules.map((rule) => ({type:'CONDITION',ruleKey:rule.key,requirement:rule.requirement,timeframe:rule.timeframe})),
     });
   }
 
   return {
-    kind: 'GROUP',
-    id: 'root',
+    type: 'GROUP',
     logic: 'ALL',
     children,
   };

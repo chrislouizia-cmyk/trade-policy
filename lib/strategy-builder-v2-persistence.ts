@@ -1,0 +1,52 @@
+import type { PersonalTradingRule, StopLimit, StrategyMethodology, StrategyProfile, StrategyRule, StrategySession } from '../types/trade.ts';
+import { createPersistedV2RuleTree, normalizePersistedV2RuleTree, type PersistedV2RuleTree, type RuleSelection } from './strategy-builder-v2.ts';
+
+export type StrategyBuilderV2Direction = 'LONG' | 'SHORT' | 'BOTH';
+export type StrategyBuilderV2StopLogic = string | { kind: string; limits?: StopLimit[]; [key: string]: unknown };
+export type StrategyBuilderV2TargetLogic = string | { kind: string; exitConfig?: Record<string, unknown>; [key: string]: unknown };
+export type StrategyBuilderV2State = { instruments:string[]; sessions:string[]; contextTimeframe?:string; executionTimeframe?:string; methodologyIds:string[]; ruleSelections:RuleSelection[]; ruleTree?:PersistedV2RuleTree; riskPercent:number; minimumRR:number; stopLogic?:StrategyBuilderV2StopLogic; targetLogic?:StrategyBuilderV2TargetLogic; direction?:StrategyBuilderV2Direction };
+export type V2PersistedMetadata = { kind:'TRADE_POLICE_V2_METADATA'; version:1; methodologyIds:string[]; ruleSelections:RuleSelection[]; ruleTree?:PersistedV2RuleTree; contextTimeframe?:string; executionTimeframe?:string; stopLogic?:StrategyBuilderV2StopLogic; targetLogic?:StrategyBuilderV2TargetLogic; direction?:StrategyBuilderV2Direction };
+export type V2Persisted = { profile:StrategyProfile; rules:StrategyRule[]; sessions:StrategySession[]; metadata:V2PersistedMetadata };
+export const V2_METADATA_PERSONAL_RULE_KEY = 'trade-police-v2-metadata';
+
+const supported: readonly StrategySession[] = [
+  ['SYDNEY','Sydney','Australia/Sydney','08:00','17:00'],['TOKYO','Tokyo','Asia/Tokyo','09:00','18:00'],['ASIA','Asia','Asia/Tokyo','08:00','17:00'],['LONDON','London','Europe/London','08:00','17:00'],['LONDON_OPEN','London Open','Europe/London','07:00','10:00'],['LONDON_KILL_ZONE','London Kill Zone','Europe/London','07:00','10:00'],['NEW_YORK','New York','America/New_York','08:00','17:00'],['NEW_YORK_AM','New York AM','America/New_York','08:00','12:00'],['NEW_YORK_KILL_ZONE','New York Kill Zone','America/New_York','07:00','10:00'],['NEW_YORK_PM','New York PM','America/New_York','13:00','16:00'],['LONDON_NY_OVERLAP','London–New York Overlap','UTC','12:00','16:00'],['ASIA_LONDON_TRANSITION','Asia–London Transition','UTC','06:00','09:00'],['US_FUTURES_PREMARKET','US Futures Premarket','America/New_York','04:00','09:30'],['US_STOCK_PREMARKET','US Stock Premarket','America/New_York','04:00','09:30'],['US_REGULAR','US Regular Session','America/New_York','09:30','16:00'],['US_POWER_HOUR','US Power Hour','America/New_York','15:00','16:00'],['AFTER_HOURS','After Hours','America/New_York','16:00','20:00']
+].map(([sessionCode,name,timezone,startTime,endTime])=>({sessionCode,name,timezone,startTime,endTime,days:[1,2,3,4,5],allowOpenOutside:false,allowHoldOutside:true}));
+const crypto:StrategySession={sessionCode:'CRYPTO_24_7',name:'Crypto 24/7',timezone:'UTC',startTime:'00:00',endTime:'23:59',days:[0,1,2,3,4,5,6],allowOpenOutside:true,allowHoldOutside:true};
+const sessions=[...supported,crypto];
+export const V2_SUPPORTED_SESSION_CODES=sessions.map(item=>item.sessionCode) as readonly string[];
+const clone=<T>(value:T):T=>structuredClone(value);
+const sortJson=(value:unknown):unknown=>Array.isArray(value)?value.map(sortJson):value&&typeof value==='object'?Object.fromEntries(Object.keys(value as Record<string,unknown>).sort().map(key=>[key,sortJson((value as Record<string,unknown>)[key])])):value;
+const stableJson=(value:unknown)=>JSON.stringify(sortJson(value));
+
+/** Converts only known V2 session codes; unknown codes fail explicitly rather than becoming London/New York. */
+export function v2SessionToPersistedSession(sessionCode:string):StrategySession { const found=sessions.find(item=>item.sessionCode===sessionCode);if(!found)throw new Error(`Unsupported V2 session code: ${sessionCode}`);return clone(found); }
+/** Legacy/custom rows retain their own code; this operation never substitutes a preset. */
+export function persistedSessionToV2Session(session:StrategySession):string{return session.sessionCode;}
+
+function readMetadata(profile:StrategyProfile):V2PersistedMetadata|undefined {
+ const value=profile.personalRules?.find(rule=>rule.key===V2_METADATA_PERSONAL_RULE_KEY)?.value;if(typeof value!=='string')return;
+ try { const parsed=JSON.parse(value) as Partial<V2PersistedMetadata>;if(parsed.kind!=='TRADE_POLICE_V2_METADATA'||parsed.version!==1||!Array.isArray(parsed.methodologyIds)||!Array.isArray(parsed.ruleSelections))return;
+  return {kind:'TRADE_POLICE_V2_METADATA',version:1,methodologyIds:[...parsed.methodologyIds],ruleSelections:clone(parsed.ruleSelections) as RuleSelection[],...(parsed.ruleTree?{ruleTree:normalizePersistedV2RuleTree(parsed.ruleTree)}:{}),...(typeof parsed.contextTimeframe==='string'?{contextTimeframe:parsed.contextTimeframe}:{}),...(typeof parsed.executionTimeframe==='string'?{executionTimeframe:parsed.executionTimeframe}:{}),...(parsed.stopLogic!==undefined?{stopLogic:clone(parsed.stopLogic) as StrategyBuilderV2StopLogic}:{}),...(parsed.targetLogic!==undefined?{targetLogic:clone(parsed.targetLogic) as StrategyBuilderV2TargetLogic}:{}),...(parsed.direction==='LONG'||parsed.direction==='SHORT'||parsed.direction==='BOTH'?{direction:parsed.direction}:{})};
+ } catch { return; }
+}
+function limits(logic:StrategyBuilderV2StopLogic|undefined):StopLimit[]|undefined{return logic&&typeof logic!=='string'&&Array.isArray(logic.limits)?clone(logic.limits):undefined;}
+function exit(logic:StrategyBuilderV2TargetLogic|undefined):Record<string,unknown>|undefined{return logic&&typeof logic!=='string'&&logic.exitConfig?clone(logic.exitConfig):undefined;}
+function storedRule(rule:RuleSelection):StrategyRule { const automatic=rule.capability==='AUTOMATIC';return {ruleKey:rule.key,label:rule.label,enabled:true,mandatory:rule.requirement==='REQUIRED'&&rule.capability!=='DESCRIPTIVE',weight:automatic?10:rule.capability==='MANUAL'?8:rule.capability==='EXTERNAL'?6:4,minimumConfidence:automatic?72:60,timeframeRole:rule.timeframe.includes('H')?'MACRO':'TRIGGER',evaluationMode:automatic?'AUTOMATIC':rule.capability==='EXTERNAL'?'EXTERNAL':'MANUAL'}; }
+function legacySelections(profile:StrategyProfile,rules:StrategyRule[]):RuleSelection[]{return rules.map(rule=>({key:rule.ruleKey,label:rule.label,capability:rule.evaluationMode==='AUTOMATIC'?'AUTOMATIC':rule.evaluationMode==='EXTERNAL'?'EXTERNAL':'MANUAL',requirement:rule.mandatory?'REQUIRED':'OPTIONAL',timeframe:profile.entryTimeframe,group:'ALL'}));}
+
+/** Pure mapping from V2 semantic state to the existing profile, rule, and session contracts. */
+export function v2StateToPersistedStrategy(baseProfile:StrategyProfile,state:StrategyBuilderV2State):V2Persisted {
+ const ruleTree=state.ruleTree?normalizePersistedV2RuleTree(state.ruleTree):state.ruleSelections.length?createPersistedV2RuleTree(state.ruleSelections):undefined;
+ const metadata:V2PersistedMetadata={kind:'TRADE_POLICE_V2_METADATA',version:1,methodologyIds:[...state.methodologyIds],ruleSelections:clone(state.ruleSelections),...(ruleTree?{ruleTree}:{}),...(state.contextTimeframe!==undefined?{contextTimeframe:state.contextTimeframe}:{}),...(state.executionTimeframe!==undefined?{executionTimeframe:state.executionTimeframe}:{}),...(state.stopLogic!==undefined?{stopLogic:clone(state.stopLogic)}:{}),...(state.targetLogic!==undefined?{targetLogic:clone(state.targetLogic)}:{}),...(state.direction!==undefined?{direction:state.direction}:{})};
+ const stopLimitSettings=limits(state.stopLogic), stopLimits=stopLimitSettings?Object.fromEntries(stopLimitSettings.map(item=>[item.instrument,item.maximumValue])):clone(baseProfile.stopLimits), targetExit=exit(state.targetLogic);
+ const personalRules:PersonalTradingRule[]=[...(baseProfile.personalRules??[]).filter(rule=>rule.key!==V2_METADATA_PERSONAL_RULE_KEY).map(clone),{key:V2_METADATA_PERSONAL_RULE_KEY,enabled:true,value:stableJson(metadata)}];
+ const profile:StrategyProfile={...clone(baseProfile),instruments:[...state.instruments],allowedSessions:[...state.sessions],macroTimeframe:state.contextTimeframe,entryTimeframe:state.executionTimeframe??baseProfile.entryTimeframe,maximumRiskPercent:state.riskPercent,minimumRR:state.minimumRR,strategyMethodologies:state.methodologyIds.map((category):StrategyMethodology=>({category,rules:state.ruleSelections.map(rule=>rule.key)})),...(stopLimitSettings?{stopLimitSettings,stopLimits}:{}),...(targetExit?{exitConfig:{...clone(baseProfile.exitConfig??{}),...targetExit}}:{}),personalRules};
+ return {profile,rules:state.ruleSelections.map(storedRule),sessions:state.sessions.map(v2SessionToPersistedSession),metadata:clone(metadata)};
+}
+
+/** Pure hydration. Legacy profiles receive only data they already persisted; no default is invented. */
+export function persistedStrategyToV2State(profile:StrategyProfile,rules:StrategyRule[],sessionRows:StrategySession[]):StrategyBuilderV2State {
+ const metadata=readMetadata(profile), legacyStop=profile.stopLimitSettings?.length?{kind:'STOP_LIMITS',limits:clone(profile.stopLimitSettings)}:undefined, legacyTarget=profile.exitConfig&&Object.keys(profile.exitConfig).length?{kind:'EXIT_CONFIG',exitConfig:clone(profile.exitConfig)}:undefined;
+ return {instruments:[...(profile.instruments??[])],sessions:sessionRows.length?sessionRows.map(persistedSessionToV2Session):[...(profile.allowedSessions??[])],...(metadata?metadata.contextTimeframe!==undefined?{contextTimeframe:metadata.contextTimeframe}:{}:profile.macroTimeframe!==undefined?{contextTimeframe:profile.macroTimeframe}:{}),...(metadata?metadata.executionTimeframe!==undefined?{executionTimeframe:metadata.executionTimeframe}:{}:profile.entryTimeframe!==undefined?{executionTimeframe:profile.entryTimeframe}:{}),methodologyIds:metadata?[...metadata.methodologyIds]:(profile.strategyMethodologies??[]).map(item=>item.category),ruleSelections:metadata?clone(metadata.ruleSelections):legacySelections(profile,rules),...(metadata?.ruleTree?{ruleTree:clone(metadata.ruleTree)}:{}),riskPercent:profile.maximumRiskPercent,minimumRR:profile.minimumRR,...(metadata?metadata.stopLogic!==undefined?{stopLogic:clone(metadata.stopLogic)}:{}:legacyStop?{stopLogic:legacyStop}:{}),...(metadata?metadata.targetLogic!==undefined?{targetLogic:clone(metadata.targetLogic)}:{}:legacyTarget?{targetLogic:legacyTarget}:{}),...(metadata?.direction!==undefined?{direction:metadata.direction}:{})};
+}

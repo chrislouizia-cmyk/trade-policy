@@ -182,8 +182,8 @@ test('V2 UI rule tree persists A AND (B OR C) as nested ALL/ANY structure', () =
 
   assert.equal(tree.logic, 'ALL');
   assert.equal(tree.children.length, 3);
-  assert.equal(tree.children[2].kind, 'GROUP');
-  if (tree.children[2].kind === 'GROUP') {
+  assert.equal(tree.children[2].type, 'GROUP');
+  if (tree.children[2].type === 'GROUP') {
     assert.equal(tree.children[2].logic, 'ANY');
     assert.equal(tree.children[2].children.length, 2);
   }
@@ -305,7 +305,7 @@ test('V2 save/reload semantics are stable for the persisted tree and rule select
   const reloaded = createPersistedV2RuleTree(source);
   assert.deepEqual(persisted, reloaded);
   assert.equal(persisted.logic, 'ALL');
-  assert.ok(persisted.children.some((child) => child.kind === 'GROUP' && child.logic === 'ANY'));
+  assert.ok(persisted.children.some((child) => child.type === 'GROUP' && child.logic === 'ANY'));
 });
 
 test('legacy strategies without methodology metadata are not silently attached to a methodology', () => {
@@ -328,14 +328,14 @@ test('existing ALL/ANY group preservation survives rule-tree persistence exactly
   ] satisfies RuleSelection[];
   const tree = createPersistedV2RuleTree(source);
 
-  const allGroupCount = tree.children.filter((child) => child.kind === 'CONDITION').length;
-  const anyGroup = tree.children.find((child) => child.kind === 'GROUP' && child.logic === 'ANY');
+  const allGroupCount = tree.children.filter((child) => child.type === 'CONDITION').length;
+  const anyGroup = tree.children.find((child) => child.type === 'GROUP' && child.logic === 'ANY');
 
   assert.equal(allGroupCount, 2);
-  assert.ok(anyGroup && anyGroup.kind === 'GROUP');
-  if (anyGroup && anyGroup.kind === 'GROUP') {
+  assert.ok(anyGroup && anyGroup.type === 'GROUP');
+  if (anyGroup && anyGroup.type === 'GROUP') {
     assert.equal(anyGroup.children.length, 2);
-    assert.ok(anyGroup.children.every((child) => child.kind === 'CONDITION'));
+    assert.ok(anyGroup.children.every((child) => child.type === 'CONDITION'));
   }
 });
 

@@ -21,6 +21,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
 import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
+import { persistedStrategyToV2State, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -129,6 +130,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
   const [v2EntryOpen, setV2EntryOpen] = useState(false);
+  const [v2State, setV2State] = useState<StrategyBuilderV2State|undefined>();
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const quickstartRequested = searchParams.get('quickstart') === '1';
 
@@ -231,9 +233,11 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     next.isDefault = profiles.length === 0;
     next.instruments = draft.profile.instruments;
     setProfile(next);
-    setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
-    setRules(DEFAULT_RULES);
+    setSessions([]);
+    setRules([]);
     setStopLimits([]);
+    setV2State(undefined);
+    if (typeof window !== 'undefined') window.localStorage.removeItem('trade-police-strategy-draft');
     setV2EntryOpen(true);
     setBuilderStep('identity');
     setMessage('Choose a creation mode to start your new strategy.');
@@ -254,9 +258,12 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits([]);setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
   }
 
-  function handleV2Apply(nextProfile: StrategyProfile, nextRules: StrategyRule[], nextMethodologies: any[]) {
-    setProfile({ ...nextProfile, strategyMethodologies: nextMethodologies });
-    setRules(nextRules.length ? nextRules : DEFAULT_RULES);
+  function handleV2Apply(persisted: V2Persisted) {
+    setProfile(persisted.profile);
+    setRules(persisted.rules);
+    setSessions(persisted.sessions);
+    setStopLimits(persisted.profile.stopLimitSettings ?? []);
+    setV2State(persistedStrategyToV2State(persisted.profile, persisted.rules, persisted.sessions));
     setV2EntryOpen(false);
     setBuilderStep('review');
   }
@@ -421,7 +428,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');window.location.assign('/validate')}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
   if (learningConfirmation) return <StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/>;
   if (v2EntryOpen) {
-    return <StrategyBuilderV2 profile={profile} onApply={handleV2Apply} onCancel={() => { setV2EntryOpen(false); setBuilderStep('identity'); }} />;
+    return <StrategyBuilderV2 profile={profile} initialState={v2State} onApply={handleV2Apply} onCancel={() => { setV2EntryOpen(false); setBuilderStep('identity'); }} />;
   }
 
   return (
@@ -440,7 +447,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
             </button>
           ))}</>}
         </div>
-        {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>setBuilderStep('identity')}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
+        {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata')){setV2State(persistedStrategyToV2State(profile,rules,sessions));setV2EntryOpen(true)}else setBuilderStep('identity')}}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>

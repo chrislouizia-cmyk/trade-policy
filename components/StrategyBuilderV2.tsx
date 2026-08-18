@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { StrategyMethodology, StrategyProfile, StrategyRule } from '@/types/trade';
+import type { StrategyProfile } from '@/types/trade';
 import {
   METHODOLOGY_LIBRARY,
   buildDraftFromSelection,
@@ -11,15 +11,15 @@ import {
   detectStrategyConflicts,
   formatRuleSummary,
   parseCopilotPrompt,
-  safeDescriptiveState,
-  toPersistedExecutionMode,
   type Capability,
   type RuleGroupType,
   type RuleSelection,
 } from '@/lib/strategy-builder-v2';
+import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 type StepKey = 1 | 2 | 3 | 4 | 5;
+const SESSION_CODES: Record<string, string> = { London: 'LONDON', 'New York': 'NEW_YORK', LONDON: 'LONDON', NEW_YORK: 'NEW_YORK' };
 
 const CREATION_MODE_SEQUENCE: CreationPath[] = ['visual', 'copilot', 'methodology', 'blank'];
 
@@ -42,40 +42,35 @@ const defaultMethodologies = ['smc', 'support-resistance'];
 
 export default function StrategyBuilderV2({
   profile,
+  initialState,
   onApply,
   onCancel,
 }: {
   profile: StrategyProfile;
-  onApply: (nextProfile: StrategyProfile, nextRules: StrategyRule[], nextMethodologies: StrategyMethodology[]) => void;
+  initialState?: StrategyBuilderV2State;
+  onApply: (persisted: V2Persisted) => void;
   onCancel: () => void;
 }) {
   const [path, setPath] = useState<CreationPath | null>(null);
   const [step, setStep] = useState<StepKey>(1);
-  const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(defaultMethodologies);
-  const [selectedInstruments, setSelectedInstruments] = useState<string[]>(profile.instruments?.length ? profile.instruments : ['XAUUSD']);
-  const [direction, setDirection] = useState<'LONG' | 'SHORT' | 'BOTH'>('BOTH');
-  const [sessions, setSessions] = useState<string[]>(['London', 'New York']);
-  const [contextTimeframe, setContextTimeframe] = useState<string>('H1');
-  const [executionTimeframe, setExecutionTimeframe] = useState<string>('M15');
-  const [selectedRuleSelections, setSelectedRuleSelections] = useState<RuleSelection[]>(() => createDefaultRuleSelection());
-  const [riskPercent, setRiskPercent] = useState<number>(Number(profile.maximumRiskPercent ?? 0.5));
-  const [minimumRR, setMinimumRR] = useState<number>(Number(profile.minimumRR ?? 3));
-  const [stopLogic, setStopLogic] = useState<string>('Structured stop');
-  const [targetLogic, setTargetLogic] = useState<string>('RR target');
-  const [copilotInput, setCopilotInput] = useState('I trade gold during London and New York. I look for liquidity sweeps and CHoCH on M5. After that I want either an order block or support/resistance. Risk 0.5% and minimum RR 1:3.');
+  const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(initialState?.methodologyIds ?? []);
+  const [selectedInstruments, setSelectedInstruments] = useState<string[]>(initialState?.instruments ?? []);
+  const [direction, setDirection] = useState<'LONG' | 'SHORT' | 'BOTH'>(initialState?.direction ?? 'BOTH');
+  const [sessions, setSessions] = useState<string[]>(initialState?.sessions ?? []);
+  const [contextTimeframe, setContextTimeframe] = useState<string>(initialState?.contextTimeframe ?? '');
+  const [executionTimeframe, setExecutionTimeframe] = useState<string>(initialState?.executionTimeframe ?? '');
+  const [selectedRuleSelections, setSelectedRuleSelections] = useState<RuleSelection[]>(() => initialState?.ruleSelections ?? []);
+  const [riskPercent, setRiskPercent] = useState<number>(initialState?.riskPercent ?? 0);
+  const [minimumRR, setMinimumRR] = useState<number>(initialState?.minimumRR ?? 0);
+  const [stopLogic, setStopLogic] = useState<string>(typeof initialState?.stopLogic === 'string' ? initialState.stopLogic : '');
+  const [targetLogic, setTargetLogic] = useState<string>(typeof initialState?.targetLogic === 'string' ? initialState.targetLogic : '');
+  const [copilotInput, setCopilotInput] = useState('');
   const [copilotConversation, setCopilotConversation] = useState<Array<{ heading: string; text: string }>>([
     { heading: 'Strategy Copilot', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft you can review and refine.' },
   ]);
   const [copilotDraft, setCopilotDraft] = useState(() => ({
     name: 'Draft from description',
-    instrument: selectedInstruments[0] ?? 'XAUUSD',
-    sessions: ['London', 'New York'],
-    timeframes: ['M5'],
-    rules: createDefaultRuleSelection(),
-    logicTree: { logic: 'ALL', children: ['liquidity-sweep', 'choch'] },
-    notes: ['Draft ready for review'],
-    riskPercent: Number(profile.maximumRiskPercent ?? 0.5),
-    minimumRR: Number(profile.minimumRR ?? 3),
+    instrument: '', sessions: [], timeframes: [], rules: [], logicTree: { logic: 'ALL', children: [] }, notes: [], riskPercent: 0, minimumRR: 0,
   }));
   const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
@@ -109,6 +104,20 @@ export default function StrategyBuilderV2({
   );
 
   const selectedRulesText = formatRuleSummary(selectedRuleSelections);
+
+  function initializeVisualMode() {
+    setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
+  }
+  function initializeCopilotMode() {
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setCopilotInput(''); setCopilotDraft({name:'',instrument:'',sessions:[],timeframes:[],rules:[],logicTree:{logic:'ALL',children:[]},notes:[],riskPercent:0,minimumRR:0}); setCopilotReviewVisible(false); setCopilotApproved(false);
+  }
+  function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
+  function initializeBlankMode() { initializeCopilotMode(); }
+  function enterMode(mode: CreationPath) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
+
+  function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
+    return { instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
+  }
 
   function syncSelectedRulesFromMethodologies(ids: string[], nextSelections: RuleSelection[]) {
     const allowedKeys = new Set(
@@ -156,62 +165,7 @@ export default function StrategyBuilderV2({
     setSelectedRuleSelections((current) => current.map((rule) => rule.key === ruleKey ? { ...rule, ...patch } : rule));
   }
 
-  function buildVisualApply() {
-    const chosenLibraries = allLibraries.filter((library) => selectedMethodologyIds.includes(library.id));
-    const nextMethodologies: StrategyMethodology[] = chosenLibraries.map((library) => ({
-      category: library.label,
-      rules: library.rules.filter((rule) => selectedRuleSelections.some((selection) => selection.key === rule.key)).map((rule) => rule.key),
-    }));
-
-    const persistedRuleTree = createPersistedV2RuleTree(selectedRuleSelections);
-    const nextRules: StrategyRule[] = selectedRuleSelections.map((rule) => {
-      const definition = allRulesByKey[rule.key];
-      const safeState = definition ? safeDescriptiveState(definition.key, definition.capability) : { capability: 'MANUAL', evaluationMode: 'MANUAL' as const, isDescriptive: false };
-      const isDescriptive = definition?.capability === 'DESCRIPTIVE';
-      const mandatory = rule.requirement === 'REQUIRED' && !isDescriptive;
-      const weight = definition?.capability === 'AUTOMATIC' ? 10 : definition?.capability === 'MANUAL' ? 8 : definition?.capability === 'EXTERNAL' ? 6 : 4;
-      const minimumConfidence = definition?.capability === 'AUTOMATIC' ? 72 : 60;
-      const evaluationMode: StrategyRule['evaluationMode'] = safeState.evaluationMode;
-
-      return {
-        ruleKey: rule.key,
-        label: rule.label,
-        enabled: true,
-        mandatory,
-        weight,
-        minimumConfidence,
-        timeframeRole: rule.timeframe.includes('H') ? 'MACRO' : 'TRIGGER',
-        evaluationMode,
-      };
-    });
-
-    const nextProfile: StrategyProfile = {
-      ...profile,
-      name: profile.name || 'New Strategy',
-      description: profile.description || 'Strategy created from the visual V2 flow.',
-      instruments: selectedInstruments,
-      marketTypes: ['FOREX'],
-      maximumRiskPercent: riskPercent,
-      minimumRR,
-      preferredRR: Math.max(minimumRR, 1),
-      strategyMethodologies: nextMethodologies,
-      personalRules: [
-        ...selectedMethodologyIds.map((id) => ({
-          key: id,
-          enabled: true,
-          value: allLibraries.find((library) => library.id === id)?.label ?? id,
-        })),
-        {
-          key: 'v2-rule-tree',
-          enabled: true,
-          value: JSON.stringify(persistedRuleTree),
-        },
-      ],
-      requireTrendAlignment: true,
-    };
-
-    onApply(nextProfile, nextRules, nextMethodologies);
-  }
+  function buildVisualApply() { onApply(v2StateToPersistedStrategy(profile, currentState())); }
 
   function buildCopilotApply() {
     const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
@@ -228,38 +182,7 @@ export default function StrategyBuilderV2({
     setRiskPercent(draftRisk);
     setMinimumRR(draftMinimumRR);
 
-    const nextMethodologies: StrategyMethodology[] = draftRules.length
-      ? [{ category: 'AI Strategy Copilot', rules: draftRules.map((rule) => rule.key) }]
-      : [{ category: 'Drafted from description', rules: [] }];
-
-    const nextRules: StrategyRule[] = draftRules.map((rule) => {
-      const definition = allRulesByKey[rule.key];
-      const state = safeDescriptiveState(rule.key, definition?.capability ?? 'MANUAL');
-      return {
-        ruleKey: rule.key,
-        label: rule.label,
-        enabled: true,
-        mandatory: rule.requirement === 'REQUIRED' && state.isDescriptive === false,
-        weight: definition?.capability === 'AUTOMATIC' ? 10 : definition?.capability === 'MANUAL' ? 8 : definition?.capability === 'EXTERNAL' ? 6 : 4,
-        minimumConfidence: definition?.capability === 'AUTOMATIC' ? 72 : 60,
-        timeframeRole: rule.timeframe.includes('H') ? 'MACRO' : 'TRIGGER',
-        evaluationMode: state.evaluationMode,
-      };
-    });
-
-    const nextProfile: StrategyProfile = {
-      ...profile,
-      name: profile.name || 'Copilot Draft Strategy',
-      description: `${copilotInput}\n\nAI draft: ${draftRules.map((rule) => rule.label).join(', ') || 'general directional flow'}.`,
-      instruments: [draftInstrument],
-      allowedSessions: draftSessions,
-      strategyMethodologies: nextMethodologies,
-      maximumRiskPercent: draftRisk,
-      minimumRR: draftMinimumRR,
-      requireTrendAlignment: true,
-    };
-
-    onApply(nextProfile, nextRules, nextMethodologies);
+    onApply(v2StateToPersistedStrategy(profile, currentState({ instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
   }
 
   function addCopilotTurn() {
@@ -329,7 +252,7 @@ export default function StrategyBuilderV2({
 
       <div className="button-row" aria-label="Create strategy modes">
         {CREATION_MODE_SEQUENCE.map((mode) => (
-          <button key={mode} type="button" onClick={() => setPath(mode)}>
+          <button key={mode} type="button" onClick={() => enterMode(mode)}>
             {mode === 'visual' && 'Build visually'}
             {mode === 'copilot' && 'Describe your strategy — Beta'}
             {mode === 'methodology' && 'Start from a methodology'}
