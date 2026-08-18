@@ -369,6 +369,20 @@ export type OrderBlockObservation = JsonObject & {
   high: number;
 };
 
+/** Informational detector projection. It is never strategy PASS/FAIL evidence. */
+export type OrderBlockContextObservation = {
+  id: string;
+  direction: 'BULLISH' | 'BEARISH';
+  timeframe: string;
+  sourceCandleTime: Iso8601String;
+  confirmationTime: Iso8601String;
+  zoneLow: number;
+  zoneHigh: number;
+  status: 'ACTIVE' | 'PARTIALLY_MITIGATED' | 'MITIGATED' | 'INVALIDATED';
+  eligible: boolean;
+  evidenceId: string;
+};
+
 export type ContextConflict = {
   id: string;
   type: string;
@@ -395,6 +409,8 @@ export type MarketContext = {
   detectorRunId: string;
   detectorResults: DetectorResult[];
   detectorResultsByTimeframe: Record<string, DetectorResult[]>;
+  /** Read-only Order Block observations, isolated by timeframe; never authorization input. */
+  orderBlocksByTimeframe?: Record<string, { blocks: OrderBlockContextObservation[]; selected: OrderBlockContextObservation | null }>;
   warnings: string[];
   conflicts: ContextConflict[];
   overallFreshness: DataFreshness['state'];
