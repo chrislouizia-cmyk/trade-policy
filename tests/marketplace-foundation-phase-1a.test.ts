@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import type {MarketplaceInstallResult,MarketplaceListingSummary,MarketplaceReleasePreview} from '../lib/marketplace/contracts.ts';
+import type {MarketplaceInstallResult,MarketplaceLicenseBoundary,MarketplaceListingSummary,MarketplaceReleasePreview} from '../lib/marketplace/contracts.ts';
 
 const migration=readFileSync(new URL('../supabase/migrations/050_marketplace_foundation_phase_1a.sql',import.meta.url),'utf8');
 const activeStrategy=readFileSync(new URL('../lib/server/active-strategy.ts',import.meta.url),'utf8');
@@ -27,8 +27,9 @@ test('provenance is nullable and backward compatible across strategy, scan, deci
 test('marketplace contracts make safe DTOs distinct from the server-only release snapshot',()=>{
   const summary:MarketplaceListingSummary={listingId:'l',releaseId:'r',strategyName:'Name',creatorName:null,category:null,instruments:[],timeframeRoles:{macro:null,execution:null},ruleCounts:{total:0,required:0,optional:0,automatic:0,manual:0,external:0},compatibility:'NEEDS_REVIEW',displayPriceCents:3000,creatorShareCents:1500,platformShareCents:1500,commerceEnabled:false};
   const preview:MarketplaceReleasePreview={releaseId:'r',releaseVersion:1,creatorName:null,listing:summary,reviewStatus:'DRAFT',usage:{installs:0,analyses:0,decisions:0,trades:0},scores:{performance:null,marketplaceReadiness:null,scoreVersion:null}};
-  const install:MarketplaceInstallResult={installId:'i',releaseId:'r',installedStrategyId:'s',chargedCents:0,entitlementMode:'SIMULATED_INTERNAL',active:false};
-  assert.equal(preview.listing.commerceEnabled,false);assert.equal(install.active,false);
+  const install:MarketplaceInstallResult={installId:'i',releaseId:'r',installedStrategyId:'s',chargedCents:0,entitlementMode:'SIMULATED_INTERNAL',active:false,internalTest:true};
+  const license:MarketplaceLicenseBoundary={licenseModel:'RENTAL',rights:'USE_INSIDE_TRADE_POLICE',transferable:false,resellable:false,sourceAccess:false,reverseEngineeringAllowed:false};
+  assert.equal(preview.listing.commerceEnabled,false);assert.equal(install.active,false);assert.equal(license.sourceAccess,false);
   const snapshot=readFileSync(new URL('../lib/server/marketplace-release-snapshot.ts',import.meta.url),'utf8');assert.match(snapshot,/server-only/);
 });
 test('Phase 1A does not change active strategy or runtime authority',()=>{
