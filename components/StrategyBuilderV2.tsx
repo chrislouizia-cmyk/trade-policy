@@ -20,6 +20,7 @@ import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/stra
 import { validateStrategyName } from '@/lib/strategy-name';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
+export type StrategyBuilderV2Mode='CREATE'|'EDIT';
 type StepKey = 1 | 2 | 3 | 4 | 5;
 const SESSION_CODES: Record<string, string> = { London: 'LONDON', 'New York': 'NEW_YORK', LONDON: 'LONDON', NEW_YORK: 'NEW_YORK' };
 
@@ -45,17 +46,19 @@ const defaultMethodologies = ['smc', 'support-resistance'];
 export default function StrategyBuilderV2({
   profile,
   initialState,
+  mode,
   onApply,
   onCancel,
   onStateChange,
 }: {
   profile: StrategyProfile;
   initialState?: StrategyBuilderV2State;
+  mode: StrategyBuilderV2Mode;
   onApply: (persisted: V2Persisted) => void;
   onCancel: () => void;
   onStateChange?: (state: StrategyBuilderV2State) => void;
 }) {
-  const [path, setPath] = useState<CreationPath | null>(null);
+  const [path, setPath] = useState<CreationPath | null>(()=>mode==='EDIT'?'visual':null);
   const [step, setStep] = useState<StepKey>(1);
   const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(initialState?.methodologyIds ?? []);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>(initialState?.instruments ?? []);
@@ -254,24 +257,24 @@ export default function StrategyBuilderV2({
       <div className="conversation-prompt">
         <span aria-hidden="true">TP</span>
         <div>
-          <p className="muted">NEW STRATEGY</p>
-          <h2>Build a strategy without learning the engine schema</h2>
-          <p>Trade Police turns your trading style into a structured, reviewable playbook.</p>
+          <p className="muted">{mode==='EDIT'?'EDIT STRATEGY':'NEW STRATEGY'}</p>
+          <h2>{mode==='EDIT'?strategyName||profile.name:'Build a strategy without learning the engine schema'}</h2>
+          <p>{mode==='EDIT'?'Editing your existing strategy. Changes update this saved strategy only.':'Trade Police turns your trading style into a structured, reviewable playbook.'}</p>
         </div>
       </div>
 
-      <div className="button-row" aria-label="Create strategy modes">
-        {CREATION_MODE_SEQUENCE.map((mode) => (
-          <button key={mode} type="button" onClick={() => enterMode(mode)}>
-            {mode === 'visual' && 'Build visually'}
-            {mode === 'copilot' && 'Describe your strategy — Beta'}
-            {mode === 'methodology' && 'Start from a methodology'}
-            {mode === 'blank' && 'Start blank'}
+      {mode==='CREATE'&&<div className="button-row" aria-label="Create strategy modes">
+        {CREATION_MODE_SEQUENCE.map((creationPath) => (
+          <button key={creationPath} type="button" onClick={() => enterMode(creationPath)}>
+            {creationPath === 'visual' && 'Build visually'}
+            {creationPath === 'copilot' && 'Describe your strategy — Beta'}
+            {creationPath === 'methodology' && 'Start from a methodology'}
+            {creationPath === 'blank' && 'Start blank'}
           </button>
         ))}
-      </div>
+      </div>}
 
-      {!path && (
+      {mode==='CREATE'&&!path && (
         <div className="strategy-v2-panel">
           <h3>Create Strategy</h3>
           <p className="muted">Choose how you want to begin. No mode opens automatically.</p>
@@ -280,6 +283,7 @@ export default function StrategyBuilderV2({
 
       {path === 'visual' && (
         <div className="strategy-v2-panel">
+          {mode==='EDIT'&&<label>Strategy name<input value={strategyName} onChange={event=>setStrategyName(event.target.value)} placeholder="Name this strategy" /></label>}
           {stepRouter}
 
           {step === 1 && (
