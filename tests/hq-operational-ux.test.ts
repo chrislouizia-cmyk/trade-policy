@@ -33,8 +33,8 @@ test('strategy directory is browsable and paginated without a search query',()=>
   assert.match(route,/all\.slice\(\(page-1\)\*pageSize,page\*pageSize\)/);
 });
 
-test('permission profile editor selects instead of toggling and remounts on profile identity',()=>{
+test('permission profile editor selects instead of toggling and opens one dedicated editor',()=>{
   const source=read('components/hq/PermissionProfileManager.tsx');
-  assert.match(source,/setEditing\(profile\)/);assert.match(source,/key=\{editing\?\.id\?\?'new'\}/);assert.match(source,/Close permission profile editor/);
+  assert.match(source,/setEditing\(profile\)/);assert.match(source,/createPortal/);assert.match(source,/permission-profile-editor-backdrop/);assert.match(source,/Close permission profile editor/);
   assert.doesNotMatch(source,/setEditing\(editing===profile/);
 });
