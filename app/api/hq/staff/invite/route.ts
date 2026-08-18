@@ -70,7 +70,10 @@ export async function POST(request:Request){
  }catch(error){const message=error instanceof Error?error.message:'Unexpected invitation error.';serverLog('error','unexpected_failure',{requestId,error:message});return jsonError(`Employee invitation failed: ${message}`,500,requestId,'UNEXPECTED_FAILURE')}
 }
 
-const ActionSchema=z.object({invitationId:z.string().uuid(),action:z.enum(['resend','revoke'])});
+const ActionSchema=z.union([
+ z.object({action:z.literal('revoke'),invitationId:z.string().uuid()}),
+ z.object({action:z.literal('resend'),invitationId:z.string().uuid().optional(),employeeId:z.string().uuid().optional()}).refine(value=>Boolean(value.invitationId||value.employeeId),{message:'An invitation or employee identifier is required.'}),
+]);
 export async function PATCH(request:Request){
  const requestId=crypto.randomUUID();
  try{
@@ -85,7 +88,14 @@ export async function PATCH(request:Request){
    if(revoked.userId){const cleanup=await admin.auth.admin.deleteUser(revoked.userId);if(cleanup.error){serverLog('error','revoked_auth_cleanup_failed',{requestId,userId:revoked.userId,error:cleanup.error.message});return jsonError('Invitation was revoked, but Auth cleanup requires attention.',500,requestId,'AUTH_CLEANUP_FAILED')}}
    return NextResponse.json({ok:true,message:`Invitation for ${revoked.email} revoked.`,requestId});
   }
-  const {data:invitation,error:prepareError}=await supabase.rpc('resend_staff_invitation_prepare_v1',{p_invitation_id:parsed.data.invitationId,p_request_id:requestId});
+  let invitationId=parsed.data.invitationId;
+  if(!invitationId){
+   const {data:reconciled,error:reconcileError}=await supabase.rpc('reconcile_staff_invitation_v1',{p_employee_id:parsed.data.employeeId,p_request_id:requestId});
+   if(reconcileError||!reconciled?.id)return jsonError(reconcileError?.message||'The employee invitation could not be safely reconciled.',400,requestId,'INVITATION_RECONCILIATION_FAILED');
+   invitationId=reconciled.id;
+   serverLog('info','invitation_reconciled_for_resend',{requestId,invitationId,reconciled:Boolean(reconciled.reconciled)});
+  }
+  const {data:invitation,error:prepareError}=await supabase.rpc('resend_staff_invitation_prepare_v1',{p_invitation_id:invitationId,p_request_id:requestId});
   if(prepareError)return jsonError(prepareError.message,400,requestId,'RESEND_NOT_ALLOWED');
   const {data:pendingAuth,error:pendingAuthError}=await admin.auth.admin.getUserById(invitation.userId);
   if(pendingAuthError||!pendingAuth.user||pendingAuth.user.email_confirmed_at||pendingAuth.user.last_sign_in_at)return jsonError('Invitation is no longer eligible for resend.',409,requestId,'RESEND_NOT_ALLOWED');

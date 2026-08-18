@@ -10,6 +10,7 @@ const pending=readFileSync(new URL('../components/hq/PendingInvitations.tsx',imp
 const lifecycleMigration=readFileSync(new URL('../supabase/migrations/036_reliable_staff_invitations.sql',import.meta.url),'utf8');
 const migration=readFileSync(new URL('../supabase/migrations/037_secure_staff_invitation_operations.sql',import.meta.url),'utf8');
 const onboardingMigration=readFileSync(new URL('../supabase/migrations/047_hq_employee_onboarding.sql',import.meta.url),'utf8');
+const recoveryMigration=readFileSync(new URL('../supabase/migrations/052_staff_row_invitation_recovery.sql',import.meta.url),'utf8');
 const onboardingPage=readFileSync(new URL('../app/hq/onboarding/page.tsx',import.meta.url),'utf8');
 const onboardingForm=readFileSync(new URL('../components/hq/HQOnboardingForm.tsx',import.meta.url),'utf8');
 const onboardingRoute=readFileSync(new URL('../app/api/hq/staff/onboarding/route.ts',import.meta.url),'utf8');
@@ -129,6 +130,40 @@ test('pending invitations refresh and expose complete lifecycle actions',()=>{
  assert.match(workspace,/setInvitationRefresh/);assert.match(workspace,/PendingInvitations/);
  for(const field of ['Employee','Department','Position','Profile','Manager','Status','Created','Invited by','Resend','Revoke'])assert.match(pending,new RegExp(field));
  for(const status of ['PENDING','ACCEPTED','EXPIRED','DELIVERY_FAILED','REVOKED'])assert.match(lifecycleMigration,new RegExp(status));
+});
+test('team rows expose only safe invitation references and use the existing resend endpoint',()=>{
+ assert.match(recoveryMigration,/case when can_manage then si\.id else null end invitation_id/);
+ assert.match(recoveryMigration,/invitation_recovery_available/);
+ assert.match(recoveryMigration,/has_staff_permission\('staff\.manage'\)/);
+ assert.match(workspace,/invitation_id\?:string\|null/);
+ assert.match(workspace,/Resend invitation/);
+ assert.match(workspace,/action:'resend',invitationId:row\.invitation_id/);
+ assert.match(workspace,/action:'resend',employeeId:row\.user_id/);
+});
+test('missing invitation recovery preserves the existing staff identity and organizational configuration',()=>{
+ assert.match(recoveryMigration,/reconcile_staff_invitation_v1\(p_employee_id uuid,p_request_id uuid\)/);
+ assert.match(recoveryMigration,/select \* into target from public\.staff_roles where user_id=p_employee_id and organization_id=caller_org for update/);
+ assert.match(recoveryMigration,/select \* into target_user from auth\.users where id=target\.user_id/);
+ assert.match(recoveryMigration,/insert into public\.staff_invitations/);
+ assert.doesNotMatch(recoveryMigration,/insert into public\.staff_roles/);
+ assert.doesNotMatch(recoveryMigration,/insert into public\.organization_members/);
+ assert.match(recoveryMigration,/department_row\.id.*position_row\.id.*profile_row\.id/s);
+ assert.match(recoveryMigration,/RECONCILE_STAFF_INVITATION/);
+});
+test('resend reconciles only when needed and preserves invitation lifecycle authority',()=>{
+ assert.match(route,/reconcile_staff_invitation_v1/);
+ assert.match(route,/if\(!invitationId\)/);
+ assert.match(route,/resend_staff_invitation_prepare_v1/);
+ assert.match(route,/inviteUserByEmail\(invitation\.email/);
+ assert.match(route,/mark_staff_invitation_resent_v1/);
+ assert.match(onboardingMigration,/status='ACCEPTED'/);
+ assert.match(onboardingMigration,/last_sign_in_at/);
+});
+test('staff invitation recovery is authenticated-only and fails closed for unauthorized callers',()=>{
+ assert.match(recoveryMigration,/auth\.uid\(\) is null then raise exception 'Authentication required'/);
+ assert.match(recoveryMigration,/Staff management permission denied/);
+ assert.match(recoveryMigration,/revoke all on function public\.reconcile_staff_invitation_v1\(uuid,uuid\) from public,anon/);
+ assert.match(recoveryMigration,/grant execute on function public\.reconcile_staff_invitation_v1\(uuid,uuid\) to authenticated/);
 });
 test('non-JSON and network failures cannot fail silently',()=>{
  assert.match(workspace,/response\.text\(\)/);assert.match(workspace,/without a valid response/);assert.match(workspace,/catch\(error\)/);
