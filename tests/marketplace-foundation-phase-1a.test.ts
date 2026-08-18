@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import type {MarketplaceInstallResult,MarketplaceLicenseBoundary,MarketplaceListingSummary,MarketplaceReleasePreview} from '../lib/marketplace/contracts.ts';
 
 const migration=readFileSync(new URL('../supabase/migrations/050_marketplace_foundation_phase_1a.sql',import.meta.url),'utf8');
+const serviceRoleGrantMigration=readFileSync(new URL('../supabase/migrations/053_marketplace_service_role_catalog_read.sql',import.meta.url),'utf8');
 const activeStrategy=readFileSync(new URL('../lib/server/active-strategy.ts',import.meta.url),'utf8');
 const analyze=readFileSync(new URL('../app/api/market/analyze/route.ts',import.meta.url),'utf8');
 const validate=readFileSync(new URL('../app/api/validate/route.ts',import.meta.url),'utf8');
@@ -19,6 +20,15 @@ test('fixed display-only pricing and simulated installs cannot charge commerce',
 test('release snapshots and internal listing tables are inaccessible directly to customer roles',()=>{
   assert.match(migration,/enable row level security/);assert.match(migration,/revoke all on public\.marketplace_strategy_releases,public\.marketplace_listings,public\.marketplace_installs,public\.marketplace_release_rankings,public\.marketplace_review_events from public,anon,authenticated/);
   assert.match(migration,/marketplace installs select own/);assert.doesNotMatch(migration,/create policy .*releases.*for select to authenticated/i);
+});
+test('forward-only service-role grants are limited to the catalog tables required by the HQ route',()=>{
+  for(const table of ['marketplace_listings','marketplace_strategy_releases','marketplace_release_rankings']){
+    assert.match(serviceRoleGrantMigration,new RegExp(`grant select on table public\\.${table} to service_role;`,'i'));
+  }
+  assert.doesNotMatch(serviceRoleGrantMigration,/grant select.*to authenticated/i);
+  assert.doesNotMatch(serviceRoleGrantMigration,/grant select.*to anon/i);
+  assert.doesNotMatch(serviceRoleGrantMigration,/grant select.*marketplace_installs.*service_role/i);
+  assert.doesNotMatch(serviceRoleGrantMigration,/grant select.*marketplace_review_events.*service_role/i);
 });
 test('provenance is nullable and backward compatible across strategy, scan, decision, and trade records',()=>{
   for(const table of ['strategy_profiles','market_scans','decision_reports','active_trades'])assert.match(migration,new RegExp(`alter table public\\.${table} add column if not exists marketplace_`));
