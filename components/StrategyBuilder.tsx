@@ -13,6 +13,7 @@ import StrategyPersonalization from '@/components/StrategyPersonalization';
 import StrategyLearningConfirmation from '@/components/StrategyLearningConfirmation';
 import MethodologyVerification from '@/components/MethodologyVerification';
 import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
+import StrategyInspector from '@/components/StrategyInspector';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
 import { normalizeStrategyProfile } from '@/lib/strategy-policy';
@@ -21,8 +22,9 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
 import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
-import { persistedStrategyToV2State, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
+import { persistedStrategyToV2State, v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { validateStrategyName } from '@/lib/strategy-name';
+import { isStrategyDirty } from '@/lib/strategy-dirty-state';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -133,6 +135,10 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [v2EntryOpen, setV2EntryOpen] = useState(false);
   const [v2State, setV2State] = useState<StrategyBuilderV2State|undefined>();
   const [savedStrategy, setSavedStrategy] = useState<{id:string;name:string;isDefault:boolean}|null>(null);
+  const [v2Baseline,setV2Baseline]=useState<StrategyBuilderV2State|null>(null);
+  const [v2Draft,setV2Draft]=useState<StrategyBuilderV2State|null>(null);
+  const [pendingNavigation,setPendingNavigation]=useState<null|(()=>void)>(null);
+  const [dirtyPrompt,setDirtyPrompt]=useState(false);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const finalReviewNameError=validateStrategyName(profile.name);
   const quickstartRequested = searchParams.get('quickstart') === '1';
@@ -227,8 +233,12 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setStopLimits(hydrated.stopLimits);
     setMessage('');
   }
+  function requestOpenProfile(target: StrategyProfile) { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{void openProfile(target)});setDirtyPrompt(true);return;} void openProfile(target); }
 
   function startNew() {
+    if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>startNewNow());setDirtyPrompt(true);return;} startNewNow();
+  }
+  function startNewNow() {
     const draft = createNewStrategyDraft();
     const next = cloneDefault();
     next.id = undefined;
@@ -240,6 +250,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setRules([]);
     setStopLimits([]);
     setV2State(undefined);
+    setV2Baseline(null);setV2Draft(null);
     if (typeof window !== 'undefined') window.localStorage.removeItem('trade-police-strategy-draft');
     setV2EntryOpen(true);
     setBuilderStep('identity');
@@ -271,40 +282,32 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     setBuilderStep('review');
   }
 
-  async function save() {
-    const nameError=validateStrategyName(profile.name); if (nameError) return setMessage(nameError);
-    if (profile.instruments.length === 0) return setMessage('Select at least one instrument.');
-    if (profile.waitScore >= profile.authorizationScore) return setMessage('WAIT score must be lower than AUTHORIZED score.');
-    const updatingExisting=Boolean(profile.id);
+  async function save(persistedOverride?:V2Persisted):Promise<boolean> {
+    const saveProfile=persistedOverride?.profile??profile, saveRules=persistedOverride?.rules??rules, saveSessions=persistedOverride?.sessions??sessions, saveStops=persistedOverride?.profile.stopLimitSettings??stopLimits;
+    const nameError=validateStrategyName(saveProfile.name); if (nameError) {setMessage(nameError);return false;}
+    if (saveProfile.instruments.length === 0) {setMessage('Select at least one instrument.');return false;}
+    if (saveProfile.waitScore >= saveProfile.authorizationScore) {setMessage('WAIT score must be lower than AUTHORIZED score.');return false;}
+    const updatingExisting=Boolean(saveProfile.id);
     setSaving(true);
     setMessage('');
     try {
-    const enabledRules = rules.filter((rule) => rule.enabled);
-    const evidenceWeights = { ...profile.evidenceWeights };
+    const enabledRules = saveRules.filter((rule) => rule.enabled);
+    const evidenceWeights = { ...saveProfile.evidenceWeights };
     enabledRules.forEach((rule) => {
       if (rule.ruleKey in evidenceWeights) evidenceWeights[rule.ruleKey as EvidenceKey] = rule.weight;
     });
     const requiredEvidence = enabledRules.filter((rule) => rule.mandatory && rule.ruleKey in evidenceWeights).map((rule) => rule.ruleKey as EvidenceKey);
-    const legacyStopLimits = { ...profile.stopLimits };
-    stopLimits.forEach((limit) => { legacyStopLimits[limit.instrument] = limit.maximumValue; });
+    const legacyStopLimits = { ...saveProfile.stopLimits };
+    saveStops.forEach((limit) => { legacyStopLimits[limit.instrument] = limit.maximumValue; });
 
-    const normalized=normalizeStrategyProfile(profile);
+    const normalized=normalizeStrategyProfile(saveProfile);
     const row = {
       engine_version:2,
-      name: profile.name.trim(),
-      description: profile.description ?? '',
-      is_default: Boolean(profile.isDefault),
+      name: saveProfile.name.trim(), description: saveProfile.description ?? '', is_default: Boolean(saveProfile.isDefault),
       is_archived: false,
-      market_types: profile.marketTypes ?? ['FOREX'],
-      instruments: profile.instruments,
-      macro_timeframe: profile.macroTimeframe,
-      trend_timeframe: profile.trendTimeframe,
-      confirmation_timeframe: profile.confirmationTimeframe,
-      entry_timeframe: profile.entryTimeframe,
-      trigger_timeframe: profile.triggerTimeframe,
-      minimum_rr: profile.minimumRR,
-      preferred_rr: profile.preferredRR,
-      maximum_risk_percent: profile.maximumRiskPercent,
+      market_types: saveProfile.marketTypes ?? ['FOREX'],
+      instruments: saveProfile.instruments,
+      macro_timeframe: saveProfile.macroTimeframe, trend_timeframe: saveProfile.trendTimeframe, confirmation_timeframe: saveProfile.confirmationTimeframe, entry_timeframe: saveProfile.entryTimeframe, trigger_timeframe: saveProfile.triggerTimeframe, minimum_rr: saveProfile.minimumRR, preferred_rr: saveProfile.preferredRR, maximum_risk_percent: saveProfile.maximumRiskPercent,
       maximum_daily_risk_percent: profile.maximumDailyRiskPercent,
       maximum_weekly_risk_percent: profile.maximumWeeklyRiskPercent,
       maximum_daily_loss_percent: profile.maximumDailyLossPercent,
@@ -319,7 +322,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       green_day_extra_risk_multiplier: profile.greenDayExtraRiskMultiplier ?? 0.5,
       green_day_require_authorized: profile.greenDayRequireAuthorized !== false,
       maximum_consecutive_losses: profile.maximumConsecutiveLosses,
-      allowed_sessions: sessions.map((item) => item.sessionCode),
+      allowed_sessions: saveSessions.map((item) => item.sessionCode),
       avoid_high_impact_news: profile.newsMode !== 'ALLOW',
       news_mode: profile.newsMode,
       news_block_minutes_before: profile.newsBlockMinutesBefore,
@@ -344,24 +347,21 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       ai_behavior: normalized.aiBehavior,
     };
     const response=await fetch('/api/strategies/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      strategyId:profile.id??null,activate:Boolean(profile.isDefault),profile:row,
-      instruments:buildPayloadInstruments(profile.instruments),
-      sessions:sessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})),
-      rules:rules.map((rule,index)=>({rule_key:rule.ruleKey,label:rule.label,enabled:rule.enabled,mandatory:rule.mandatory,weight:rule.weight,minimum_confidence:rule.minimumConfidence,timeframe_role:rule.timeframeRole,evaluation_mode:rule.evaluationMode??'AUTOMATIC',sort_order:index})),
-      stopLimits:buildPayloadStopLimits(profile.instruments, stopLimits),
+      strategyId:saveProfile.id??null,activate:Boolean(saveProfile.isDefault),profile:row,
+      instruments:buildPayloadInstruments(saveProfile.instruments), sessions:saveSessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})), rules:saveRules.map((rule,index)=>({rule_key:rule.ruleKey,label:rule.label,enabled:rule.enabled,mandatory:rule.mandatory,weight:rule.weight,minimum_confidence:rule.minimumConfidence,timeframe_role:rule.timeframeRole,evaluation_mode:rule.evaluationMode??'AUTOMATIC',sort_order:index})),stopLimits:buildPayloadStopLimits(saveProfile.instruments, saveStops),
     })});
     const result=await response.json();
     if(!response.ok)throw new Error(apiErrorMessage(result,'Could not save strategy.'));
     if(!result.strategyId||result.saved!==true||!result.strategy||result.strategy.id!==result.strategyId||typeof result.strategy.name!=='string'||!result.strategy.name.trim())throw new Error('Strategy persistence response was incomplete.');
-    const savedProfile:StrategyProfile={...normalized,...profile,id:result.strategyId,allowedSessions:sessions.map(item=>item.sessionCode),requiredEvidence,evidenceWeights,rules:[...rules],stopLimits:legacyStopLimits,stopLimitSettings:[...stopLimits]};
+    const savedProfile:StrategyProfile={...normalized,...saveProfile,id:result.strategyId,allowedSessions:saveSessions.map(item=>item.sessionCode),requiredEvidence,evidenceWeights,rules:[...saveRules],stopLimits:legacyStopLimits,stopLimitSettings:[...saveStops]};
     await loadAll(result.strategyId);
     setSavedStrategy({id:result.strategy.id,name:result.strategy.name,isDefault:Boolean(result.strategy.is_default)}); setMessage(`Strategy saved — ${result.strategy.name}`);
-    if(refinementRequested){setVerification({profile:savedProfile,rules:[...rules]});setLearningConfirmation(null);setRefinementRequested(false)}
-    else setLearningConfirmation({profile:savedProfile,rules:[...rules]});
+    if(refinementRequested){setVerification({profile:savedProfile,rules:[...saveRules]});setLearningConfirmation(null);setRefinementRequested(false)}
+    else setLearningConfirmation({profile:savedProfile,rules:[...saveRules]});
     void trackBetaEvent(updatingExisting?'PLAYBOOK_UPDATED':'PLAYBOOK_CREATED',result.strategyId);void trackBetaEvent('STRATEGY_SAVED',result.strategyId);
-    window.dispatchEvent(new CustomEvent('trade-police:strategy-changed',{detail:{strategyId:result.strategyId}}));
+    window.dispatchEvent(new CustomEvent('trade-police:strategy-changed',{detail:{strategyId:result.strategyId}}));return true;
     } catch (error) {
-      setMessage(error instanceof Error&&error.message.startsWith('Could not save strategy:')?error.message:`Could not save strategy: ${error instanceof Error?error.message:'Unknown persistence error.'}`);
+      setMessage(error instanceof Error&&error.message.startsWith('Could not save strategy:')?error.message:`Could not save strategy: ${error instanceof Error?error.message:'Unknown persistence error.'}`);return false;
     } finally {
       setSaving(false);
     }
@@ -431,7 +431,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');window.location.assign('/validate')}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
   if (learningConfirmation) return <><section className="card strategy-save-success" aria-live="polite"><strong>Strategy saved — {savedStrategy?.name??learningConfirmation.profile.name}</strong><p>{savedStrategy?.isDefault?'Active strategy':'Saved strategy — not active.'}</p><button type="button" onClick={()=>{setLearningConfirmation(null);void loadAll(savedStrategy?.id)}}>View strategy</button></section><StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/></>;
   if (v2EntryOpen) {
-    return <StrategyBuilderV2 profile={profile} initialState={v2State} onApply={handleV2Apply} onCancel={() => { setV2EntryOpen(false); setBuilderStep('identity'); }} />;
+    return <><StrategyBuilderV2 profile={profile} initialState={v2State} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Save or discard your strategy edits before leaving.</p><div className="button-row"><button className="primary" disabled={saving} onClick={()=>{const draft=v2Draft;if(!draft)return;void save(v2StateToPersistedStrategy(profile,draft)).then(saved=>{if(!saved)return;setV2Baseline(draft);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.();});}}> {saving?'Saving…':'Save changes'}</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
   }
 
   return (
@@ -440,12 +440,12 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
         <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
         <div className="strategy-list">
           {activeProfiles.map((item) => (
-            <button type="button" className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => void openProfile(item)}>
+            <button type="button" className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => requestOpenProfile(item)}>
               <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
             </button>
           ))}
           {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
-            <button type="button" className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => void openProfile(item)}>
+            <button type="button" className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => requestOpenProfile(item)}>
               <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
             </button>
           ))}</>}
@@ -454,6 +454,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
+        {selectedProfile&&<StrategyInspector profile={profile} rules={rules} sessions={sessions} v2={persistedStrategyToV2State(profile,rules,sessions)} onEdit={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata')){setV2State(persistedStrategyToV2State(profile,rules,sessions));setV2EntryOpen(true)}else setMessage('This legacy strategy has no V2 metadata. Edit it through the legacy fields or explicitly upgrade it.')}} onDuplicate={()=>void duplicate(selectedProfile)} onArchive={()=>void archive(selectedProfile)} onRestore={()=>void restore(selectedProfile)} onActivate={()=>void setActive(selectedProfile)}/>}
         {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">MY STRATEGIES</p><h2>No saved strategies yet</h2><p>Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>Create New Strategy</button><button type="button" onClick={() => useStarterRules()}>Use starter rules</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">

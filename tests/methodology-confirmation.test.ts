@@ -42,7 +42,7 @@ test('confirmation UI contains Trading DNA and explicit verification actions',()
 });
 
 test('successful save opens confirmation and edit reopens the editor',()=>{
-  assert.match(builder,/setLearningConfirmation\(\{profile:savedProfile,rules:\[\.\.\.rules\]\}\)/);
+  assert.match(builder,/setLearningConfirmation\(\{profile:savedProfile,rules:\[\.\.\.saveRules\]\}\)/);
   assert.match(builder,/onEdit=\{\(\)=>\{[^}]*setLearningConfirmation\(null\);setBuilderStep\('identity'\)\}\}/);
   assert.doesNotMatch(builder,/setMessage\(['"]Saved['"]\)/);
 });

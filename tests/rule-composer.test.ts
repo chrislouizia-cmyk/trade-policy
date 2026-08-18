@@ -91,8 +91,9 @@ test('legacy StrategyRule rows automatically appear without data loss',()=>{
   assert.deepEqual({enabled:stored.enabled,mandatory:stored.mandatory,weight:stored.weight,minimumConfidence:stored.minimumConfidence},{enabled:true,mandatory:true,weight:25,minimumConfidence:70});
 });
 
-test('Strategy Builder mounts Rule Composer and persistence uses no new schema',()=>{
+test('Strategy Builder mounts Rule Composer and persists the current canonical rule set',()=>{
   assert.match(builder,/RuleComposer/);
-  assert.match(builder,/rules:rules\.map/);
+  assert.match(builder,/const saveProfile=persistedOverride\?\.profile\?\?profile, saveRules=persistedOverride\?\.rules\?\?rules/);
+  assert.match(builder,/rules:saveRules\.map/);
   assert.match(component,/ALL group|ANY group/);
 });

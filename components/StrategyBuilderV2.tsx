@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { StrategyProfile } from '@/types/trade';
 import {
   METHODOLOGY_LIBRARY,
@@ -47,11 +47,13 @@ export default function StrategyBuilderV2({
   initialState,
   onApply,
   onCancel,
+  onStateChange,
 }: {
   profile: StrategyProfile;
   initialState?: StrategyBuilderV2State;
   onApply: (persisted: V2Persisted) => void;
   onCancel: () => void;
+  onStateChange?: (state: StrategyBuilderV2State) => void;
 }) {
   const [path, setPath] = useState<CreationPath | null>(null);
   const [step, setStep] = useState<StepKey>(1);
@@ -123,6 +125,7 @@ export default function StrategyBuilderV2({
   function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
     return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
   }
+  useEffect(() => { onStateChange?.(currentState()); }, [strategyName, selectedInstruments, sessions, contextTimeframe, executionTimeframe, selectedMethodologyIds, selectedRuleSelections, riskPercent, minimumRR, stopLogic, targetLogic, direction]);
 
   function syncSelectedRulesFromMethodologies(ids: string[], nextSelections: RuleSelection[]) {
     const allowedKeys = new Set(
