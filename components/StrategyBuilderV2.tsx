@@ -17,6 +17,7 @@ import {
 } from '@/lib/strategy-builder-v2';
 import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
+import { validateStrategyName } from '@/lib/strategy-name';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 type StepKey = 1 | 2 | 3 | 4 | 5;
@@ -63,6 +64,7 @@ export default function StrategyBuilderV2({
   const [selectedRuleSelections, setSelectedRuleSelections] = useState<RuleSelection[]>(() => initialState?.ruleSelections ?? []);
   const [riskPercent, setRiskPercent] = useState<number>(initialState?.riskPercent ?? 0);
   const [minimumRR, setMinimumRR] = useState<number>(initialState?.minimumRR ?? 0);
+  const [strategyName, setStrategyName] = useState<string>(initialState?.name ?? profile.name ?? '');
   const [stopLogic, setStopLogic] = useState<string>(typeof initialState?.stopLogic === 'string' ? initialState.stopLogic : '');
   const [targetLogic, setTargetLogic] = useState<string>(typeof initialState?.targetLogic === 'string' ? initialState.targetLogic : '');
   const [copilotInput, setCopilotInput] = useState('');
@@ -112,14 +114,14 @@ export default function StrategyBuilderV2({
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
   }
   function initializeCopilotMode() {
-    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setCopilotInput(''); setCopilotDraft({ ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '' }); setCopilotReviewVisible(false); setCopilotApproved(false); setCopilotRefinementInput('');
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft({ ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '' }); setCopilotReviewVisible(false); setCopilotApproved(false); setCopilotRefinementInput('');
   }
   function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
   function initializeBlankMode() { initializeCopilotMode(); }
   function enterMode(mode: CreationPath) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
 
   function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
-    return { instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
+    return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
   }
 
   function syncSelectedRulesFromMethodologies(ids: string[], nextSelections: RuleSelection[]) {
@@ -171,6 +173,7 @@ export default function StrategyBuilderV2({
   function buildVisualApply() { onApply(v2StateToPersistedStrategy(profile, currentState())); }
 
   function buildCopilotApply() {
+    const nameError = validateStrategyName(strategyName); if (nameError) { setCopilotApplyError(nameError); return; }
     if (!contextTimeframe || !executionTimeframe) { setCopilotApplyError('Choose both context and execution timeframes before applying this strategy.'); return; }
     const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
     const draftInstrument = copilotDraft.instrument && ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', 'NAS100'].includes(copilotDraft.instrument)
@@ -186,7 +189,7 @@ export default function StrategyBuilderV2({
     setRiskPercent(draftRisk);
     setMinimumRR(draftMinimumRR);
 
-    setCopilotApplyError(''); onApply(v2StateToPersistedStrategy(profile, currentState({ instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
+    setCopilotApplyError(''); onApply(v2StateToPersistedStrategy(profile, currentState({ name: strategyName.trim(), instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
   }
 
   function addCopilotTurn() {
@@ -599,6 +602,7 @@ export default function StrategyBuilderV2({
 
           {copilotDraft.rules.length > 0 && (
             <div>
+              <label>Strategy name<input value={strategyName} onChange={event=>{setStrategyName(event.target.value);setCopilotApplyError('');}} placeholder="Name this strategy" /></label>
               <div className="grid grid-2"><label>Context timeframe<select value={contextTimeframe} onChange={event=>setContextTimeframe(event.target.value)}><option value="">Choose context timeframe</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>Execution timeframe<select value={executionTimeframe} onChange={event=>setExecutionTimeframe(event.target.value)}><option value="">Choose execution timeframe</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
               <div className="button-row">

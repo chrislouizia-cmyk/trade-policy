@@ -12,7 +12,7 @@ import {
 } from '../lib/strategy-builder-v2-persistence.ts';
 
 const base = (): StrategyProfile => structuredClone(DEFAULT_STRATEGY_PROFILE);
-const state = (): StrategyBuilderV2State => ({
+const state = (): StrategyBuilderV2State => ({ name: 'Persistence fixture',
   instruments: ['EURUSD', 'NAS100'], sessions: ['LONDON', 'NEW_YORK_AM'],
   contextTimeframe: 'H4', executionTimeframe: 'M5', methodologyIds: ['smc', 'breakouts'],
   ruleSelections: [
@@ -48,7 +48,7 @@ test('full V2 state round-trips losslessly including a recursive rule tree', () 
 });
 
 test('empty state remains empty and does not invent defaults', () => {
-  const empty: StrategyBuilderV2State = { instruments: [], sessions: [], methodologyIds: [], ruleSelections: [], riskPercent: 0, minimumRR: 0 };
+  const empty: StrategyBuilderV2State = { name: '', instruments: [], sessions: [], methodologyIds: [], ruleSelections: [], riskPercent: 0, minimumRR: 0 };
   const persisted = v2StateToPersistedStrategy(base(), empty);
   const hydrated = persistedStrategyToV2State(persisted.profile, persisted.rules, persisted.sessions);
   assert.deepEqual(hydrated, empty);

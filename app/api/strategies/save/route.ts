@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getBillingState } from '@/lib/billing/entitlements';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
+import { validateStrategyName } from '@/lib/strategy-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,10 +14,11 @@ const schema = z.object({
   profile: z
     .record(z.string(), z.unknown())
     .superRefine((value, ctx) => {
-      if (typeof value.name !== 'string' || !value.name.trim()) {
+      const nameError = typeof value.name === 'string' ? validateStrategyName(value.name) : 'Strategy name is required.';
+      if (nameError) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Strategy name is required.',
+          message: nameError,
         });
       }
 

@@ -22,6 +22,7 @@ import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
 import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
 import { persistedStrategyToV2State, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
+import { validateStrategyName } from '@/lib/strategy-name';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -131,6 +132,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [refinementRequested, setRefinementRequested] = useState(false);
   const [v2EntryOpen, setV2EntryOpen] = useState(false);
   const [v2State, setV2State] = useState<StrategyBuilderV2State|undefined>();
+  const [savedStrategy, setSavedStrategy] = useState<{id:string;name:string;isDefault:boolean}|null>(null);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const quickstartRequested = searchParams.get('quickstart') === '1';
 
@@ -269,7 +271,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   }
 
   async function save() {
-    if (!profile.name.trim()) return setMessage('Strategy name is required.');
+    const nameError=validateStrategyName(profile.name); if (nameError) return setMessage(nameError);
     if (profile.instruments.length === 0) return setMessage('Select at least one instrument.');
     if (profile.waitScore >= profile.authorizationScore) return setMessage('WAIT score must be lower than AUTHORIZED score.');
     const updatingExisting=Boolean(profile.id);
@@ -349,10 +351,10 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     })});
     const result=await response.json();
     if(!response.ok)throw new Error(apiErrorMessage(result,'Could not save strategy.'));
-    if(!result.strategyId||result.saved!==true)throw new Error('Strategy was not returned after saving.');
+    if(!result.strategyId||result.saved!==true||!result.strategy||result.strategy.id!==result.strategyId||typeof result.strategy.name!=='string'||!result.strategy.name.trim())throw new Error('Strategy persistence response was incomplete.');
     const savedProfile:StrategyProfile={...normalized,...profile,id:result.strategyId,allowedSessions:sessions.map(item=>item.sessionCode),requiredEvidence,evidenceWeights,rules:[...rules],stopLimits:legacyStopLimits,stopLimitSettings:[...stopLimits]};
     await loadAll(result.strategyId);
-    setMessage('');
+    setSavedStrategy({id:result.strategy.id,name:result.strategy.name,isDefault:Boolean(result.strategy.is_default)}); setMessage(`Strategy saved — ${result.strategy.name}`);
     if(refinementRequested){setVerification({profile:savedProfile,rules:[...rules]});setLearningConfirmation(null);setRefinementRequested(false)}
     else setLearningConfirmation({profile:savedProfile,rules:[...rules]});
     void trackBetaEvent(updatingExisting?'PLAYBOOK_UPDATED':'PLAYBOOK_CREATED',result.strategyId);void trackBetaEvent('STRATEGY_SAVED',result.strategyId);
@@ -426,7 +428,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
 
   if (loading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');window.location.assign('/validate')}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
-  if (learningConfirmation) return <StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/>;
+  if (learningConfirmation) return <><section className="card strategy-save-success" aria-live="polite"><strong>Strategy saved — {savedStrategy?.name??learningConfirmation.profile.name}</strong><p>{savedStrategy?.isDefault?'Active strategy':'Saved strategy — not active.'}</p><button type="button" onClick={()=>{setLearningConfirmation(null);void loadAll(savedStrategy?.id)}}>View strategy</button></section><StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/></>;
   if (v2EntryOpen) {
     return <StrategyBuilderV2 profile={profile} initialState={v2State} onApply={handleV2Apply} onCancel={() => { setV2EntryOpen(false); setBuilderStep('identity'); }} />;
   }
