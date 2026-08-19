@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 
-import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
+import {strategyTimeframeContext} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 
 const scanStages = [
@@ -95,13 +95,15 @@ export default function LiveMarketPanel({
     }
   }
 
+  const strategyContextText = strategyTimeframeContext(strategy);
+
   return (
     <section className="card live-panel">
       <div className="live-head">
         <div>
           <p className="brand">STEP 1 · CHECK CURRENT MARKET</p>
           <h2>Read the evidence for this strategy</h2>
-          <p className="muted">Trade Police checks {strategyTimeframeLayers(strategy).map(layer=>`${layer.role.toLowerCase()} ${layer.timeframe}`).join(' · ')} against your saved rules.</p>
+          {strategyContextText ? <p className="muted">{strategyContextText}</p> : null}
         </div>
         <div>
           <label>

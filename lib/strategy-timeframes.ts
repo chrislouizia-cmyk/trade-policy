@@ -6,4 +6,10 @@ export function strategyTimeframeLayers(strategy:StrategyProfile):TimeframeLayer
   return definitions.flatMap(([role,key])=>{const timeframe=strategy[key];return typeof timeframe==='string'&&timeframe.trim()?[{role,timeframe}]:[]});
 }
 
+export function strategyTimeframeContext(strategy:StrategyProfile):string{
+  const layers = strategyTimeframeLayers(strategy);
+  if (layers.length === 0) return '';
+  return `Trade Police checks ${layers.map(({ role, timeframe }) => `${role.toLowerCase()} ${timeframe}`).join(' · ')} against your saved rules.`;
+}
+
 export function strategyTimeframes(strategy:StrategyProfile):string[]{return [...new Set(strategyTimeframeLayers(strategy).map(layer=>layer.timeframe))]}
