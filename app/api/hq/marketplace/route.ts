@@ -261,7 +261,7 @@ export async function POST(request:Request) {
   const canonicalStrategy = await loadStrategyById(admin, sourceProfile.user_id, sourceProfile.id);
   const sourceStrategyRevisionId = strategyRevisionId(canonicalStrategy);
 
-  const { data: creationResult, error: creationError } = await admin.rpc('create_internal_marketplace_release_v1', {
+  const { data: creationResult, error: creationError } = await supabase.rpc('create_internal_marketplace_release_v1', {
     p_strategy_profile_id: sourceProfile.id,
     p_source_strategy_revision_id: sourceStrategyRevisionId,
   });
