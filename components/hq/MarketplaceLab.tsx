@@ -31,11 +31,18 @@ export default function MarketplaceLab() {
   const [release, setRelease] = useState('');
   const [sort, setSort] = useState<Sort>('RANK');
   const [showCreate, setShowCreate] = useState(false);
+  const [profileSearch, setProfileSearch] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isFounder, setIsFounder] = useState(false);
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    setError(null);
+    setSuccess(null);
+  };
 
   useEffect(() => {
     void fetch('/api/hq/marketplace', { cache: 'no-store' })
@@ -62,6 +69,36 @@ export default function MarketplaceLab() {
         setProfiles([]);
       });
   }, []);
+
+  const filteredProfiles = useMemo(
+    () =>
+      profiles.filter((profile) => {
+        const haystack = `${profile.name} ${profile.instruments.join(' ')} ${profile.marketTypes.join(' ')}`.toLowerCase();
+        return !profileSearch || haystack.includes(profileSearch.toLowerCase());
+      }),
+    [profileSearch, profiles],
+  );
+
+  useEffect(() => {
+    if (!showCreate || !filteredProfiles.length) return;
+    if (!filteredProfiles.some((profile) => profile.id === selectedProfileId)) {
+      setSelectedProfileId(filteredProfiles[0].id);
+    }
+  }, [filteredProfiles, selectedProfileId, showCreate]);
+
+  useEffect(() => {
+    if (!showCreate) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeCreate();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showCreate]);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
@@ -126,41 +163,111 @@ export default function MarketplaceLab() {
           <div><dt>Commerce</dt><dd>Disabled</dd></div>
         </dl>
         {isFounder ? (
-          <button type="button" className="primary" onClick={() => setShowCreate((value) => !value)}>
+          <button type="button" className="button secondary compact-button" onClick={() => setShowCreate(true)}>
             Add internal test strategy
           </button>
         ) : null}
       </header>
 
       {showCreate && isFounder ? (
-        <section className="card marketplace-controls">
-          <h2>Internal test strategy</h2>
-          <label>
-            Existing Trade Police-owned strategy profile
-            <select value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)}>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>{profile.name}</option>
-              ))}
-            </select>
-          </label>
+        <div className="marketplace-create-modal-backdrop" onClick={closeCreate} role="presentation">
+          <section className="marketplace-create-modal card" role="dialog" aria-modal="true" aria-labelledby="internal-test-title" onClick={(event) => event.stopPropagation()}>
+            <div className="marketplace-create-header">
+              <div>
+                <span className="eyebrow">INTERNAL TEST</span>
+                <h2 id="internal-test-title">Add internal test strategy</h2>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close internal test creation" onClick={closeCreate}>
+                ×
+              </button>
+            </div>
 
-          {selectedProfile ? (
-            <div className="card" aria-live="polite">
-              <h3>Sanitized preview</h3>
-              <p><strong>{selectedProfile.name}</strong></p>
-              <p>Market: {selectedProfile.marketTypes.join(', ') || 'Internal test'}</p>
-              <p>Instruments: {selectedProfile.instruments.join(', ') || 'N/A'}</p>
-              <p>Core timeframes: {selectedProfile.timeframeRoles.trend ?? 'N/A'} / {selectedProfile.timeframeRoles.confirmation ?? 'N/A'} / {selectedProfile.timeframeRoles.entry ?? 'N/A'}</p>
-              <p>Private rules, thresholds, weights, and strategy payload remain excluded from the listing DTO.</p>
-              <button type="button" className="primary" onClick={handleCreate} disabled={creating}>
+            <p className="marketplace-create-helper">Publish a vetted Trade Police strategy for founder-only internal review and evaluation.</p>
+
+            <div className="marketplace-create-form">
+              <label className="marketplace-field">
+                <span>Search existing strategy profile</span>
+                <input
+                  value={profileSearch}
+                  onChange={(event) => setProfileSearch(event.target.value)}
+                  placeholder="Search by name, instrument, market"
+                />
+              </label>
+
+              <div className="marketplace-profile-list" aria-live="polite">
+                {filteredProfiles.length ? (
+                  filteredProfiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      className={profile.id === selectedProfileId ? 'marketplace-profile-option selected' : 'marketplace-profile-option'}
+                      onClick={() => setSelectedProfileId(profile.id)}
+                    >
+                      <span>{profile.name}</span>
+                      <small>{profile.marketTypes.join(', ') || 'Internal test'}</small>
+                    </button>
+                  ))
+                ) : (
+                  <div className="marketplace-empty-option">No strategy profiles match your search.</div>
+                )}
+              </div>
+
+              {selectedProfile ? (
+                <div className="marketplace-preview-card" aria-live="polite">
+                  <div className="marketplace-preview-header">
+                    <div>
+                      <span className="eyebrow">PROFILE PREVIEW</span>
+                      <h3>{selectedProfile.name}</h3>
+                    </div>
+                    <span className="status-badge">INTERNAL TEST</span>
+                  </div>
+
+                  <div className="marketplace-preview-grid">
+                    <div>
+                      <span>Instruments</span>
+                      <strong>{selectedProfile.instruments.join(', ') || 'N/A'}</strong>
+                    </div>
+                    <div>
+                      <span>Market / category</span>
+                      <strong>{selectedProfile.marketTypes.join(', ') || 'Internal test'}</strong>
+                    </div>
+                    <div>
+                      <span>Key timeframes</span>
+                      <strong>
+                        {[
+                          selectedProfile.timeframeRoles.trend,
+                          selectedProfile.timeframeRoles.confirmation,
+                          selectedProfile.timeframeRoles.entry,
+                        ].filter(Boolean).join(' · ') || 'N/A'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="marketplace-protected-notice">
+                    <strong>Protected configuration:</strong> Private rules, configuration, and strategy payload remain excluded from the browser listing DTO.
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="marketplace-create-notices">
+                <div className="marketplace-notice warning">Commerce is disabled for this internal test listing.</div>
+                <div className="marketplace-notice subtle">Private rules and configuration remain protected.</div>
+              </div>
+
+              {error ? <p className="error">{error}</p> : null}
+              {success ? <p className="success">{success}</p> : null}
+            </div>
+
+            <div className="marketplace-create-footer">
+              <button type="button" className="button secondary" onClick={closeCreate}>
+                Cancel
+              </button>
+              <button type="button" className="button primary" onClick={handleCreate} disabled={creating}>
                 {creating ? 'Publishing…' : 'Publish internal test listing'}
               </button>
             </div>
-          ) : null}
-
-          {error ? <p className="error">{error}</p> : null}
-          {success ? <p className="success">{success}</p> : null}
-        </section>
+          </section>
+        </div>
       ) : null}
 
       {state ? <p className="muted">{state}</p> : null}
