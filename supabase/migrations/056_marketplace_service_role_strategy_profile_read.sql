@@ -1,6 +1,6 @@
--- Forward-only fix: grant the minimum service-role read access required by the HQ staff directory.
--- This intentionally does not alter 054 and does not widen access to anon/authenticated.
+-- Forward-only fix: grant the minimum service-role read access required by the Founder profile selector.
+-- This intentionally does not alter customer access, RLS policies, 053, or 054.
 
-grant select on table public.staff_roles to service_role;
+grant select on table public.strategy_profiles to service_role;
 
 notify pgrst,'reload schema';
