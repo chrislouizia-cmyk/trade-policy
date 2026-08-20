@@ -14,10 +14,13 @@ test('redirects portal-only paths from marketing host to the portal host', () =>
   assert.equal(decision.redirectTarget, 'portal');
 });
 
-test('keeps marketing pages on the marketing host', () => {
-  const decision = getHostnameRoutingDecision('tradepolice.app', '/pricing');
-  assert.equal(decision.mode, 'marketing');
-  assert.equal(decision.redirectTarget, undefined);
+test('keeps marketing pages and public client login on the marketing host', () => {
+  const pricingDecision = getHostnameRoutingDecision('tradepolice.app', '/pricing');
+  const loginDecision = getHostnameRoutingDecision('tradepolice.app', '/client/login');
+  assert.equal(pricingDecision.mode, 'marketing');
+  assert.equal(pricingDecision.redirectTarget, undefined);
+  assert.equal(loginDecision.mode, 'marketing');
+  assert.equal(loginDecision.redirectTarget, undefined);
 });
 
 test('routes HQ paths and recognizes the canonical HQ host', () => {
@@ -36,6 +39,8 @@ test('shared authentication stays on HQ while portal screens leave HQ', () => {
   assert.equal(getHostnameRoutingDecision('hq.tradepolice.app', '/reset-password').redirectTarget, undefined);
   assert.equal(getHostnameRoutingDecision('hq.tradepolice.app', '/forgot-password').redirectTarget, undefined);
   assert.equal(getHostnameRoutingDecision('hq.tradepolice.app', '/client/login').redirectTarget, 'portal');
+  assert.equal(getHostnameRoutingDecision('tradepolice.app', '/client/login?next=%2Fpricing').redirectTarget, undefined);
+  assert.equal(getHostnameRoutingDecision('tradepolice.app', '/pricing').redirectTarget, undefined);
 });
 
 test('recognizes portal subdomains', () => {

@@ -42,14 +42,15 @@ export function getHostnameRoutingDecision(hostname: string | null | undefined, 
   const isHQ = isHQHostname(hostname);
   const isHQPath = ['/hq','/admin','/staff','/api/hq'].some(route=>matchesPath(pathname,route));
   const isSharedAuthPath = ['/auth/callback','/forgot-password','/reset-password'].some(route=>matchesPath(pathname,route));
-  const isPortalPath = !isSharedAuthPath && ['/dashboard','/validate','/active-trade','/history','/analytics','/account','/accounts','/profile','/billing','/onboarding','/complete-profile','/client/login'].some(route=>matchesPath(pathname,route));
+  const isClientLoginPath = matchesPath(pathname, '/client/login');
+  const isPortalPath = !isSharedAuthPath && ['/dashboard','/validate','/active-trade','/history','/analytics','/account','/accounts','/profile','/billing','/onboarding','/complete-profile'].some(route=>matchesPath(pathname,route));
 
   const isCanonicalTradePoliceHost = hostname
     ? hostname === 'tradepolice.app' || hostname.endsWith('.tradepolice.app') || hostname === 'portal.tradepolice.app' || hostname === 'hq.tradepolice.app'
     : false;
 
   if (isHQ) {
-    return { mode: 'hq' as const, redirectTarget: isPortalPath ? 'portal' as const : undefined, isPortalPath, isHQPath };
+    return { mode: 'hq' as const, redirectTarget: isPortalPath || isClientLoginPath ? 'portal' as const : undefined, isPortalPath, isHQPath };
   }
 
   if (isPortal) {
