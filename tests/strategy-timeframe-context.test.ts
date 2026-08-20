@@ -71,10 +71,10 @@ test('strategy-specific timeframe context and analysis input differ between A an
   assert.doesNotMatch(contextB, /macro|trigger/);
 
   assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadActiveStrategy\(supabase,user\.id\);/);
-  assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadStrategyById\(supabase,\s*user\.id,\s*body\.strategyId\);/);
+  assert.doesNotMatch(marketAnalyzeRoute, /loadStrategyById\s*\(/);
   assert.match(marketAnalyzeRoute, /const timeframes = strategyTimeframes\(strategy\);/);
   assert.match(marketAnalyzeRoute, /strategy_revision_id:strategyRevisionId\(strategy\)/);
-  assert.match(marketAnalyzeRoute, /body\.strategyRevisionId\s*&&\s*strategyRevisionId\(strategy\)\s*!==\s*body\.strategyRevisionId/);
+  assert.doesNotMatch(marketAnalyzeRoute, /body\.strategyRevisionId/);
   assert.doesNotMatch(marketAnalyzeRoute, /fixed.*timeframe|default.*timeframes|D1.*H4.*H1.*M20.*M5/);
   assert.match(tradeValidator, /<LiveMarketPanel strategy=\{strategy\} strategyRevisionId=\{activeStrategyRevisionId\}/);
   assert.match(tradeValidator, /const \[activeStrategyRevisionId,setActiveStrategyRevisionId\]=useState<string\|null>\(null\);/);

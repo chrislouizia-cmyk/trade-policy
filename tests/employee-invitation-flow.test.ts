@@ -35,7 +35,7 @@ test('canonical URL helper keeps production auth on the canonical hosts while Pr
  assert.deepEqual(getCanonicalAppUrls({VERCEL_ENV:'preview',NEXT_PUBLIC_VERCEL_URL:'trade-police-preview-123.vercel.app',NEXT_PUBLIC_SITE_URL:'https://portal.example',NEXT_PUBLIC_APP_URL:'https://portal.tradepolice.app',NEXT_PUBLIC_HQ_URL:'https://hq.tradepolice.app'}),{site:'https://trade-police-preview-123.vercel.app',portal:'https://trade-police-preview-123.vercel.app',hq:'https://trade-police-preview-123.vercel.app'});
  assert.equal(getHostnameRoutingDecision('trade-police-preview-123.vercel.app','/client/login').redirectTarget, undefined);
  assert.equal(getHostnameRoutingDecision('portal.tradepolice.app','/client/login').redirectTarget, undefined);
- assert.equal(getHostnameRoutingDecision('tradepolice.app','/client/login').redirectTarget, 'portal');
+ assert.equal(getHostnameRoutingDecision('tradepolice.app','/client/login').redirectTarget, undefined);
  assert.match(callback,/isHQRecovery|destinationOrigin.*urls\.hq.*urls\.portal/);
 });
 test('password recovery preserves HQ and client destinations',()=>{

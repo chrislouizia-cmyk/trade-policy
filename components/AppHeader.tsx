@@ -5,6 +5,7 @@ import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import { createClient } from '@/lib/supabase/server';
+import Image from 'next/image';
 import Link from 'next/link';
 
 function greeting() {
@@ -43,8 +44,8 @@ export default async function AppHeader({
         </div>
 
         <div className="app-brand-row shell-brand-row">
-          <Link href="/dashboard" className="app-brand">
-            <span className="brand-mark">TP</span>
+          <Link href="/dashboard" className="app-brand" aria-label="Trade Police">
+            <Image src="/brand/trade-police-mark.png" alt="Trade Police" width={42} height={42} className="brand-mark" />
             <span>
               <strong>Trade Police</strong>
               <small>No trade without evidence.</small>

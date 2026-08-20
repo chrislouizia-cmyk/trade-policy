@@ -1,5 +1,6 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import LandingProductDemo from '@/components/LandingProductDemo';
 import { isPortalHostname } from '@/lib/hostname-routing';
@@ -50,7 +51,7 @@ export default async function LandingPage() {
   }
 
   return <main className="marketing-page">
-    <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/"><span>TP</span> Trade Police</Link><div><a href="#how">How it works</a><Link href="/about">About</Link><Link href="/faq">FAQ</Link><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link></div></nav>
+    <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={182} height={44} className="marketing-brand-logo" /></Link><div><a href="#how">How it works</a><Link href="/about">About</Link><Link href="/faq">FAQ</Link><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link></div></nav>
     <section className="marketing-hero"><p className="eyebrow">RULE-BASED DECISION SUPPORT</p><h1>Trade with a system, not an impulse.</h1><p><strong>No signals. No copy trading. Your strategy. Your rules. Your decisions.</strong></p><p>Build your strategy, check every market setup against your rules, validate risk before execution, and learn from every trade without sacrificing the record.</p><div className="marketing-actions hero-actions"><Link className="button-link primary marketing-cta hero-cta" href="/client/login?mode=signup&next=/onboarding">Check your first setup free</Link><a className="button-link secondary marketing-cta hero-cta" href="#how">See the workflow</a></div><small>Decision support, not financial advice. No result guarantees an outcome.</small></section>
     <LandingProductDemo />
     <section className="marketing-section problem"><p className="eyebrow">THE CORE PROBLEM</p><h2>Most traders break their own plan at the exact moment they need structure most.</h2><p>Trade Police creates a deliberate pause between opportunity and risk. It compares the market with your rules, shows what is confirmed, and makes the decision legible before money is on the line.</p></section>

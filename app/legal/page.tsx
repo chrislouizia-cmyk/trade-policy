@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 const legalSections = [
@@ -23,7 +24,7 @@ const legalSections = [
 export default function Legal() {
   return <main className="marketing-page">
     <nav className="marketing-nav">
-      <Link className="marketing-brand" href="/"><span>TP</span> Trade Police</Link>
+      <Link className="marketing-brand" href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={182} height={44} className="marketing-brand-logo" /></Link>
       <div>
         <Link href="/about">About</Link>
         <Link href="/faq">FAQ</Link>

@@ -17,7 +17,7 @@ export default async function Page() {
   return (
     <main className="auth-page hq-login-page">
       <section className="auth-card portal-auth-card">
-        <span className="brand-mark">TP</span>
+        <img src="/brand/trade-police-mark.png" alt="Trade Police" className="brand-mark" width={42} height={42} />
         <span className="eyebrow">TRADE POLICE HEADQUARTERS</span>
         <h1>Employee sign in</h1>
         <p>Headquarters is reserved for Trade Police employees. Your email determines your assigned workspace and permissions.</p>
