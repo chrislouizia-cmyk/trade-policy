@@ -45,9 +45,8 @@ export default async function AppHeader({
 
         <div className="app-brand-row shell-brand-row">
           <Link href="/dashboard" className="app-brand" aria-label="Trade Police">
-            <Image src="/brand/trade-police-mark.png" alt="Trade Police" width={42} height={42} className="brand-mark" />
-            <span>
-              <strong>Trade Police</strong>
+            <Image src="/brand/trade-police-logo.png" alt="Trade Police" width={220} height={46} className="brand-logo-wordmark brand-logo-header" />
+            <span className="brand-caption">
               <small>No trade without evidence.</small>
             </span>
           </Link>

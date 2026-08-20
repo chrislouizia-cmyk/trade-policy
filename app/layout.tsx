@@ -7,10 +7,10 @@ export const metadata: Metadata = {
   description: 'No trade without evidence.',
   icons: {
     icon: [
-      { url: '/icon.png', type: 'image/png' },
-      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png?v=2026-08-20', type: 'image/png' },
+      { url: '/favicon.ico?v=2026-08-20', sizes: 'any' },
     ],
-    apple: '/apple-icon.png',
+    apple: '/apple-icon.png?v=2026-08-20',
   },
 };
 

@@ -117,25 +117,51 @@ body {
   display: block !important;
   width: 42px !important;
   height: 42px !important;
-  border-radius: 12px !important;
-  object-fit: cover !important;
-  box-shadow: 0 8px 24px rgba(20, 30, 48, 0.32) !important;
-  background: rgba(255,255,255,0.02) !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border: 0 !important;
 }
 
-.marketing-brand-logo {
+.brand-logo-wordmark {
   display: block !important;
   width: auto !important;
-  height: 42px !important;
+  max-width: 240px !important;
+  height: 48px !important;
   object-fit: contain !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
-.app-brand > span:last-child {
+.brand-logo-header {
+  max-width: 210px !important;
+  height: 44px !important;
+}
+
+.hq-logo-wordmark {
+  max-width: 180px !important;
+  height: 38px !important;
+}
+
+.marketing-brand {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 42px !important;
+}
+
+.brand-caption,
+.hq-brand-caption {
   display: grid !important;
   gap: 2px !important;
 }
 
-.app-brand small {
+.app-brand small,
+.hq-brand small,
+.brand-caption small,
+.hq-brand-caption small {
   color: var(--muted) !important;
   font-size: 12px !important;
 }

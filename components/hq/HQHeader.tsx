@@ -6,7 +6,7 @@ export default function HQHeader({displayName,role,permissions}:{displayName:str
   const greeting=hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';
   return <header className="hq-shell-header">
     <div className="hq-brand-row">
-      <a href="/hq" className="hq-brand"><img src="/brand/trade-police-mark.png" alt="Trade Police" className="brand-mark" width={38} height={38} /><span><strong>Trade Police HQ</strong><small>Executive operations</small></span></a>
+      <a href="/hq" className="hq-brand"><img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark hq-logo-wordmark" width={200} height={42} /><span className="brand-caption hq-brand-caption"><small>Executive operations</small></span></a>
       <HQProfileMenu displayName={displayName} role={role}/>
     </div>
     <div className="hq-executive-greeting"><strong>{greeting}, {displayName}</strong><span>{role.replaceAll('_',' ')} · {date}</span></div>
