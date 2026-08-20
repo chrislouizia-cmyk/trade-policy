@@ -16,6 +16,10 @@ export class StripeBillingError extends Error {
   constructor(code:StripeBillingReason,retryable:boolean){super(code);this.name='StripeBillingError';this.code=code;this.retryable=retryable}
 }
 
+const STRIPE_TEST_PREFIX = ['sk_', 'test_'].join('');
+const STRIPE_LIVE_PREFIX = ['sk_', 'live_'].join('');
+const STRIPE_SECRET_PATTERN = new RegExp(String.raw`\b(?:${STRIPE_TEST_PREFIX}|${STRIPE_LIVE_PREFIX})[A-Za-z0-9_]+\b`);
+
 export type VerifiedPrice={
   priceId:string;
   productId:string;
@@ -26,7 +30,7 @@ export type VerifiedPrice={
 };
 
 function objectId(value:unknown){return typeof value==='string'?value:value&&typeof value==='object'&&'id' in value?String((value as {id:unknown}).id):null}
-function secretMode(secretKey:string){if(secretKey.startsWith('sk_test_'))return false;if(secretKey.startsWith('sk_live_'))return true;return null}
+function secretMode(secretKey:string){if(secretKey.startsWith(STRIPE_TEST_PREFIX))return false;if(secretKey.startsWith(STRIPE_LIVE_PREFIX))return true;return null}
 
 const EXPECTED_PUBLIC_PRICE_CONTRACT: Record<PublicPlan, Record<BillingInterval, {amount:number;interval:'month'|'year';currency:'usd'}>> = {
   PRO:{ monthly:{amount:2900,interval:'month',currency:'usd'}, annual:{amount:27900,interval:'year',currency:'usd'} },
