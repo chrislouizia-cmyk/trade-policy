@@ -49,6 +49,7 @@ const minimalStrategy = {
 
 const marketAnalyzeRoute = readFileSync(new URL('../app/api/market/analyze/route.ts', import.meta.url), 'utf8');
 const tradeValidator = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
+const liveMarketPanel = readFileSync(new URL('../components/LiveMarketPanel.tsx', import.meta.url), 'utf8');
 
 test('strategy-specific timeframe context and analysis input differ between A and B without hardcoded fallback timeframes', () => {
   const contextA = strategyTimeframeContext(strategyA as any);
@@ -69,11 +70,24 @@ test('strategy-specific timeframe context and analysis input differ between A an
   assert.doesNotMatch(contextA, /macro.*D1.*H4.*H1.*M20.*M5.*macro/);
   assert.doesNotMatch(contextB, /macro|trigger/);
 
-  assert.match(marketAnalyzeRoute, /const strategy = await loadActiveStrategy\(supabase,user\.id\);/);
+  assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadActiveStrategy\(supabase,user\.id\);/);
+  assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadStrategyById\(supabase,\s*user\.id,\s*body\.strategyId\);/);
   assert.match(marketAnalyzeRoute, /const timeframes = strategyTimeframes\(strategy\);/);
   assert.match(marketAnalyzeRoute, /strategy_revision_id:strategyRevisionId\(strategy\)/);
+  assert.match(marketAnalyzeRoute, /body\.strategyRevisionId\s*&&\s*strategyRevisionId\(strategy\)\s*!==\s*body\.strategyRevisionId/);
   assert.doesNotMatch(marketAnalyzeRoute, /fixed.*timeframe|default.*timeframes|D1.*H4.*H1.*M20.*M5/);
-  assert.match(tradeValidator, /<LiveMarketPanel strategy=\{strategy\}/);
+  assert.match(tradeValidator, /<LiveMarketPanel strategy=\{strategy\} strategyRevisionId=\{activeStrategyRevisionId\}/);
+  assert.match(tradeValidator, /const \[activeStrategyRevisionId,setActiveStrategyRevisionId\]=useState<string\|null>\(null\);/);
+  assert.match(tradeValidator, /setActiveStrategyRevisionId\(null\);/);
+  assert.match(tradeValidator, /setActiveStrategyRevisionId\(nextRevision\);/);
+  assert.match(tradeValidator, /setLastAnalysisInput\(null\)/);
+  assert.match(tradeValidator, /setSessionHistory\(\[\]\)/);
+  assert.match(tradeValidator, /initialManualConfirmations\(nextStrategy\.rules\s*\?\?\s*\[\]\)/);
+  assert.match(liveMarketPanel, /if \(!strategy\.id \|\| !strategyRevisionId\)/);
+  assert.match(liveMarketPanel, /strategyRevisionId: strategyRevisionId,/);
+  assert.doesNotMatch(tradeValidator, /historical-decisions\/strategy-revision/);
+  assert.doesNotMatch(liveMarketPanel, /historical-decisions\/strategy-revision|strategyRevisionId\(strategy\)/);
+  assert.doesNotMatch(tradeValidator, /node:crypto/);
 });
 
 test('minimal strategy omits undefined roles and never displays nonexistent roles', () => {

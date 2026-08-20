@@ -15,14 +15,18 @@ const scanStages = [
 
 export default function LiveMarketPanel({
   strategy,
+  strategyRevisionId,
   onApply,
   onReset,
   onLoadingChange,
   selectedInstrument,
   onInstrumentChange,
   decisionContent,
+  strategyLoading = false,
 }: {
   strategy: StrategyProfile;
+  strategyRevisionId: string | null;
+  strategyLoading?: boolean;
   onApply: (analysis: ChartAnalysis) => void;
   onReset?: () => void;
   onLoadingChange?: (loading: boolean) => void;
@@ -57,6 +61,10 @@ export default function LiveMarketPanel({
   }, [loading]);
 
   async function scan() {
+    if (!strategy.id || !strategyRevisionId) {
+      setError('The selected strategy is still loading. Please wait a moment and try again.');
+      return;
+    }
     setLoading(true);
     onLoadingChange?.(true);
     setStageIndex(0);
@@ -71,7 +79,11 @@ export default function LiveMarketPanel({
       const response = await fetch('/api/market/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json','Idempotency-Key':requestKey },
-        body: JSON.stringify({ instrument: selectedInstrument }),
+        body: JSON.stringify({
+          instrument: selectedInstrument,
+          strategyId: strategy.id ?? null,
+          strategyRevisionId: strategyRevisionId,
+        }),
         signal:controller.signal,
       });
       const result = await readApiResponse(response);
@@ -95,15 +107,15 @@ export default function LiveMarketPanel({
     }
   }
 
-  const strategyContextText = strategyTimeframeContext(strategy);
+  const strategyContextText = strategyLoading ? '' : strategyTimeframeContext(strategy);
 
   return (
     <section className="card live-panel">
       <div className="live-head">
         <div>
           <p className="brand">STEP 1 · CHECK CURRENT MARKET</p>
-          <h2>Read the evidence for this strategy</h2>
-          {strategyContextText ? <p className="muted">{strategyContextText}</p> : null}
+          <h2>{strategyLoading ? 'Applying strategy…' : 'Read the evidence for this strategy'}</h2>
+          {strategyContextText ? <p className="muted">{strategyContextText}</p> : strategyLoading ? <p className="muted">Loading the strategy context and clearing stale evidence.</p> : null}
         </div>
         <div>
           <label>
@@ -115,8 +127,8 @@ export default function LiveMarketPanel({
               {strategy.instruments.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
-          <button className="primary" data-market-check type="button" onClick={scan} disabled={loading}>
-            {loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
+          <button className="primary" data-market-check type="button" onClick={scan} disabled={loading || strategyLoading || !strategy.id || !strategyRevisionId}>
+            {strategyLoading ? 'Applying strategy…' : !strategy.id || !strategyRevisionId ? 'Loading strategy…' : loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
           </button>
         </div>
       </div>

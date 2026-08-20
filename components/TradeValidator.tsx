@@ -146,6 +146,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [candidateApplied,setCandidateApplied]=useState('');
   const [activationSuccess,setActivationSuccess]=useState<string| null>(null);
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
+  const [activeStrategyRevisionId,setActiveStrategyRevisionId]=useState<string|null>(null);
+  const [strategyApplying,setStrategyApplying]=useState(false);
   const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
   const [accounts,setAccounts]=useState<TradingAccount[]>([]);
   const [accountId,setAccountId]=useState('');
@@ -166,20 +168,47 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
-    const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setManualEvidence({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
+    const handler=(event: Event)=>{
+      const detail = (event as CustomEvent<{ strategy?: StrategyProfile; strategyId?: string }>).detail;
+      const nextStrategy = detail?.strategy ?? null;
+      setStrategyApplying(true);
+      setActiveStrategyRevisionId(null);
+      setAnalysis(null);
+      setResult(null);
+      setAutoChecks({});
+      setManualEvidence(nextStrategy ? initialManualConfirmations(nextStrategy.rules ?? []) : {});
+      setSessionHistory([]);
+      setLastAnalysisInput(null);
+      setFeedbackAnalysisId(null);
+      setTypedMessage('');
+      setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');
+      if (nextStrategy) {
+        setStrategy(nextStrategy);
+        setSelectedInstrument((current) => nextStrategy.instruments.includes(current) ? current : nextStrategy.instruments[0] || 'XAUUSD');
+      }
+      void loadStrategy();
+    };
     window.addEventListener('trade-police:strategy-changed',handler);
     return()=>window.removeEventListener('trade-police:strategy-changed',handler);
   },[]);
   async function loadStrategy(){
     try{
+      setStrategyApplying(true);
       const response=await fetch('/api/strategies/active',{cache:'no-store'});
       const data=await readApiResponse(response);
       if(redirectExpiredSession(response,'/validate'))return;
       if(!response.ok)throw new Error(apiErrorMessage(data,'Could not load the active strategy.'));
       if (!data||typeof data!=='object'||!('strategy' in data)||(data as any).strategy==null) throw new Error('No active strategy was returned.');
-      const active=(data as any).strategy;setStrategy(active);setManualEvidence(initialManualConfirmations(active.rules??[]));
+      const active=(data as any).strategy;
+      const nextRevision = typeof (data as any).strategyRevisionId === 'string' ? (data as any).strategyRevisionId : null;
+      setStrategy(active);
+      setActiveStrategyRevisionId(nextRevision);
+      setManualEvidence(initialManualConfirmations(active.rules??[]));
+      setSelectedInstrument((current) => active.instruments.includes(current) ? current : active.instruments[0] || 'XAUUSD');
     }catch(e:any){
       setError(e.message||'Could not load the active strategy.');
+    } finally {
+      setStrategyApplying(false);
     }
   }
 
@@ -521,7 +550,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel strategy={strategy} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel}/>
+    <LiveMarketPanel strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel}/>
 
     <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
@@ -530,7 +559,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">STEP 2 · REVIEW TRADE DETAILS</h2>
-        <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
+        <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Active strategy:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
         <div className="grid grid-2">
           <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>setSelectedInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
