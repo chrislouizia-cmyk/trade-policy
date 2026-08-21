@@ -107,7 +107,27 @@ export async function POST(request: Request) {
       }
     }
 
-    const response = await createAdminClient().rpc('activate_trade_atomically_v1', {
+    const admin = createAdminClient();
+    const { data: privilegeProbe, error: privilegeProbeError } = await admin
+      .from('active_trades')
+      .select('id')
+      .limit(1);
+
+    console.log('[TRADE_ADMIN_PRIVILEGE_PROBE]', {
+      success: !privilegeProbeError,
+      errorCode: privilegeProbeError?.code ?? null,
+      errorMessage: privilegeProbeError?.message ?? null,
+      rowsReturned: Array.isArray(privilegeProbe) ? privilegeProbe.length : null,
+      selectedKeySource: process.env.SUPABASE_SERVICE_ROLE_KEY
+        ? 'SUPABASE_SERVICE_ROLE_KEY'
+        : process.env.SUPABASE_SECRET_KEY
+          ? 'SUPABASE_SECRET_KEY'
+          : 'UNSET',
+      rpcName: 'activate_trade_atomically_v1',
+      deploymentCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    });
+
+    const response = await admin.rpc('activate_trade_atomically_v1', {
       p_user_id: user.id,
       p_account_id: body.accountId ?? null,
       p_balance_at_entry: body.balanceAtEntry ?? null,
