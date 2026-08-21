@@ -21,7 +21,7 @@ export default async function ClientLoginPage({
   return (
     <main className="auth-page client-login-page">
       <section className="auth-card portal-auth-card">
-        <img src="/brand/trade-police-mark.png" alt="Trade Police" className="brand-mark" width={42} height={42} />
+        <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
         <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
         <h1>Trader sign in</h1>
         <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
