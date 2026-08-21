@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { canActivateTradeFromDecision, evaluateTradeAuthorizationEligibility } from '@/lib/server/trade-lifecycle';
 import { buildActiveTradeRow } from '@/lib/server/trade-activation';
 import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/schema';
@@ -106,47 +107,52 @@ export async function POST(request: Request) {
       }
     }
 
-    const tradePayload = buildActiveTradeRow({
-      userId: user.id,
-      accountId: body.accountId ?? null,
-      balanceAtEntry: body.balanceAtEntry ?? null,
-      riskAmount: body.riskAmount ?? null,
-      strategyProfileId: body.strategyProfileId ?? null,
-      strategyNameAtEntry: body.strategyNameAtEntry ?? null,
-      strategyVersion: typeof body.strategySnapshot?.version === 'string' ? body.strategySnapshot.version : (typeof body.strategySnapshot?.engineVersion === 'number' ? String(body.strategySnapshot.engineVersion) : null),
-      strategyRevisionId: typeof body.strategySnapshot?.revisionId === 'string' ? body.strategySnapshot.revisionId : null,
-      tradeRecordId: body.tradeRecordId ?? null,
-      sourceDecisionId: typeof body.sourceDecisionId === 'string' ? body.sourceDecisionId : null,
-      sourceReportId: typeof body.sourceReportId === 'string' ? body.sourceReportId : null,
-      instrument: body.instrument,
-      direction: body.direction,
-      entry,
-      stopLoss,
-      takeProfit,
-      riskPercent,
-      initialRR,
-      setupType: body.setupType ?? null,
-      initialScore: body.initialScore ?? null,
-      initialAnalysis: body.initialAnalysis ?? null,
-      takenAgainstVerdict: Boolean(body.takenAgainstVerdict),
-      originalVerdict: body.originalVerdict ?? null,
-      originalVerdictReason: body.originalVerdictReason ?? null,
-      overrideReason: body.overrideReason ?? null,
-      overrideConditions: Array.isArray(body.overrideConditions) ? body.overrideConditions : null,
-      activationMode: body.activationMode === 'OVERRIDE' ? 'OVERRIDE' : 'READY',
+    const response = await createAdminClient().rpc('activate_trade_atomically_v1', {
+      p_user_id: user.id,
+      p_account_id: body.accountId ?? null,
+      p_balance_at_entry: body.balanceAtEntry ?? null,
+      p_risk_amount: body.riskAmount ?? null,
+      p_strategy_profile_id: body.strategyProfileId ?? null,
+      p_strategy_name_at_entry: body.strategyNameAtEntry ?? null,
+      p_strategy_version: typeof body.strategySnapshot?.version === 'string' ? body.strategySnapshot.version : (typeof body.strategySnapshot?.engineVersion === 'number' ? String(body.strategySnapshot.engineVersion) : null),
+      p_strategy_revision_id: typeof body.strategySnapshot?.revisionId === 'string' ? body.strategySnapshot.revisionId : null,
+      p_source_decision_id: typeof body.sourceDecisionId === 'string' ? body.sourceDecisionId : null,
+      p_source_report_id: typeof body.sourceReportId === 'string' ? body.sourceReportId : null,
+      p_instrument: body.instrument,
+      p_direction: body.direction,
+      p_entry: entry,
+      p_stop_loss: stopLoss,
+      p_take_profit: takeProfit,
+      p_risk_percent: riskPercent,
+      p_initial_rr: initialRR,
+      p_setup_type: body.setupType ?? null,
+      p_initial_score: body.initialScore ?? null,
+      p_initial_analysis: body.initialAnalysis ?? null,
+      p_taken_against_verdict: Boolean(body.takenAgainstVerdict),
+      p_original_verdict: body.originalVerdict ?? null,
+      p_original_verdict_reason: body.originalVerdictReason ?? null,
+      p_override_reason: body.overrideReason ?? null,
+      p_override_conditions: Array.isArray(body.overrideConditions) ? body.overrideConditions : [],
+      p_activation_mode: body.activationMode === 'OVERRIDE' ? 'OVERRIDE' : 'READY',
+      p_high_impact_news: Boolean(body.highImpactNews),
+      p_strategy_snapshot: { ...(body.strategySnapshot ?? {}), tradeContext: { highImpactNews: Boolean(body.highImpactNews) } },
     });
-    const { data: trade, error } = await supabase.from('active_trades').insert({
-      ...tradePayload,
-      strategy_snapshot:{...(body.strategySnapshot ?? {}),tradeContext:{highImpactNews:body.highImpactNews}},
-    }).select().single();
-    if (error) throw error;
-    const {error:eventError}=await supabase.from('active_trade_events').insert({ user_id:user.id, trade_id:trade.id,
-      event_type: body.takenAgainstVerdict ? 'TRADE_TAKEN_AGAINST_VERDICT' : 'TRADE_TAKEN',
-      verdict: body.takenAgainstVerdict ? `OPEN — AGAINST ${body.originalVerdict ?? 'VERDICT'}` : 'OPEN',
-      current_price:entry, current_r:0, analysis:{ original_analysis:body.initialAnalysis ?? null, original_verdict:body.originalVerdict ?? null, original_verdict_reason:body.originalVerdictReason ?? null, override_reason:body.overrideReason ?? null }
+
+    if (response.error) throw response.error;
+    const activation = response.data as { trade_record_id?: string; trade_id?: string; active_trade_id?: string; lifecycle_status?: string; active_trade_created?: boolean; audit_event_recorded?: boolean } | null;
+    if (!activation || typeof activation.trade_record_id !== 'string' || typeof activation.active_trade_id !== 'string') {
+      throw new Error('Trade activation RPC did not return a valid record set.');
+    }
+
+    return NextResponse.json({
+      trade: { id: activation.active_trade_id },
+      lifecycleStatus: activation.lifecycle_status ?? decisionCheck.status,
+      activeTradeCreated: activation.active_trade_created === true,
+      auditEventRecorded: activation.audit_event_recorded !== false,
+      decisionCheck,
+      tradeRecordId: activation.trade_record_id,
+      activeTradeId: activation.active_trade_id,
     });
-    if(eventError)console.error('[ACTIVE_TRADE_EVENT_FAILED]',{tradeId:trade.id,message:eventError.message});
-    return NextResponse.json({ trade, lifecycleStatus:decisionCheck.status, activeTradeCreated:decisionCheck.createActiveTrade===true, auditEventRecorded:!eventError, decisionCheck });
   } catch (error) {
     if(cleanup&&error&&typeof error==='object'&&'code' in error&&(error as {code?:string}).code==='23505'){
       await cleanup.supabase.from('trade_records').delete().eq('id',cleanup.tradeRecordId).eq('user_id',cleanup.userId).eq('source','EXECUTED').eq('status','OPEN');

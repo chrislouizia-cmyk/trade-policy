@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canActivateTradeFromDecision, canCloseTrade, evaluateTradeAuthorizationEligibility, finalizeTradeLifecycle, resolveTradeJournalAction } from '../lib/server/trade-lifecycle.ts';
 import { getSafeTradeActivationError } from '../lib/trade-action-errors.ts';
+import { isCountableDailyTradeExecution } from '../lib/server/daily-trade-context.ts';
 
 test('READY decision can create ACTIVE trade', () => {
   const result = canActivateTradeFromDecision({
@@ -210,4 +211,33 @@ test('server failures surface a safe actionable reason', () => {
   });
 
   assert.equal(message, 'The originating decision could not be verified.');
+});
+
+test('EXECUTED trade records without a successful active-trade link do not count toward daily limits', () => {
+  const executedWithoutActivation = {
+    id: 'row-1',
+    source: 'EXECUTED',
+    status: 'OPEN',
+    instrument: 'XAUUSD',
+    created_at: '2026-08-21T12:00:00.000Z',
+    strategy_profile_id: 'strategy-a',
+  };
+
+  assert.equal(isCountableDailyTradeExecution(executedWithoutActivation, new Set()), false);
+  assert.equal(isCountableDailyTradeExecution({ ...executedWithoutActivation, source: 'SUGGESTED' }, new Set(['row-1'])), false);
+});
+
+test('EXECUTED trade records linked to a successful active trade count once toward daily limits', () => {
+  const executedWithActivation = {
+    id: 'row-2',
+    source: 'EXECUTED',
+    status: 'OPEN',
+    instrument: 'XAUUSD',
+    created_at: '2026-08-21T12:30:00.000Z',
+    strategy_profile_id: 'strategy-a',
+  };
+
+  assert.equal(isCountableDailyTradeExecution(executedWithActivation, new Set(['row-2'])), true);
+  assert.equal(isCountableDailyTradeExecution(executedWithActivation, new Set(['row-2', 'row-3'])), true);
+  assert.equal(isCountableDailyTradeExecution({ ...executedWithActivation, status: 'CLOSED' }, new Set(['row-2'])), true);
 });
