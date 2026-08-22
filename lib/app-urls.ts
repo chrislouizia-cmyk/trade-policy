@@ -23,10 +23,13 @@ function currentPreviewOrigin(env: Record<string, string | undefined>) {
 export function getCanonicalAppUrls(env: Record<string, string | undefined> = process.env): CanonicalAppUrls {
   const isPreview = env.VERCEL_ENV === 'preview';
   const previewOrigin = isPreview ? currentPreviewOrigin(env) : null;
+  const siteOrigin = previewOrigin ?? origin(env.NEXT_PUBLIC_SITE_URL, 'https://tradepolice.app');
+  const appOrigin = previewOrigin ?? origin(env.NEXT_PUBLIC_APP_URL, 'https://tradepolice.app');
+  const normalizedPortalOrigin = appOrigin === 'https://portal.tradepolice.app' ? siteOrigin : appOrigin;
 
   return {
-    site: previewOrigin ?? origin(env.NEXT_PUBLIC_SITE_URL, 'https://tradepolice.app'),
-    portal: previewOrigin ?? origin(env.NEXT_PUBLIC_APP_URL, 'https://portal.tradepolice.app'),
+    site: siteOrigin,
+    portal: normalizedPortalOrigin,
     hq: previewOrigin ?? origin(env.NEXT_PUBLIC_HQ_URL, 'https://hq.tradepolice.app'),
   };
 }

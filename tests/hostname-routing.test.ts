@@ -8,10 +8,17 @@ test('treats portal host as portal traffic', () => {
   assert.equal(decision.redirectTarget, undefined);
 });
 
-test('redirects portal-only paths from marketing host to the portal host', () => {
-  const decision = getHostnameRoutingDecision('tradepolice.app', '/dashboard');
-  assert.equal(decision.mode, 'marketing');
-  assert.equal(decision.redirectTarget, 'portal');
+test('keeps client app routes on the canonical apex host and blocks portal redirect loops', () => {
+  const apexDashboard = getHostnameRoutingDecision('tradepolice.app', '/dashboard');
+  const apexLogin = getHostnameRoutingDecision('tradepolice.app', '/client/login');
+  const portalDashboard = getHostnameRoutingDecision('portal.tradepolice.app', '/dashboard');
+
+  assert.equal(apexDashboard.mode, 'marketing');
+  assert.equal(apexDashboard.redirectTarget, undefined);
+  assert.equal(apexLogin.mode, 'marketing');
+  assert.equal(apexLogin.redirectTarget, undefined);
+  assert.equal(portalDashboard.mode, 'portal');
+  assert.equal(portalDashboard.redirectTarget, undefined);
 });
 
 test('keeps marketing pages and public client login on the marketing host', () => {

@@ -63,7 +63,7 @@ export function getHostnameRoutingDecision(hostname: string | null | undefined, 
 
   return {
     mode: 'marketing' as const,
-    redirectTarget: isHQPath ? 'hq' as const : isPortalPath ? 'portal' as const : undefined,
+    redirectTarget: isHQPath ? 'hq' as const : undefined,
     isPortalPath,
     isHQPath,
   };
