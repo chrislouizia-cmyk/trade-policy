@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getSafeClientNextPath } from '../lib/auth/safe-next.ts';
+import {
+  getSupabaseAuthCookieNames,
+  shouldRecoverFromSupabaseAuthError,
+  isSupabaseAuthCookieName,
+  createSupabaseAuthRecoveryResponse,
+} from '../lib/supabase/auth-cookies.ts';
 
 const blocked = [
   '/login',
@@ -35,4 +41,86 @@ test('no auth loop under stale state can include login pages in the redirect cha
   const sanitized = chain.map((path) => getSafeClientNextPath(path, path, '/dashboard'));
   assert.deepEqual(sanitized, ['/dashboard', '/dashboard', '/dashboard']);
   assert.ok(sanitized.every((path) => path !== '/login' && path !== '/client/login'));
+});
+
+test('valid session never enters recovery', () => {
+  assert.equal(
+    shouldRecoverFromSupabaseAuthError({
+      user: { id: 'abc' },
+      authError: { name: 'AuthSessionMissingError', message: 'session missing' },
+      cookieNames: ['sb-project-auth-token'],
+    }),
+    false,
+  );
+});
+
+test('no session never enters recovery', () => {
+  assert.equal(
+    shouldRecoverFromSupabaseAuthError({
+      user: undefined,
+      authError: null,
+      cookieNames: [],
+    }),
+    false,
+  );
+});
+
+test('stale cookie enters recovery once', () => {
+  const names = ['sb-abc-auth-token'];
+  assert.equal(
+    shouldRecoverFromSupabaseAuthError({
+      user: undefined,
+      authError: { name: 'AuthSessionMissingError', code: 'session_not_found', message: 'Session not found' },
+      cookieNames: names,
+    }),
+    true,
+  );
+  assert.equal(getSupabaseAuthCookieNames(['sb-abc-auth-token'], 'https://abc.supabase.co').length, 1);
+  assert.equal(getSupabaseAuthCookieNames(['sb-xyz-auth-token'], 'https://abc.supabase.co').length, 0);
+});
+
+test('malformed cookie enters recovery once', () => {
+  assert.equal(
+    shouldRecoverFromSupabaseAuthError({
+      user: undefined,
+      authError: { name: 'JWTInvalidError', code: 'auth_invalid_jwt', message: 'Malformed token' },
+      cookieNames: ['sb-abc-auth-token'],
+    }),
+    true,
+  );
+});
+
+test('chunked stale cookies are all cleared and unrelated cookies survive', () => {
+  const names = [
+    'sb-abc-auth-token',
+    'sb-abc-auth-token.0',
+    'sb-abc-auth-token.1',
+    'sb-abc-refresh-token',
+    'sb-abc-refresh-token.0',
+    'other-cookie',
+  ];
+  const recovered = getSupabaseAuthCookieNames(names, 'https://abc.supabase.co');
+
+  assert.deepEqual(recovered, [
+    'sb-abc-auth-token',
+    'sb-abc-auth-token.0',
+    'sb-abc-auth-token.1',
+    'sb-abc-refresh-token',
+    'sb-abc-refresh-token.0',
+  ]);
+  assert.equal(isSupabaseAuthCookieName('sb-abc-auth-token.1', 'https://abc.supabase.co'), true);
+  assert.equal(isSupabaseAuthCookieName('other-cookie', 'https://abc.supabase.co'), false);
+
+  const response = createSupabaseAuthRecoveryResponse('https://tradepolice.app', recovered);
+  const setCookies = response.headers.getSetCookie?.() ?? [];
+  assert.ok(setCookies.some((value) => value.startsWith('sb-abc-auth-token=; Max-Age=0')));
+  assert.ok(setCookies.some((value) => value.startsWith('sb-abc-auth-token.1=; Max-Age=0')));
+  assert.ok(setCookies.every((value) => !value.startsWith('other-cookie=')));
+});
+
+test('recovery does not loop and safe-next remains intact', () => {
+  assert.equal(getSafeClientNextPath('/client/login', '/auth/recover', '/dashboard'), '/dashboard');
+  assert.equal(getSafeClientNextPath('/dashboard', '/auth/recover', '/dashboard'), '/dashboard');
+  assert.equal(getSafeClientNextPath('/history', '/auth/recover', '/dashboard'), '/history');
+  assert.equal(getSafeClientNextPath('https://evil.com', '/auth/recover', '/dashboard'), '/dashboard');
 });

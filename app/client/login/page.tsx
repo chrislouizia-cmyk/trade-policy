@@ -1,7 +1,12 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import ClientLoginForm from '@/components/ClientLoginForm';
 import { createClient } from '@/lib/supabase/server';
 import { getSafeClientNextPath } from '@/lib/auth/safe-next';
+import {
+  getSupabaseAuthCookieNames,
+  shouldRecoverFromSupabaseAuthError,
+} from '@/lib/supabase/auth-cookies';
 
 export default async function ClientLoginPage({
   searchParams,
@@ -10,6 +15,8 @@ export default async function ClientLoginPage({
 }) {
   const params = await searchParams;
   const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
+  const cookieStore = await cookies();
+  const authCookieNames = getSupabaseAuthCookieNames(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL);
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
@@ -19,12 +26,8 @@ export default async function ClientLoginPage({
     redirect(safeNext === '/validate' ? '/dashboard' : safeNext);
   }
 
-  if (error) {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // Ignore stale session cleanup failures; the page will render the canonical login once.
-    }
+  if (error && shouldRecoverFromSupabaseAuthError({ user, authError: error, cookieNames: authCookieNames })) {
+    redirect('/auth/recover');
   }
 
   return (
