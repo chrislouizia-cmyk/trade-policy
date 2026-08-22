@@ -8,7 +8,10 @@ export default async function ClientLoginPage({
   searchParams: Promise<{ next?: string; mode?: string }>;
 }) {
   const params = await searchParams;
-  const next = params.next?.startsWith('/') && !params.next.startsWith('/hq') ? params.next : '/validate';
+  const rawNext = params.next;
+  const next = rawNext && rawNext.startsWith('/') && rawNext !== '/login' && !rawNext.startsWith('/hq')
+    ? rawNext
+    : '/dashboard';
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 

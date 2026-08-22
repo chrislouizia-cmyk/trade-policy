@@ -6,6 +6,6 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const params = await searchParams;
-  const suffix = params.next ? `?next=${encodeURIComponent(params.next)}` : '';
-  redirect(`/client/login${suffix}`);
+  const next = params.next && params.next !== '/login' ? params.next : '/dashboard';
+  redirect(`/client/login?next=${encodeURIComponent(next)}`);
 }
