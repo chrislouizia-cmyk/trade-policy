@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { isCountableDailyTradeExecution } from '../lib/server/daily-trade-context.ts';
+import { assertValidInternalLifecycleSourceIds, buildInternalLifecycleDecisionSnapshot, getInternalLifecycleScenarioConfig } from '../lib/server/internal-lifecycle-lineage.ts';
 import { attachTradeLifecycleSimulationMetadata, isTradeLifecycleSimulationRequest, isTradeLifecycleSimulationRecord } from '../lib/server/trade-lifecycle-v2.ts';
 
 const activateRoute = readFileSync(new URL('../app/api/trades/activate/route.ts', import.meta.url), 'utf8');
@@ -184,4 +185,29 @@ test('simulation records are explicitly labeled and kept out of live history and
   assert.match(analyticsPage, /strategy_snapshot.*simulationMode|simulationMode.*strategy_snapshot/i);
   assert.doesNotMatch(historyPage, /decision_reports\).*select\('id,created_at.*snapshot_json'\)|select\('id,created_at.*snapshot_json'\)/i);
   assert.doesNotMatch(analyticsPage, /\.from\('active_trades'\)\.select\(.*\)\.eq\('status','CLOSED'\)/i);
+});
+
+test('internal lifecycle scenarios produce authoritative READY, SOFT, and HARD decision lineage snapshots', () => {
+  const ready = buildInternalLifecycleDecisionSnapshot('READY');
+  const soft = buildInternalLifecycleDecisionSnapshot('SOFT_BLOCK');
+  const hard = buildInternalLifecycleDecisionSnapshot('HARD_BLOCK');
+
+  assert.equal(ready.verdict, 'READY');
+  assert.equal(ready.finalRiskCheck.overrideEligible, false);
+  assert.equal(getInternalLifecycleScenarioConfig('READY').activationMode, 'READY');
+
+  assert.equal(soft.verdict, 'BLOCKED');
+  assert.equal(soft.finalRiskCheck.overrideEligible, true);
+  assert.equal(getInternalLifecycleScenarioConfig('SOFT_BLOCK').activationMode, 'OVERRIDE');
+
+  assert.equal(hard.verdict, 'BLOCKED');
+  assert.equal(hard.finalRiskCheck.overrideEligible, false);
+  assert.equal(getInternalLifecycleScenarioConfig('HARD_BLOCK').activationMode, 'READY');
+});
+
+test('fake or blank internal IDs are rejected before they can reach the V2 RPC', () => {
+  assert.throws(() => assertValidInternalLifecycleSourceIds('', '3f5ec9af-9fd9-4ab4-a50e-7740dbb2823b'), /A valid internal smoke test sourceDecisionId and sourceReportId are required/i);
+  assert.throws(() => assertValidInternalLifecycleSourceIds('not-a-uuid', '3f5ec9af-9fd9-4ab4-a50e-7740dbb2823b'), /sourceDecisionId must be a valid UUID/i);
+  assert.throws(() => assertValidInternalLifecycleSourceIds('3f5ec9af-9fd9-4ab4-a50e-7740dbb2823b', 'not-a-uuid'), /sourceReportId must be a valid UUID/i);
+  assert.doesNotThrow(() => assertValidInternalLifecycleSourceIds('3f5ec9af-9fd9-4ab4-a50e-7740dbb2823b', '1ebd5d9c-b7af-4f99-b4cd-c2d51f1d8f3f'));
 });

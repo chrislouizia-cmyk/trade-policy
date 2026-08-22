@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 
 type ApiResult = Record<string, unknown> & {
   trade_record_id?: string | null;
@@ -14,36 +14,43 @@ type ApiResult = Record<string, unknown> & {
   outcome?: string | null;
 };
 
-type PayloadState = {
+type ScenarioKey = 'READY' | 'SOFT_BLOCK' | 'HARD_BLOCK';
+
+type SeedResponse = {
   sourceDecisionId: string;
   sourceReportId: string;
+  authoritativeVerdict: 'READY' | 'BLOCKED';
+  overrideEligible: boolean;
+};
+
+type PayloadState = {
+  scenario: ScenarioKey;
   instrument: string;
   direction: 'BUY' | 'SELL';
   entry: number;
   stopLoss: number;
   takeProfit: number;
   riskPercent: number;
-  activationMode: 'READY' | 'OVERRIDE';
   overrideReason: string;
-  originalVerdict: string;
-  takenAgainstVerdict: boolean;
-  highImpactNews: boolean;
+  sourceDecisionId: string;
+  sourceReportId: string;
+  authoritativeVerdict: 'READY' | 'BLOCKED';
+  overrideEligible: boolean;
 };
 
 const basePayload = (): PayloadState => ({
-  sourceDecisionId: '',
-  sourceReportId: '',
+  scenario: 'READY',
   instrument: 'XAUUSD',
   direction: 'BUY',
   entry: 2348.5,
   stopLoss: 2338.4,
   takeProfit: 2375.8,
   riskPercent: 0.5,
-  activationMode: 'READY',
   overrideReason: 'Internal lifecycle smoke test override',
-  originalVerdict: '',
-  takenAgainstVerdict: false,
-  highImpactNews: false,
+  sourceDecisionId: '',
+  sourceReportId: '',
+  authoritativeVerdict: 'READY',
+  overrideEligible: false,
 });
 
 async function postSimulationRequest(path: string, body: Record<string, unknown>) {
@@ -64,35 +71,69 @@ async function postSimulationRequest(path: string, body: Record<string, unknown>
   return data?.result ?? data;
 }
 
+async function seedLifecycleLineage(payload: Pick<PayloadState, 'scenario' | 'instrument' | 'direction' | 'entry' | 'stopLoss' | 'takeProfit' | 'riskPercent'>): Promise<SeedResponse> {
+  const response = await fetch('/api/internal/lifecycle-test/seed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : 'Unable to seed internal lifecycle lineage.';
+    throw new Error(message);
+  }
+
+  return data as SeedResponse;
+}
+
 export default function LifecycleTestHarness({ role }: { role: string }) {
   const [payload, setPayload] = useState<PayloadState>(basePayload);
-  const [busy, setBusy] = useState<'activate' | 'close' | null>(null);
+  const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ApiResult | null>(null);
   const [closeResult, setCloseResult] = useState<ApiResult | null>(null);
-
-  const canUseOverride = useMemo(() => payload.activationMode === 'OVERRIDE', [payload.activationMode]);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   const updateField = <K extends keyof PayloadState>(field: K, value: PayloadState[K]) => {
     setPayload((current) => ({ ...current, [field]: value }));
   };
 
-  const runScenario = async (mode: 'READY' | 'SOFT_BLOCK' | 'HARD_BLOCK') => {
+  const runSimulation = async () => {
     setError(null);
     setResult(null);
     setCloseResult(null);
-    setBusy('activate');
+    setBusy(true);
 
     try {
-      const seedDecisionId = payload.sourceDecisionId || crypto.randomUUID();
-      const seedReportId = payload.sourceReportId || crypto.randomUUID();
-      const activationMode = mode === 'READY' ? 'READY' : mode === 'SOFT_BLOCK' ? 'OVERRIDE' : 'READY';
-      const originalVerdict = mode === 'HARD_BLOCK' ? 'BLOCKED' : mode === 'SOFT_BLOCK' ? 'BLOCKED' : 'READY';
-      const overrideReason = mode === 'SOFT_BLOCK' ? payload.overrideReason || 'Internal lifecycle smoke test override' : null;
+      const seeded = await seedLifecycleLineage({
+        scenario: payload.scenario,
+        instrument: payload.instrument,
+        direction: payload.direction,
+        entry: Number(payload.entry),
+        stopLoss: Number(payload.stopLoss),
+        takeProfit: Number(payload.takeProfit),
+        riskPercent: Number(payload.riskPercent),
+      });
+
+      setPayload((current) => ({
+        ...current,
+        sourceDecisionId: seeded.sourceDecisionId,
+        sourceReportId: seeded.sourceReportId,
+        authoritativeVerdict: seeded.authoritativeVerdict,
+        overrideEligible: seeded.overrideEligible,
+      }));
+
+      const activationMode = payload.scenario === 'SOFT_BLOCK' ? 'OVERRIDE' : 'READY';
+      const overrideReason = payload.scenario === 'SOFT_BLOCK' ? payload.overrideReason.trim() : null;
+      if (payload.scenario === 'SOFT_BLOCK' && !overrideReason) {
+        throw new Error('Soft-block simulations require a non-empty override reason.');
+      }
 
       const requestBody = {
-        sourceDecisionId: seedDecisionId,
-        sourceReportId: seedReportId,
+        sourceDecisionId: seeded.sourceDecisionId,
+        sourceReportId: seeded.sourceReportId,
         instrument: payload.instrument,
         direction: payload.direction,
         entry: Number(payload.entry),
@@ -101,32 +142,43 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
         riskPercent: Number(payload.riskPercent),
         activationMode,
         overrideReason,
-        originalVerdict,
-        takenAgainstVerdict: payload.takenAgainstVerdict,
-        highImpactNews: payload.highImpactNews,
+        originalVerdict: seeded.authoritativeVerdict,
+        takenAgainstVerdict: false,
+        highImpactNews: false,
         strategySnapshot: { source: 'INTERNAL_SMOKE_TEST', simulationMode: 'INTERNAL_LIFECYCLE_SMOKE_TEST' },
       };
 
-      const nextResult = await postSimulationRequest('/api/trades/activate', requestBody);
-      setResult(nextResult as ApiResult);
+      try {
+        const nextResult = await postSimulationRequest('/api/trades/activate', requestBody);
+        setResult(nextResult as ApiResult);
 
-      if (nextResult?.active_trade_id) {
-        const closePrice = payload.direction === 'BUY' ? Number(payload.entry) + 12 : Number(payload.entry) - 12;
-        const closeResponse = await postSimulationRequest(`/api/trades/${nextResult.active_trade_id}/close`, {
-          closePrice,
-          fees: 0,
-          notes: 'Internal lifecycle smoke test close',
-          outcome: 'BREAKEVEN',
-        });
-        setCloseResult(closeResponse as ApiResult);
+        if (nextResult?.active_trade_id) {
+          const closePrice = payload.direction === 'BUY' ? Number(payload.entry) + 12 : Number(payload.entry) - 12;
+          const closeResponse = await postSimulationRequest(`/api/trades/${nextResult.active_trade_id}/close`, {
+            closePrice,
+            fees: 0,
+            notes: 'Internal lifecycle smoke test close',
+            outcome: 'BREAKEVEN',
+          });
+          setCloseResult(closeResponse as ApiResult);
+        }
+      } catch (caughtError) {
+        const text = caughtError instanceof Error ? caughtError.message : 'Unknown lifecycle error.';
+        if (payload.scenario === 'HARD_BLOCK') {
+          setError(`PASS — activation correctly rejected: ${text}`);
+          return;
+        }
+        throw caughtError;
       }
     } catch (caughtError) {
       const text = caughtError instanceof Error ? caughtError.message : 'Unknown lifecycle error.';
       setError(text);
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
+
+  const showOverrideReason = payload.scenario === 'SOFT_BLOCK';
 
   return (
     <main style={{ maxWidth: 1100, margin: '32px auto', padding: '0 16px', color: '#e5eefb' }}>
@@ -144,17 +196,17 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
         </div>
 
         <p style={{ marginTop: 0, color: '#cbd5e1', lineHeight: 1.6 }}>
-          This page only runs when the server-side simulation flag is enabled. It exercises the real V2 activation and close routes while keeping the trade explicitly marked as internal simulation metadata so it never counts as a live execution.
+          This lab seeds a real internal Decision Report lineage server-side before exercising the V2 activation route.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 20 }}>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span>sourceDecisionId</span>
-            <input value={payload.sourceDecisionId} onChange={(event) => updateField('sourceDecisionId', event.target.value)} style={inputStyle} />
-          </label>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span>sourceReportId</span>
-            <input value={payload.sourceReportId} onChange={(event) => updateField('sourceReportId', event.target.value)} style={inputStyle} />
+            <span>scenario</span>
+            <select value={payload.scenario} onChange={(event) => updateField('scenario', event.target.value as ScenarioKey)} style={inputStyle}>
+              <option value="READY">READY</option>
+              <option value="SOFT_BLOCK">SOFT BLOCK</option>
+              <option value="HARD_BLOCK">HARD BLOCK</option>
+            </select>
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span>instrument</span>
@@ -183,34 +235,35 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
             <span>riskPercent</span>
             <input type="number" step="0.01" value={payload.riskPercent} onChange={(event) => updateField('riskPercent', Number(event.target.value))} style={inputStyle} />
           </label>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span>activation mode</span>
-            <select value={payload.activationMode} onChange={(event) => updateField('activationMode', event.target.value as 'READY' | 'OVERRIDE')} style={inputStyle}>
-              <option value="READY">READY</option>
-              <option value="OVERRIDE">OVERRIDE</option>
-            </select>
-          </label>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span>original verdict</span>
-            <input value={payload.originalVerdict} onChange={(event) => updateField('originalVerdict', event.target.value.toUpperCase())} placeholder="READY or BLOCKED" style={inputStyle} />
-          </label>
-          <label style={{ display: 'grid', gap: 6, gridColumn: '1 / -1' }}>
-            <span>override reason</span>
-            <input value={payload.overrideReason} onChange={(event) => updateField('overrideReason', event.target.value)} disabled={!canUseOverride} style={{ ...inputStyle, opacity: canUseOverride ? 1 : 0.55 }} />
-          </label>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
-          <button onClick={() => runScenario('READY')} disabled={busy === 'activate'} style={buttonStyle('#1d4ed8')}>
-            {busy === 'activate' ? 'Running ready activation…' : 'Simulate READY'}
+        {showOverrideReason && (
+          <div style={{ marginTop: 16 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span>override reason</span>
+              <input value={payload.overrideReason} onChange={(event) => updateField('overrideReason', event.target.value)} style={inputStyle} />
+            </label>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 20, flexWrap: 'wrap' }}>
+          <button onClick={runSimulation} disabled={busy} style={buttonStyle('#1d4ed8')}>
+            {busy ? 'Running simulation…' : 'Run Simulation'}
           </button>
-          <button onClick={() => runScenario('SOFT_BLOCK')} disabled={busy === 'activate'} style={buttonStyle('#f59e0b')}>
-            Simulate SOFT BLOCK
-          </button>
-          <button onClick={() => runScenario('HARD_BLOCK')} disabled={busy === 'activate'} style={buttonStyle('#ef4444')}>
-            Simulate HARD BLOCK
-          </button>
+          <div style={{ fontSize: 12, color: '#cbd5e1' }}>
+            {payload.authoritativeVerdict} · overrideEligible {String(payload.overrideEligible)}
+          </div>
         </div>
+
+        <details open={showAdvanced} onToggle={(event) => setShowAdvanced((event.target as HTMLDetailsElement).open)} style={{ marginTop: 20, border: '1px solid rgba(148,163,184,0.25)', borderRadius: 12, padding: 12 }}>
+          <summary style={{ cursor: 'pointer', color: '#e2e8f0', fontWeight: 600 }}>Advanced / Debug</summary>
+          <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+            <div style={{ fontSize: 12, color: '#cbd5e1' }}><strong>sourceDecisionId:</strong> {payload.sourceDecisionId || 'not seeded yet'}</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1' }}><strong>sourceReportId:</strong> {payload.sourceReportId || 'not seeded yet'}</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1' }}><strong>authoritativeVerdict:</strong> {payload.authoritativeVerdict}</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1' }}><strong>overrideEligible:</strong> {String(payload.overrideEligible)}</div>
+          </div>
+        </details>
 
         {error && (
           <div style={{ marginTop: 18, border: '1px solid rgba(239,68,68,0.6)', background: 'rgba(127,29,29,0.25)', color: '#fecaca', borderRadius: 12, padding: 12 }}>
