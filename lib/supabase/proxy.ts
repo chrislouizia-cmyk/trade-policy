@@ -11,6 +11,10 @@ import {
 } from '@/lib/hostname-routing';
 import { getCanonicalAppUrls } from '@/lib/app-urls';
 import { getSafeClientNextPath } from '@/lib/auth/safe-next';
+import {
+  isSupabaseAuthRateLimitError,
+  shouldAttemptSupabaseCookieRecovery,
+} from '@/lib/supabase/auth-cookies';
 
 function redirectToOrigin(request: NextRequest, origin: string) {
   const destination = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin);
@@ -18,10 +22,11 @@ function redirectToOrigin(request: NextRequest, origin: string) {
 }
 
 function redirectToLogin(request: NextRequest, origin: string, pathname: string) {
-  const destination = new URL(pathname, origin);
+  const guardPath = pathname === '/login' || pathname === '/client/login' || pathname === '/auth/recover' ? '/client/login' : pathname;
+  const destination = new URL(guardPath, origin);
   const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  const safeNext = getSafeClientNextPath(requestedPath, pathname, '/dashboard');
-  if (safeNext !== '/dashboard' && safeNext !== pathname) destination.searchParams.set('next', safeNext);
+  const safeNext = getSafeClientNextPath(requestedPath, guardPath, '/dashboard');
+  destination.searchParams.set('next', safeNext === '/dashboard' || safeNext === guardPath ? '/dashboard' : safeNext);
   return NextResponse.redirect(destination);
 }
 
@@ -66,6 +71,7 @@ export async function updateSession(
 
   const publicPaths = new Set([
     '/',
+    '/login',
     '/access',
     '/about',
     '/faq',
@@ -139,6 +145,7 @@ export async function updateSession(
   );
 
   let user = null;
+  let authError: { name?: string; code?: string; status?: number; message?: string } | null = null;
 
   try {
     const {
@@ -147,6 +154,7 @@ export async function updateSession(
     } = await supabase.auth.getUser();
 
     if (error) {
+      authError = error;
       if (!isMissingSession(error)) {
         console.error('[auth] Session verification failed', {
           name: error.name,
@@ -160,12 +168,30 @@ export async function updateSession(
       user = data.user;
     }
   } catch (error) {
+    authError = error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+    } : { name: 'UnknownAuthError', message: 'Unknown auth error' };
     console.error('[auth] Session verification threw', {
-      name: error instanceof Error ? error.name : 'UnknownAuthError',
+      name: authError.name,
+      code: authError.code,
+      status: authError.status,
     });
 
     user = null;
   }
+
+  const recoveredParam = request.nextUrl.searchParams.get('recovered') === '1';
+  const authCookieNames = request.cookies.getAll().map((cookie) => cookie.name).filter((name) => /^(sb-|sb_)/.test(name));
+  const authStateCategory = user ? 'valid' : isSupabaseAuthRateLimitError(authError) ? 'rate_limited' : shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered: recoveredParam }) ? 'stale' : 'missing';
+
+  console.info('[AUTH_ROUTE_DIAGNOSTIC]', {
+    pathname,
+    redirectDestination: !user && !isPublic ? (pathname.startsWith('/hq') || pathname.startsWith('/admin') || pathname.startsWith('/staff') || pathname.startsWith('/api/hq') ? '/hq/login' : '/client/login') : null,
+    recovered: recoveredParam,
+    authStateCategory,
+    hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
+  });
 
   if (routingDecision.mode === 'hq' && isHQEntryPath(pathname)) {
     let pendingInvitation = false;
@@ -207,6 +233,7 @@ export async function updateSession(
 
     url.pathname = '/client/login';
     url.search = '';
+    url.searchParams.set('next', '/dashboard');
 
     return NextResponse.redirect(url);
   }

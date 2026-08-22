@@ -16,10 +16,12 @@ export async function GET(request: Request) {
   const target = new URL('/client/login?next=/dashboard', url.origin);
   target.searchParams.set('recovered', '1');
 
-  console.info('[AUTH_RECOVERY_INCOMING]', {
-    host: url.hostname,
-    matchingCookieNames: authCookieNames,
-    matchingCookieCount: authCookieNames.length,
+  console.info('[AUTH_RECOVERY_DIAGNOSTIC]', {
+    pathname: '/auth/recover',
+    redirectDestination: '/client/login?next=/dashboard&recovered=1',
+    recovered: true,
+    authStateCategory: authCookieNames.length > 0 ? 'stale' : 'missing',
+    hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
   });
 
   if (!authCookieNames.length) {

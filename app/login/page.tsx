@@ -8,5 +8,5 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const next = getSafeClientNextPath(params.next, '/login', '/dashboard');
-  redirect(`/client/login?next=${encodeURIComponent(next)}`);
+  redirect(`/client/login?next=${encodeURIComponent(next === '/dashboard' ? '/dashboard' : next)}`);
 }

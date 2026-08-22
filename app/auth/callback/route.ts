@@ -14,6 +14,13 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get('token_hash');
   const type = url.searchParams.get('type');
   const next = safeNext(url.searchParams.get('next'));
+  console.info('[AUTH_CALLBACK_DIAGNOSTIC]', {
+    pathname: '/auth/callback',
+    redirectDestination: next,
+    recovered: url.searchParams.get('recovered') === '1',
+    authStateCategory: 'missing',
+    hasMatchingSupabaseAuthCookies: false,
+  });
   const portal = url.searchParams.get('portal') ?? new URLSearchParams(next.split('?')[1] ?? '').get('portal');
   const supabase = await createClient();
 

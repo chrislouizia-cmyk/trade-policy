@@ -16,6 +16,8 @@ export function getSafeClientNextPath(
     '/',
     '/login',
     '/client/login',
+    '/auth/recover',
+    '/auth/callback',
     '/hq/login',
   ]);
 

@@ -21,25 +21,6 @@ export default async function ClientLoginPage({
   const cookieStore = await cookies();
   const authCookieNames = getSupabaseAuthCookieNames(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL);
 
-  if (recovered) {
-    console.info('[AUTH_RATE_LIMIT_RECOVERY]', {
-      pathname: '/client/login',
-      recovered: true,
-      hasAuthCookies: authCookieNames.length > 0,
-    });
-    return (
-      <main className="auth-page client-login-page">
-        <section className="auth-card portal-auth-card">
-          <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
-          <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
-          <h1>Trader sign in</h1>
-          <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
-          <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
-        </section>
-      </main>
-    );
-  }
-
   const supabase = await createClient();
   let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] | null = null;
   let authError: { status?: number; name?: string; code?: string; message?: string } | null = null;
@@ -58,6 +39,29 @@ export default async function ClientLoginPage({
     };
   }
 
+  const authStateCategory = user ? 'valid' : authError && isSupabaseAuthRateLimitError(authError) ? 'rate_limited' : shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered }) ? 'stale' : 'missing';
+
+  if (recovered) {
+    console.info('[AUTH_LOGIN_DIAGNOSTIC]', {
+      pathname: '/client/login',
+      redirectDestination: '/client/login',
+      recovered: true,
+      authStateCategory,
+      hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
+    });
+    return (
+      <main className="auth-page client-login-page">
+        <section className="auth-card portal-auth-card">
+          <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
+          <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
+          <h1>Trader sign in</h1>
+          <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
+          <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
+        </section>
+      </main>
+    );
+  }
+
   if (user) {
     const { data: staffRoute } = await supabase.rpc('staff_workspace_route');
     if (staffRoute) redirect(String(staffRoute));
@@ -73,10 +77,12 @@ export default async function ClientLoginPage({
   }
 
   if (authError && isSupabaseAuthRateLimitError(authError)) {
-    console.info('[AUTH_RATE_LIMIT_RECOVERY]', {
+    console.info('[AUTH_LOGIN_DIAGNOSTIC]', {
       pathname: '/client/login',
+      redirectDestination: authCookieNames.length > 0 ? '/auth/recover' : '/client/login',
       recovered: false,
-      hasAuthCookies: authCookieNames.length > 0,
+      authStateCategory: 'rate_limited',
+      hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
     });
 
     if (authCookieNames.length > 0) {
@@ -85,6 +91,13 @@ export default async function ClientLoginPage({
   }
 
   if (authError && shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered })) {
+    console.info('[AUTH_LOGIN_DIAGNOSTIC]', {
+      pathname: '/client/login',
+      redirectDestination: '/auth/recover',
+      recovered: false,
+      authStateCategory: 'stale',
+      hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
+    });
     redirect('/auth/recover');
   }
 
