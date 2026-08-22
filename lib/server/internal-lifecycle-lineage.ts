@@ -168,7 +168,7 @@ export async function resolveInternalLifecycleDecisionLineage(
     throw new Error(`Could not prepare the internal smoke test lineage for ${scenario}: ${scanError.message}`);
   }
 
-  const { error: sourceError } = await admin.from('decision_report_sources').insert({
+  const { data: source, error: sourceError } = await admin.from('decision_report_sources').insert({
     id: sourceDecisionId,
     user_id: userId,
     source_analysis_id: analysisId,
@@ -179,45 +179,28 @@ export async function resolveInternalLifecycleDecisionLineage(
     ai_explanation_json: null,
     created_at: createdAt,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-  });
+  }).select('id').single();
 
-  if (sourceError) {
-    throw new Error(`Could not create the internal smoke test decision source for ${scenario}: ${sourceError.message}`);
+  if (sourceError || !source?.id) {
+    throw new Error(`Could not create the internal smoke test decision source for ${scenario}: ${sourceError?.message ?? 'source id missing'}`);
   }
 
-  const { error: reportError } = await admin.from('decision_reports').insert({
-    id: reportId,
-    user_id: userId,
-    schema_version: snapshot.schemaVersion,
-    verdict: snapshot.verdict,
-    readiness_percent: snapshot.readinessPercent,
-    instrument: snapshot.instrument,
-    timeframe: snapshot.timeframe,
-    strategy_id: null,
-    strategy_name: snapshot.strategyName,
-    strategy_revision_id: snapshot.strategyRevisionId,
-    strategy_version: snapshot.strategyVersion,
-    primary_reason: snapshot.primaryReason,
-    next_action: snapshot.nextAction,
-    market_provider: snapshot.marketData.provider,
-    last_verified_candle_at: snapshot.marketData.lastVerifiedCandleAt,
-    data_freshness: snapshot.marketData.freshness,
-    deterministic_fingerprint: snapshot.deterministicFingerprint,
-    snapshot_json: snapshot,
-    source_analysis_id: analysisId,
-    source_trade_id: null,
-    idempotency_key: idempotencyKey,
-    created_at: createdAt,
+  const { data: reportResult, error: reportError } = await admin.rpc('save_decision_report', {
+    p_source_id: source.id,
+    p_user_id: userId,
+    p_idempotency_key: idempotencyKey,
   });
 
   if (reportError) {
-    throw new Error(`Could not create the internal smoke test report for ${scenario}: ${reportError.message}`);
+    throw new Error(`Could not materialize the internal smoke test report for ${scenario}: ${reportError.message}`);
   }
+
+  const reportRow = Array.isArray(reportResult) ? reportResult[0] : reportResult;
 
   return {
     scenario,
-    sourceDecisionId,
-    sourceReportId: reportId,
+    sourceDecisionId: source.id,
+    sourceReportId: reportRow?.report_id ?? reportId,
     verdict: config.verdict,
     overrideEligible: config.overrideEligible,
     activationMode: config.activationMode,

@@ -8,6 +8,22 @@ import { isTradeLifecycleSimulationEnabled } from '@/lib/server/trade-lifecycle-
 const INTERNAL_LIFECYCLE_TAG = 'INTERNAL_LIFECYCLE_SMOKE_TEST';
 const INTERNAL_LIFECYCLE_PERMISSION = 'system.health';
 
+function logLifecycleSeedFailure(stage: string, error: any) {
+  const payload = error && typeof error === 'object' ? error : { message: String(error ?? 'Unknown lifecycle seed failure') };
+  console.error('[LIFECYCLE_SEED_ERROR]', {
+    stage,
+    code: payload.code ?? 'UNKNOWN',
+    message: payload.message ?? 'Unknown lifecycle seed failure',
+    details: payload.details ?? null,
+    hint: payload.hint ?? null,
+  });
+}
+
+function throwLifecycleSeedFailure(stage: string, error: any, fallbackMessage: string) {
+  logLifecycleSeedFailure(stage, error ?? { message: fallbackMessage });
+  throw new Error(`${fallbackMessage}: ${error?.message ?? 'Unknown lifecycle seed failure'}`);
+}
+
 const requestSchema = z.object({
   scenario: z.enum(['READY', 'SOFT_BLOCK', 'HARD_BLOCK']),
   instrument: z.string().trim().min(1).default('XAUUSD'),
@@ -94,7 +110,7 @@ export async function POST(request: Request) {
     const { scenario, instrument, direction, entry, stopLoss, takeProfit, riskPercent } = parsed.data;
     const admin = createAdminClient();
 
-    const { data: existingMatch } = await admin
+    const { data: existingMatch, error: existingReportError } = await admin
       .from('decision_reports')
       .select('id, snapshot_json, source_analysis_id')
       .eq('user_id', user.id)
@@ -102,13 +118,17 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false })
       .limit(25);
 
+    if (existingReportError) {
+      throwLifecycleSeedFailure('existing_report_lookup', existingReportError, 'Could not look up the existing internal lifecycle report lineage');
+    }
+
     const existingCandidate = (existingMatch ?? []).find((row: any) => {
       const snapshot = row?.snapshot_json ?? {};
       return String(snapshot?.decisionSummary?.testScenario ?? '').toUpperCase() === scenario && String(snapshot?.verdict ?? '').toUpperCase() === (scenario === 'READY' ? 'READY' : 'BLOCKED');
     });
 
     if (existingCandidate?.id && existingCandidate?.source_analysis_id) {
-      const { data: existingSource } = await admin
+      const { data: existingSource, error: existingSourceError } = await admin
         .from('decision_report_sources')
         .select('id')
         .eq('user_id', user.id)
@@ -116,6 +136,10 @@ export async function POST(request: Request) {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      if (existingSourceError) {
+        throwLifecycleSeedFailure('existing_source_lookup', existingSourceError, 'Could not resolve the existing internal lifecycle source lineage');
+      }
 
       if (existingSource?.id) {
         return NextResponse.json({
@@ -132,6 +156,7 @@ export async function POST(request: Request) {
     const reportId = snapshot.reportId;
     const analysisId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
+    const idempotencyKey = `internal-lifecycle-${scenario.toLowerCase()}-${Date.now()}-${crypto.randomUUID()}`;
 
     const { error: scanError } = await admin.from('market_scans').insert({
       id: analysisId,
@@ -150,10 +175,10 @@ export async function POST(request: Request) {
     });
 
     if (scanError) {
-      throw new Error(`Could not create the market scan seed for ${scenario}: ${scanError.message}`);
+      throwLifecycleSeedFailure('market_scan_insert', scanError, `Could not create the market scan seed for ${scenario}`);
     }
 
-    const { error: sourceError } = await admin.from('decision_report_sources').insert({
+    const { data: insertedSource, error: sourceError } = await admin.from('decision_report_sources').insert({
       id: sourceDecisionId,
       user_id: user.id,
       source_analysis_id: analysisId,
@@ -164,44 +189,28 @@ export async function POST(request: Request) {
       ai_explanation_json: null,
       created_at: createdAt,
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    });
+    }).select('id').single();
 
-    if (sourceError) {
-      throw new Error(`Could not create the decision source seed for ${scenario}: ${sourceError.message}`);
+    if (sourceError || !insertedSource?.id) {
+      throwLifecycleSeedFailure('decision_source_insert', sourceError ?? new Error('Decision report source seed did not return an id.'), `Could not create the decision source seed for ${scenario}`);
     }
 
-    const { error: reportError } = await admin.from('decision_reports').insert({
-      id: reportId,
-      user_id: user.id,
-      schema_version: snapshot.schemaVersion,
-      verdict: snapshot.verdict,
-      readiness_percent: snapshot.readinessPercent,
-      instrument,
-      timeframe: snapshot.timeframe,
-      strategy_id: null,
-      strategy_name: snapshot.strategyName,
-      strategy_revision_id: snapshot.strategyRevisionId,
-      strategy_version: snapshot.strategyVersion,
-      primary_reason: snapshot.primaryReason,
-      next_action: snapshot.nextAction,
-      market_provider: snapshot.marketData.provider,
-      last_verified_candle_at: snapshot.marketData.lastVerifiedCandleAt,
-      data_freshness: snapshot.marketData.freshness,
-      deterministic_fingerprint: snapshot.deterministicFingerprint,
-      snapshot_json: snapshot,
-      source_analysis_id: analysisId,
-      source_trade_id: null,
-      idempotency_key: `internal-lifecycle-${scenario.toLowerCase()}-${Date.now()}-${crypto.randomUUID()}`,
-      created_at: createdAt,
+    const { data: savedReport, error: reportError } = await admin.rpc('save_decision_report', {
+      p_source_id: insertedSource.id,
+      p_user_id: user.id,
+      p_idempotency_key: idempotencyKey,
     });
 
     if (reportError) {
-      throw new Error(`Could not create the decision report seed for ${scenario}: ${reportError.message}`);
+      throwLifecycleSeedFailure('decision_report_insert', reportError, `Could not materialize the canonical decision report seed for ${scenario}`);
     }
 
+    const savedReportRow = Array.isArray(savedReport) ? savedReport[0] : savedReport;
+    const materializedReportId = savedReportRow?.report_id ?? snapshot.reportId;
+
     const response = {
-      sourceDecisionId,
-      sourceReportId: reportId,
+      sourceDecisionId: insertedSource.id,
+      sourceReportId: materializedReportId,
       authoritativeVerdict: snapshot.verdict,
       overrideEligible: snapshot.finalRiskCheck.overrideEligible,
     };
