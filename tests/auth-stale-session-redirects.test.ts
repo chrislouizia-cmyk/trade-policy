@@ -6,6 +6,8 @@ import {
   shouldRecoverFromSupabaseAuthError,
   isSupabaseAuthCookieName,
   createSupabaseAuthRecoveryResponse,
+  isSupabaseAuthRateLimitError,
+  shouldAttemptSupabaseCookieRecovery,
 } from '../lib/supabase/auth-cookies.ts';
 
 const blocked = [
@@ -116,6 +118,32 @@ test('chunked stale cookies are all cleared and unrelated cookies survive', () =
   assert.ok(setCookies.some((value) => value.startsWith('sb-abc-auth-token=; Max-Age=0')));
   assert.ok(setCookies.some((value) => value.startsWith('sb-abc-auth-token.1=; Max-Age=0')));
   assert.ok(setCookies.every((value) => !value.startsWith('other-cookie=')));
+});
+
+test('auth rate limits are not treated as stale-session recovery triggers', () => {
+  const rateLimited = {
+    status: 429,
+    name: 'AuthApiError',
+    code: 'over_request_rate_limit',
+    message: 'Request rate limit reached',
+  };
+
+  assert.equal(isSupabaseAuthRateLimitError(rateLimited), true);
+  assert.equal(shouldRecoverFromSupabaseAuthError({ user: undefined, authError: rateLimited, cookieNames: ['sb-abc-auth-token'] }), false);
+  assert.equal(shouldAttemptSupabaseCookieRecovery({ user: undefined, authError: rateLimited, cookieNames: ['sb-abc-auth-token'], recovered: false }), false);
+});
+
+test('recovered=1 terminates at login page without another recovery redirect', () => {
+  assert.equal(shouldAttemptSupabaseCookieRecovery({ user: undefined, authError: { status: 429, code: 'over_request_rate_limit', message: 'Request rate limit reached' }, cookieNames: ['sb-abc-auth-token'], recovered: '1' }), false);
+  assert.equal(shouldAttemptSupabaseCookieRecovery({ user: undefined, authError: { name: 'AuthSessionMissingError', code: 'session_not_found', message: 'Session not found' }, cookieNames: ['sb-abc-auth-token'], recovered: '1' }), false);
+});
+
+test('recovery route performs zero auth API calls and only clears cookies', () => {
+  const response = createSupabaseAuthRecoveryResponse('https://tradepolice.app', ['sb-abc-auth-token', 'sb-abc-refresh-token']);
+  const setCookies = response.headers.getSetCookie?.() ?? [];
+  assert.ok(setCookies.length >= 2);
+  assert.ok(setCookies.every((value) => value.includes('=;')));
+  assert.ok(response.headers.get('location')?.includes('/client/login?next=/dashboard&recovered=1'));
 });
 
 test('recovery does not loop and safe-next remains intact', () => {

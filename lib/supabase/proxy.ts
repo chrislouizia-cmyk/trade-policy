@@ -72,6 +72,7 @@ export async function updateSession(
     '/pricing',
     '/legal',
     '/client/login',
+    '/auth/recover',
     '/hq/login',
     '/forgot-password',
     '/reset-password',

@@ -113,16 +113,33 @@ export function getSupabaseAuthCookieDeletionVariants(
   return [...new Set(variants)];
 }
 
+export function isSupabaseAuthRateLimitError(error?: { status?: number; name?: string; code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+
+  const status = typeof error.status === 'number' ? error.status : undefined;
+  const code = (error.code ?? '').toLowerCase();
+  const name = (error.name ?? '').toLowerCase();
+  const message = (error.message ?? '').toLowerCase();
+
+  return status === 429 ||
+    code.includes('over_request_rate_limit') ||
+    code.includes('rate_limit') ||
+    name.includes('rate') ||
+    message.includes('rate limit') ||
+    message.includes('too many requests');
+}
+
 export function shouldRecoverFromSupabaseAuthError({
   user,
   authError,
   cookieNames,
 }: {
   user?: unknown;
-  authError?: { name?: string; code?: string; message?: string } | null;
+  authError?: { status?: number; name?: string; code?: string; message?: string } | null;
   cookieNames?: string[];
 }) {
   if (user) return false;
+  if (isSupabaseAuthRateLimitError(authError)) return false;
 
   const names = cookieNames ?? [];
   if (!names.length) return false;
@@ -157,12 +174,13 @@ export function shouldAttemptSupabaseCookieRecovery({
   recovered,
 }: {
   user?: unknown;
-  authError?: { name?: string; code?: string; message?: string } | null;
+  authError?: { status?: number; name?: string; code?: string; message?: string } | null;
   cookieNames?: string[];
   recovered?: boolean | string;
 }) {
   if (user) return false;
   if (recovered === true || recovered === '1') return false;
+  if (isSupabaseAuthRateLimitError(authError)) return false;
   return shouldRecoverFromSupabaseAuthError({ user, authError, cookieNames });
 }
 

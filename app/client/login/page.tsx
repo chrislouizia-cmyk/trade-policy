@@ -6,6 +6,7 @@ import { getSafeClientNextPath } from '@/lib/auth/safe-next';
 import {
   getSupabaseAuthCookieNames,
   hasSupabaseAuthCookieRecoveryFailure,
+  isSupabaseAuthRateLimitError,
   shouldAttemptSupabaseCookieRecovery,
 } from '@/lib/supabase/auth-cookies';
 
@@ -19,8 +20,43 @@ export default async function ClientLoginPage({
   const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
   const cookieStore = await cookies();
   const authCookieNames = getSupabaseAuthCookieNames(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL);
+
+  if (recovered) {
+    console.info('[AUTH_RATE_LIMIT_RECOVERY]', {
+      pathname: '/client/login',
+      recovered: true,
+      hasAuthCookies: authCookieNames.length > 0,
+    });
+    return (
+      <main className="auth-page client-login-page">
+        <section className="auth-card portal-auth-card">
+          <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
+          <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
+          <h1>Trader sign in</h1>
+          <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
+          <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
+        </section>
+      </main>
+    );
+  }
+
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] | null = null;
+  let authError: { status?: number; name?: string; code?: string; message?: string } | null = null;
+
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+    authError = result.error;
+  } catch (caught) {
+    const error = caught instanceof Error ? caught : new Error(String(caught));
+    authError = {
+      name: error.name,
+      message: error.message,
+      code: /over_request_rate_limit|rate limit|too many requests/i.test(error.message) ? 'over_request_rate_limit' : undefined,
+      status: /over_request_rate_limit|rate limit|too many requests/i.test(error.message) ? 429 : undefined,
+    };
+  }
 
   if (user) {
     const { data: staffRoute } = await supabase.rpc('staff_workspace_route');
@@ -36,7 +72,19 @@ export default async function ClientLoginPage({
     });
   }
 
-  if (error && shouldAttemptSupabaseCookieRecovery({ user, authError: error, cookieNames: authCookieNames, recovered })) {
+  if (authError && isSupabaseAuthRateLimitError(authError)) {
+    console.info('[AUTH_RATE_LIMIT_RECOVERY]', {
+      pathname: '/client/login',
+      recovered: false,
+      hasAuthCookies: authCookieNames.length > 0,
+    });
+
+    if (authCookieNames.length > 0) {
+      redirect('/auth/recover');
+    }
+  }
+
+  if (authError && shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered })) {
     redirect('/auth/recover');
   }
 
