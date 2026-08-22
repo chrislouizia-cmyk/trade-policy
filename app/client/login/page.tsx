@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import ClientLoginForm from '@/components/ClientLoginForm';
 import { createClient } from '@/lib/supabase/server';
+import { getSafeClientNextPath } from '@/lib/auth/safe-next';
 
 export default async function ClientLoginPage({
   searchParams,
@@ -8,17 +9,22 @@ export default async function ClientLoginPage({
   searchParams: Promise<{ next?: string; mode?: string }>;
 }) {
   const params = await searchParams;
-  const rawNext = params.next;
-  const next = rawNext && rawNext.startsWith('/') && rawNext !== '/login' && !rawNext.startsWith('/hq')
-    ? rawNext
-    : '/dashboard';
+  const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
   if (user) {
     const { data: staffRoute } = await supabase.rpc('staff_workspace_route');
     if (staffRoute) redirect(String(staffRoute));
-    redirect(next === '/validate' ? '/dashboard' : next);
+    redirect(safeNext === '/validate' ? '/dashboard' : safeNext);
+  }
+
+  if (error) {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore stale session cleanup failures; the page will render the canonical login once.
+    }
   }
 
   return (
@@ -28,7 +34,7 @@ export default async function ClientLoginPage({
         <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
         <h1>Trader sign in</h1>
         <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
-        <ClientLoginForm next={next} initialMode={params.mode==='signup'?'signup':'login'} />
+        <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
       </section>
     </main>
   );

@@ -10,6 +10,7 @@ import {
   isHQEntryPath,
 } from '@/lib/hostname-routing';
 import { getCanonicalAppUrls } from '@/lib/app-urls';
+import { getSafeClientNextPath } from '@/lib/auth/safe-next';
 
 function redirectToOrigin(request: NextRequest, origin: string) {
   const destination = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin);
@@ -19,7 +20,8 @@ function redirectToOrigin(request: NextRequest, origin: string) {
 function redirectToLogin(request: NextRequest, origin: string, pathname: string) {
   const destination = new URL(pathname, origin);
   const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  if (requestedPath !== pathname && requestedPath !== '/') destination.searchParams.set('next', requestedPath);
+  const safeNext = getSafeClientNextPath(requestedPath, pathname, '/dashboard');
+  if (safeNext !== '/dashboard' && safeNext !== pathname) destination.searchParams.set('next', safeNext);
   return NextResponse.redirect(destination);
 }
 

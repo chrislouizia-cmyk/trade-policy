@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { getSafeClientNextPath } from '@/lib/auth/safe-next';
 
 export default async function LoginPage({
   searchParams,
@@ -6,6 +7,6 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const params = await searchParams;
-  const next = params.next && params.next !== '/login' ? params.next : '/dashboard';
+  const next = getSafeClientNextPath(params.next, '/login', '/dashboard');
   redirect(`/client/login?next=${encodeURIComponent(next)}`);
 }
