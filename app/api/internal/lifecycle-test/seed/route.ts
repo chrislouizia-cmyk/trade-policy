@@ -195,8 +195,14 @@ export async function POST(request: Request) {
       throwLifecycleSeedFailure('decision_source_insert', sourceError ?? new Error('Decision report source seed did not return an id.'), `Could not create the decision source seed for ${scenario}`);
     }
 
+    if (!insertedSource?.id) {
+      throw new Error('Decision source insert succeeded without returning a source id.');
+    }
+
+    const sourceId = insertedSource.id;
+
     const { data: savedReport, error: reportError } = await admin.rpc('save_decision_report', {
-      p_source_id: insertedSource.id,
+      p_source_id: sourceId,
       p_user_id: user.id,
       p_idempotency_key: idempotencyKey,
     });
@@ -209,7 +215,7 @@ export async function POST(request: Request) {
     const materializedReportId = savedReportRow?.report_id ?? snapshot.reportId;
 
     const response = {
-      sourceDecisionId: insertedSource.id,
+      sourceDecisionId: sourceId,
       sourceReportId: materializedReportId,
       authoritativeVerdict: snapshot.verdict,
       overrideEligible: snapshot.finalRiskCheck.overrideEligible,
