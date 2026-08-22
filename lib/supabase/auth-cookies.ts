@@ -71,15 +71,14 @@ export function createSupabaseAuthRecoveryResponse(
   origin: string,
   cookieNames: string[],
 ) {
-  const redirect = new URL('/client/login?next=/dashboard', origin);
+  const redirect = new URL('/client/login?next=/dashboard&recovered=1', origin);
   const baseResponse = Response.redirect(redirect, 307);
   const headers = new Headers(baseResponse.headers);
 
-  for (const name of cookieNames) {
-    headers.append(
-      'Set-Cookie',
-      `${name}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure; HttpOnly`,
-    );
+  for (const cookieName of cookieNames) {
+    for (const variant of getSupabaseAuthCookieDeletionVariants(cookieName, new URL(origin).hostname)) {
+      headers.append('Set-Cookie', variant);
+    }
   }
 
   return new Response(baseResponse.body, {
@@ -87,6 +86,31 @@ export function createSupabaseAuthRecoveryResponse(
     statusText: baseResponse.statusText,
     headers,
   });
+}
+
+export function getSupabaseAuthCookieDeletionVariants(
+  cookieName: string,
+  host?: string | null,
+): string[] {
+  const variants = [
+    `${cookieName}=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure; HttpOnly`,
+  ];
+
+  if (!host) return variants;
+
+  const normalizedHost = host.toLowerCase();
+  const domainHosts = new Set<string>([normalizedHost]);
+  if (!normalizedHost.startsWith('.')) {
+    domainHosts.add(`.${normalizedHost}`);
+  }
+
+  for (const domain of domainHosts) {
+    variants.push(
+      `${cookieName}=; Domain=${domain}; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure; HttpOnly`,
+    );
+  }
+
+  return [...new Set(variants)];
 }
 
 export function shouldRecoverFromSupabaseAuthError({
@@ -124,4 +148,30 @@ export function shouldRecoverFromSupabaseAuthError({
 
 export function isSupabaseAuthCookieName(name: string, url?: string | null): boolean {
   return getSupabaseAuthCookieNames([name], url).includes(name);
+}
+
+export function shouldAttemptSupabaseCookieRecovery({
+  user,
+  authError,
+  cookieNames,
+  recovered,
+}: {
+  user?: unknown;
+  authError?: { name?: string; code?: string; message?: string } | null;
+  cookieNames?: string[];
+  recovered?: boolean | string;
+}) {
+  if (user) return false;
+  if (recovered === true || recovered === '1') return false;
+  return shouldRecoverFromSupabaseAuthError({ user, authError, cookieNames });
+}
+
+export function hasSupabaseAuthCookieRecoveryFailure({
+  cookieNames,
+  recovered,
+}: {
+  cookieNames?: string[];
+  recovered?: boolean | string;
+}) {
+  return (recovered === true || recovered === '1') && (cookieNames ?? []).length > 0;
 }

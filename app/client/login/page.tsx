@@ -1,19 +1,21 @@
 import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import ClientLoginForm from '@/components/ClientLoginForm';
 import { createClient } from '@/lib/supabase/server';
 import { getSafeClientNextPath } from '@/lib/auth/safe-next';
 import {
   getSupabaseAuthCookieNames,
-  shouldRecoverFromSupabaseAuthError,
+  hasSupabaseAuthCookieRecoveryFailure,
+  shouldAttemptSupabaseCookieRecovery,
 } from '@/lib/supabase/auth-cookies';
 
 export default async function ClientLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; mode?: string }>;
+  searchParams: Promise<{ next?: string; mode?: string; recovered?: string }>;
 }) {
   const params = await searchParams;
+  const recovered = params.recovered === '1';
   const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
   const cookieStore = await cookies();
   const authCookieNames = getSupabaseAuthCookieNames(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL);
@@ -26,7 +28,15 @@ export default async function ClientLoginPage({
     redirect(safeNext === '/validate' ? '/dashboard' : safeNext);
   }
 
-  if (error && shouldRecoverFromSupabaseAuthError({ user, authError: error, cookieNames: authCookieNames })) {
+  if (hasSupabaseAuthCookieRecoveryFailure({ cookieNames: authCookieNames, recovered })) {
+    console.info('[AUTH_RECOVERY_FAILED_TO_CLEAR]', {
+      matchingCookieNames: authCookieNames,
+      host: (await headers()).get('host'),
+      pathname: '/client/login',
+    });
+  }
+
+  if (error && shouldAttemptSupabaseCookieRecovery({ user, authError: error, cookieNames: authCookieNames, recovered })) {
     redirect('/auth/recover');
   }
 
