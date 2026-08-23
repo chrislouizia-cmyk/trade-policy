@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import InstrumentSelector, { CatalogInstrument } from '@/components/InstrumentSelector';
@@ -447,14 +448,14 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
         <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
         <div className="strategy-list">
           {activeProfiles.map((item) => (
-            <button type="button" className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => requestOpenProfile(item)}>
+            <Link href={item.id ? `/strategies/${item.id}` : '#'} key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`}>
               <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
-            </button>
+            </Link>
           ))}
           {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
-            <button type="button" className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} key={item.id} onClick={() => requestOpenProfile(item)}>
+            <Link href={item.id ? `/strategies/${item.id}` : '#'} key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`}>
               <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
-            </button>
+            </Link>
           ))}</>}
         </div>
         {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
