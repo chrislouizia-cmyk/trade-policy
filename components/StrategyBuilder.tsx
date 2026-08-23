@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import InstrumentSelector, { CatalogInstrument } from '@/components/InstrumentSelector';
@@ -15,6 +14,7 @@ import StrategyLearningConfirmation from '@/components/StrategyLearningConfirmat
 import MethodologyVerification from '@/components/MethodologyVerification';
 import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
 import StrategyInspector from '@/components/StrategyInspector';
+import StrategyDetailPage from '@/components/StrategyDetailPage';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
 import { normalizeStrategyProfile } from '@/lib/strategy-policy';
@@ -115,7 +115,7 @@ function profileFromRow(row: any): StrategyProfile {
   });
 }
 
-export default function StrategyBuilder({ userId }: { userId: string }) {
+export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId: string; planCode?: string }) {
   const searchParams = useSearchParams();
   const [profiles, setProfiles] = useState<StrategyProfile[]>([]);
   const [profile, setProfile] = useState<StrategyProfile>(createEmptyStrategyProfile);
@@ -141,6 +141,7 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
   const [v2Draft,setV2Draft]=useState<StrategyBuilderV2State|null>(null);
   const [pendingNavigation,setPendingNavigation]=useState<null|(()=>void)>(null);
   const [dirtyPrompt,setDirtyPrompt]=useState(false);
+  const [strategyRuns, setStrategyRuns] = useState<any[]>([]);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const finalReviewNameError=validateStrategyName(profile.name);
   const quickstartRequested = searchParams.get('quickstart') === '1';
@@ -152,6 +153,22 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
     void loadAll();
     void trackBetaEventOnce('ONBOARDING_STARTED');
   }, [userId]);
+
+  useEffect(() => {
+    if (!profile.id || !userId) {
+      setStrategyRuns([]);
+      return;
+    }
+
+    const supabase = createClient();
+    void supabase
+      .from('backtest_runs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('strategy_profile_id', profile.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setStrategyRuns(data ?? []));
+  }, [profile.id, userId]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') window.localStorage.setItem('trade-police-strategy-draft', JSON.stringify({ profile, sessions, rules, stopLimits }));
@@ -448,21 +465,51 @@ export default function StrategyBuilder({ userId }: { userId: string }) {
         <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
         <div className="strategy-list">
           {activeProfiles.map((item) => (
-            <Link href={item.id ? `/strategies/${item.id}` : '#'} key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`}>
+            <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
               <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
-            </Link>
+            </button>
           ))}
           {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
-            <Link href={item.id ? `/strategies/${item.id}` : '#'} key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`}>
+            <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
               <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
-            </Link>
+            </button>
           ))}</>}
         </div>
         {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
-        {selectedProfile&&<StrategyInspector profile={profile} rules={rules} sessions={sessions} v2={persistedStrategyToV2State(profile,rules,sessions)} onEdit={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setMessage('This legacy strategy has no V2 metadata. Edit it through the legacy fields or explicitly upgrade it.')}} onDuplicate={()=>void duplicate(selectedProfile)} onArchive={()=>void archive(selectedProfile)} onRestore={()=>void restore(selectedProfile)} onActivate={()=>void setActive(selectedProfile)}/>}
+        {selectedProfile && <StrategyInspector profile={profile} rules={rules} sessions={sessions} v2={persistedStrategyToV2State(profile, rules, sessions)} onEdit={() => { if (profile.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) openV2Edit(); else setMessage('This legacy strategy has no V2 metadata. Edit it through the legacy fields or explicitly upgrade it.'); }} onDuplicate={() => void duplicate(selectedProfile)} onArchive={() => void archive(selectedProfile)} onRestore={() => void restore(selectedProfile)} onActivate={() => void setActive(selectedProfile)} />}
+        {selectedProfile && (
+          <StrategyDetailPage
+            strategy={{
+              id: selectedProfile.id ?? '',
+              name: selectedProfile.name,
+              description: selectedProfile.description ?? '',
+              market_types: selectedProfile.marketTypes ?? ['FOREX'],
+              instruments: selectedProfile.instruments ?? [],
+              macro_timeframe: selectedProfile.macroTimeframe ?? null,
+              trend_timeframe: selectedProfile.trendTimeframe ?? null,
+              confirmation_timeframe: selectedProfile.confirmationTimeframe ?? null,
+              entry_timeframe: selectedProfile.entryTimeframe ?? null,
+              trigger_timeframe: selectedProfile.triggerTimeframe ?? null,
+              maximum_risk_percent: selectedProfile.maximumRiskPercent ?? null,
+              minimum_rr: selectedProfile.minimumRR ?? null,
+              authorization_score: selectedProfile.authorizationScore ?? null,
+              wait_score: selectedProfile.waitScore ?? null,
+              created_at: null,
+              updated_at: null,
+              is_default: selectedProfile.isDefault ?? false,
+              allowed_sessions: selectedProfile.allowedSessions ?? [],
+              required_evidence: selectedProfile.requiredEvidence ?? [],
+              stop_limits: selectedProfile.stopLimits ?? {},
+            }}
+            rules={rules.map((rule) => ({ ...rule, id: rule.ruleKey ?? rule.label ?? undefined }))}
+            sessions={sessions.map((session) => ({ ...session, id: session.id ?? session.sessionCode }))}
+            initialRuns={strategyRuns}
+            planCode={planCode}
+          />
+        )}
         {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">MY STRATEGIES</p><h2>No saved strategies yet</h2><p>Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>Create New Strategy</button><button type="button" onClick={() => useStarterRules()}>Use starter rules</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">

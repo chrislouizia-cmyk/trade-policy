@@ -4,6 +4,7 @@ import StrategyDetailPage from '@/components/StrategyDetailPage';
 import AppHeader from '@/components/AppHeader';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
+import { getBillingState } from '@/lib/billing/entitlements';
 
 export default async function StrategyDetailRoute({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,19 +28,7 @@ export default async function StrategyDetailRoute({ params }: { params: Promise<
 
   const strategy = strategyResult.data;
   const displayName = await getUserDisplayName(supabase, user);
-
-  const planCode = await (async () => {
-    const { data: subscription } = await supabase
-      .from('billing_subscriptions')
-      .select('plan,status')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const status = String(subscription?.status ?? 'inactive').toLowerCase();
-    const plan = String(subscription?.plan ?? 'FREE').toUpperCase();
-    if (status !== 'active' && status !== 'trialing') return 'FREE';
-    return ['PRO', 'ELITE', 'TEAM'].includes(plan) ? plan : 'FREE';
-  })();
+  const planCode = (await getBillingState(user.id)).plan;
 
   return (
     <main className="container builder-container">
