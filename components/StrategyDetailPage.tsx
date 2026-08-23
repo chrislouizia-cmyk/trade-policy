@@ -93,8 +93,13 @@ function formatRange(start?: string | null, end?: string | null) {
   return `${formatDate(start)} → ${formatDate(end)}`;
 }
 
-function getPlanLimit(planCode: string): number | null {
-  return BACKTEST_LIMITS[String(planCode).toUpperCase()] ?? 0;
+function normalizeBacktestPlanCode(planCode: string | null | undefined) {
+  return String(planCode ?? 'FREE').trim().toUpperCase();
+}
+
+function getPlanLimit(planCode: string | null | undefined): number | null {
+  const normalizedPlanCode = normalizeBacktestPlanCode(planCode);
+  return normalizedPlanCode in BACKTEST_LIMITS ? BACKTEST_LIMITS[normalizedPlanCode] : 0;
 }
 
 function getWindowForPreset(preset: string) {
@@ -134,7 +139,8 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
     executionModel: 'STANDARD',
   });
 
-  const limitValue = getPlanLimit(planCode);
+  const normalizedPlanCode = normalizeBacktestPlanCode(planCode);
+  const limitValue = getPlanLimit(normalizedPlanCode);
   const monthlyRuns = useMemo(() => {
     const now = new Date();
     return runs.filter((run) => {
@@ -145,7 +151,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   }, [runs]);
   const usageCount = monthlyRuns.length;
   const usagePercent = limitValue === null ? 0 : (limitValue > 0 ? Math.min(100, (usageCount / limitValue) * 100) : 0);
-  const backtestStatusLabel = limitValue === null ? 'Unlimited backtests' : limitValue === 0 ? 'No backtest plan access' : `${limitValue} max / month`;
+  const backtestStatusLabel = limitValue === null ? (normalizedPlanCode === 'FOUNDER' ? 'Founder access' : 'Unlimited backtests') : limitValue === 0 ? 'Plan unavailable' : `${limitValue} max / month`;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
 
   async function refreshBacktests() {
@@ -334,7 +340,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
             <div className="strategy-detail-backtest-summary">
               <div className="strategy-detail-usage-row">
                 <strong>{usageCount}</strong>
-                <small className="muted">Plan: {planCode || 'FREE'} · {limitValue === null ? 'Unlimited backtests' : `limit ${limitValue}`}</small>
+                <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `limit ${limitValue}`}</small>
               </div>
               <div className="strategy-detail-progress-track large">
                 <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
@@ -452,8 +458,9 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       {tab === 'forward-test' && (
         <section className="card">
           <p className="eyebrow">FORWARD TEST</p>
-          <h3>Phase 2 placeholder</h3>
-          <p className="muted" style={{ marginTop: 12 }}>Forward test execution is intentionally out of scope for Backtesting V1 Phase 1. This tab will be wired to the live validation and monitoring flow in the next phase.</p>
+          <h3>Forward Testing</h3>
+          <p className="muted" style={{ marginTop: 12 }}>Coming soon</p>
+          <p className="muted" style={{ marginTop: 12 }}>Validate your strategy against live market conditions before using it in execution.</p>
         </section>
       )}
     </main>

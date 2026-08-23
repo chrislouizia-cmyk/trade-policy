@@ -54,6 +54,15 @@ test('founder backtests are unlimited and bypass the monthly cap', () => {
   assert.match(helper, /limit === null \|\| \(Number\(usage\.run_count \?\? 0\) < Number\(limit\)\)/i);
 });
 
+test('backtest plan limits preserve the canonical unlimited representation and finite plan values', () => {
+  assert.match(helper, /PRO:\s*3/i);
+  assert.match(helper, /ELITE:\s*10/i);
+  assert.match(helper, /TEAM:\s*70/i);
+  assert.match(helper, /FOUNDER:\s*null/i);
+  assert.doesNotMatch(helper, /FOUNDER:\s*0/i);
+  assert.doesNotMatch(helper, /limitValue === null \? 'Unlimited backtests' : limitValue === 0 \? 'No backtest plan access'/i);
+});
+
 test('POST /api/backtests authenticates and freezes strategy state before creating a queued run', () => {
   assert.match(backtestRoute, /auth\.getUser\(\)/i);
   assert.match(backtestRoute, /freezeStrategyForBacktest/i);
