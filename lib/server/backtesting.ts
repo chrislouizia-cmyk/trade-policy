@@ -12,6 +12,7 @@ export const BACKTEST_PLAN_LIMITS = {
   PRO: 3,
   ELITE: 10,
   TEAM: 70,
+  FOUNDER: null,
 } as const;
 
 export type BacktestPlanCode = keyof typeof BACKTEST_PLAN_LIMITS;
@@ -89,11 +90,12 @@ export async function checkBacktestQuota(
   const period = getBacktestPeriod(now);
   const limit = resolveBacktestPlanLimit(planCode);
 
+  const normalizedPlanCode = String(planCode).toUpperCase();
   const { data: row, error } = await admin
     .from('backtest_usage')
     .select('*')
     .eq('user_id', userId)
-    .eq('plan_code', String(planCode).toUpperCase())
+    .eq('plan_code', normalizedPlanCode)
     .eq('billing_period_start', period.startKey)
     .maybeSingle();
 
@@ -302,5 +304,5 @@ export async function getBacktestPlanCodeForUser(userId: string) {
   if (!paid) {
     return 'FREE';
   }
-  return ['PRO', 'ELITE', 'TEAM'].includes(plan) ? plan : 'FREE';
+  return ['PRO', 'ELITE', 'TEAM', 'FOUNDER'].includes(plan) ? plan : 'FREE';
 }

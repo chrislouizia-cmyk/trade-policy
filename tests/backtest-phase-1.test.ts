@@ -42,9 +42,16 @@ test('quota is server-side with plan limits and no client trust path', () => {
   assert.match(helper, /PRO: 3/i);
   assert.match(helper, /ELITE: 10/i);
   assert.match(helper, /TEAM: 70/i);
+  assert.match(helper, /FOUNDER:\s*null/i);
   assert.match(helper, /checkBacktestQuota\(/i);
   assert.match(helper, /if \(!quota\.allowed\)/i);
   assert.doesNotMatch(helper, /localStorage|sessionStorage|window\./i);
+});
+
+test('founder backtests are unlimited and bypass the monthly cap', () => {
+  assert.match(helper, /FOUNDER:\s*null/i);
+  assert.match(helper, /return normalized in BACKTEST_PLAN_LIMITS \? BACKTEST_PLAN_LIMITS\[normalized as BacktestPlanCode\] : 0;/i);
+  assert.match(helper, /limit === null \|\| \(Number\(usage\.run_count \?\? 0\) < Number\(limit\)\)/i);
 });
 
 test('POST /api/backtests authenticates and freezes strategy state before creating a queued run', () => {

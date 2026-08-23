@@ -243,10 +243,10 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
 
       {tab === 'overview' && (
         <div className="grid grid-3">
-          <section className="card">
+          <section className="card strategy-detail-card">
             <p className="eyebrow">PROFILE</p>
             <h3>Strategy summary</h3>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0 0', display: 'grid', gap: 8 }}>
+            <ul className="strategy-detail-summary-list">
               <li><strong>Instruments:</strong> {(strategy.instruments ?? []).join(', ') || '—'}</li>
               <li><strong>Timeframes:</strong> {strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</li>
               <li><strong>Risk:</strong> {strategy.maximum_risk_percent ?? '—'}%</li>
@@ -256,26 +256,26 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
             </ul>
           </section>
 
-          <section className="card">
+          <section className="card strategy-detail-card">
             <p className="eyebrow">RULES</p>
             <h3>{strategyRules.length} enabled</h3>
-            <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+            <div className="strategy-detail-rule-stack">
               {strategyRules.slice(0, 5).map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="card" style={{ padding: 12, margin: 0 }}>
+                <div key={rule.rule_key || Math.random()} className="card strategy-detail-rule-card">
                   <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
-                  <small className="muted" style={{ display: 'block' }}>{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
+                  <small className="muted" style={{ display: 'block', marginTop: 6 }}>{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
                 </div>
               ))}
               {strategyRules.length === 0 && <p className="muted">No enabled rules saved yet.</p>}
             </div>
           </section>
 
-          <section className="card">
+          <section className="card strategy-detail-card">
             <p className="eyebrow">BACKTESTING</p>
             <h3>V1 readiness</h3>
             <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
               <div>
-                <div className="button-row" style={{ marginTop: 0, justifyContent: 'space-between' }}>
+                <div className="button-row" style={{ marginTop: 0, justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <strong>{usageCount}</strong>
                   <small className="muted">{limitValue === 0 ? 'No backtest plan access' : `${limitValue} max / month`}</small>
                 </div>
@@ -298,12 +298,12 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
               <p className="muted">No rules have been configured for this strategy.</p>
             ) : (
               strategyRules.map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="card" style={{ padding: 16, margin: 0 }}>
-                  <div className="button-row" style={{ justifyContent: 'space-between', marginTop: 0 }}>
-                    <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
+                <div key={rule.rule_key || Math.random()} className="card strategy-detail-rule-card" style={{ padding: 16, margin: 0 }}>
+                  <div className="button-row" style={{ justifyContent: 'space-between', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
+                    <strong style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{rule.label || rule.rule_key || 'Rule'}</strong>
                     <span className="badge">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
                   </div>
-                  <small className="muted" style={{ display: 'block', marginTop: 8 }}>
+                  <small className="muted" style={{ display: 'block', marginTop: 8, overflowWrap: 'anywhere' }}>
                     {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
                   </small>
                 </div>
@@ -401,20 +401,20 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
                 <p className="muted">No backtests have been queued for this strategy yet.</p>
               ) : (
                 runs.map((run) => (
-                  <div key={run.id} className="card" style={{ padding: 16, margin: 0 }}>
-                    <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0 }}>
-                      <div>
-                        <strong>{run.instrument || 'XAUUSD'}</strong>
+                  <div key={run.id} className="card strategy-detail-run-card" style={{ padding: 16, margin: 0 }}>
+                    <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{run.instrument || 'XAUUSD'}</strong>
                         <small className="muted" style={{ display: 'block' }}>{run.status}</small>
                       </div>
                       <button type="button" className="secondary" onClick={() => setSelectedRunId(run.id)}>View Report</button>
                     </div>
-                    <div className="grid grid-3" style={{ marginTop: 12 }}>
+                    <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
                       <div><small className="muted">Revision</small><div>{run.strategy_revision_id || '—'}</div></div>
                       <div><small className="muted">Period</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
                       <div><small className="muted">Created</small><div>{formatDate(run.created_at)}</div></div>
                     </div>
-                    <div className="grid grid-3" style={{ marginTop: 12 }}>
+                    <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
                       <div><small className="muted">Total trades</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
                       <div><small className="muted">Net return</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
                       <div><small className="muted">Max drawdown</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>

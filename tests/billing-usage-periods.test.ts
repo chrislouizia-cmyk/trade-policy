@@ -106,3 +106,14 @@ test('month-end anchors clamp safely without becoming calendar-month cycles', ()
   assert.equal(period.startKey, '2026-02-28');
   assert.equal(period.endKey, '2026-03-31');
 });
+
+test('strategy detail route resolves plan through the canonical entitlement helper', () => {
+  const routeSource = readFileSync(
+    new URL('../app/strategies/[id]/page.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(routeSource, /from '\@\/lib\/billing\/entitlements'/);
+  assert.match(routeSource, /getBillingState\(user\.id\)/);
+  assert.doesNotMatch(routeSource, /status !== 'active' && status !== 'trialing'/);
+});
