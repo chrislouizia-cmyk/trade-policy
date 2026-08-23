@@ -71,11 +71,12 @@ type StrategyDetailPageProps = {
   planCode: string;
 };
 
-const BACKTEST_LIMITS: Record<string, number> = {
+const BACKTEST_LIMITS: Record<string, number | null> = {
   FREE: 0,
   PRO: 3,
   ELITE: 10,
   TEAM: 70,
+  FOUNDER: null,
 };
 
 const pad = (value: number) => String(value).padStart(2, '0');
@@ -92,7 +93,7 @@ function formatRange(start?: string | null, end?: string | null) {
   return `${formatDate(start)} → ${formatDate(end)}`;
 }
 
-function getPlanLimit(planCode: string) {
+function getPlanLimit(planCode: string): number | null {
   return BACKTEST_LIMITS[String(planCode).toUpperCase()] ?? 0;
 }
 
@@ -143,7 +144,8 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
     });
   }, [runs]);
   const usageCount = monthlyRuns.length;
-  const usagePercent = limitValue > 0 ? Math.min(100, (usageCount / limitValue) * 100) : 0;
+  const usagePercent = limitValue === null ? 0 : (limitValue > 0 ? Math.min(100, (usageCount / limitValue) * 100) : 0);
+  const backtestStatusLabel = limitValue === null ? 'Unlimited backtests' : limitValue === 0 ? 'No backtest plan access' : `${limitValue} max / month`;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
 
   async function refreshBacktests() {
@@ -277,7 +279,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
               <div>
                 <div className="button-row" style={{ marginTop: 0, justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <strong>{usageCount}</strong>
-                  <small className="muted">{limitValue === 0 ? 'No backtest plan access' : `${limitValue} max / month`}</small>
+                  <small className="muted">{backtestStatusLabel}</small>
                 </div>
                 <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: 10, borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ width: `${usagePercent}%`, background: 'linear-gradient(90deg, #7aa2ff, #4cd7a9)', height: '100%' }} />
@@ -327,7 +329,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
             <div style={{ marginTop: 18 }}>
               <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0 }}>
                 <strong>{usageCount}</strong>
-                <small className="muted">Plan: {planCode || 'FREE'} · limit {limitValue}</small>
+                <small className="muted">Plan: {planCode || 'FREE'} · {limitValue === null ? 'Unlimited backtests' : `limit ${limitValue}`}</small>
               </div>
               <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: 12, borderRadius: 999, overflow: 'hidden' }}>
                 <div style={{ width: `${usagePercent}%`, background: 'linear-gradient(90deg, #7aa2ff, #4cd7a9)', height: '100%' }} />

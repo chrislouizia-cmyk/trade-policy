@@ -13,7 +13,6 @@ import StrategyPersonalization from '@/components/StrategyPersonalization';
 import StrategyLearningConfirmation from '@/components/StrategyLearningConfirmation';
 import MethodologyVerification from '@/components/MethodologyVerification';
 import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
-import StrategyInspector from '@/components/StrategyInspector';
 import StrategyDetailPage from '@/components/StrategyDetailPage';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
@@ -459,28 +458,27 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     return <><StrategyBuilderV2 key={`${v2EntryMode}:${profile.id??'new'}`} profile={profile} initialState={v2State} mode={v2EntryMode} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Save or discard your strategy edits before leaving.</p><div className="button-row"><button className="primary" disabled={saving} onClick={()=>{const draft=v2Draft;if(!draft)return;void save(v2StateToPersistedStrategy(profile,draft)).then(saved=>{if(!saved)return;setV2Baseline(draft);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.();});}}> {saving?'Saving…':'Save changes'}</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
   }
 
-  return (
-    <div className="strategy-builder-layout">
-      <aside className="card strategy-sidebar">
-        <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
-        <div className="strategy-list">
-          {activeProfiles.map((item) => (
-            <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
-              <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
-            </button>
-          ))}
-          {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
-            <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
-              <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
-            </button>
-          ))}</>}
-        </div>
-        {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
-      </aside>
+  if (selectedProfile) {
+    return (
+      <div className="strategy-builder-layout">
+        <aside className="card strategy-sidebar">
+          <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
+          <div className="strategy-list">
+            {activeProfiles.map((item) => (
+              <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+                <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
+              </button>
+            ))}
+            {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
+              <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+                <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
+              </button>
+            ))}</>}
+          </div>
+          {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>Edit</button><button type="button" onClick={() => void duplicate(selectedProfile)}>Duplicate</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>Restore</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>Set active</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>Archive</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>Delete</button></div>}
+        </aside>
 
-      <div className="stack strategy-main" data-step={builderStep}>
-        {selectedProfile && <StrategyInspector profile={profile} rules={rules} sessions={sessions} v2={persistedStrategyToV2State(profile, rules, sessions)} onEdit={() => { if (profile.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) openV2Edit(); else setMessage('This legacy strategy has no V2 metadata. Edit it through the legacy fields or explicitly upgrade it.'); }} onDuplicate={() => void duplicate(selectedProfile)} onArchive={() => void archive(selectedProfile)} onRestore={() => void restore(selectedProfile)} onActivate={() => void setActive(selectedProfile)} />}
-        {selectedProfile && (
+        <div className="stack strategy-main" data-step={builderStep}>
           <StrategyDetailPage
             strategy={{
               id: selectedProfile.id ?? '',
@@ -509,7 +507,30 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
             initialRuns={strategyRuns}
             planCode={planCode}
           />
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="strategy-builder-layout">
+      <aside className="card strategy-sidebar">
+        <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
+        <div className="strategy-list">
+          {activeProfiles.map((item) => (
+            <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+              <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
+            </button>
+          ))}
+          {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
+            <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+              <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
+            </button>
+          ))}</>}
+        </div>
+      </aside>
+
+      <div className="stack strategy-main" data-step={builderStep}>
         {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">MY STRATEGIES</p><h2>No saved strategies yet</h2><p>Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>Create New Strategy</button><button type="button" onClick={() => useStarterRules()}>Use starter rules</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">
