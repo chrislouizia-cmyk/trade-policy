@@ -1,6 +1,16 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
+
+type TradingAccountOption = {
+  id: string;
+  name: string;
+  currency: string;
+  accountType: string;
+  currentBalance: number;
+  isActive: boolean;
+  isArchived: boolean;
+};
 
 type ApiResult = Record<string, unknown> & {
   trade_record_id?: string | null;
@@ -88,8 +98,14 @@ async function seedLifecycleLineage(payload: Pick<PayloadState, 'scenario' | 'in
   return data as SeedResponse;
 }
 
-export default function LifecycleTestHarness({ role }: { role: string }) {
+export default function LifecycleTestHarness({ role, accounts }: { role: string; accounts: TradingAccountOption[] }) {
+  const defaultAccountId = useMemo(
+    () => accounts.find((account) => account.isActive)?.id ?? accounts[0]?.id ?? '',
+    [accounts],
+  );
+
   const [payload, setPayload] = useState<PayloadState>(basePayload);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(defaultAccountId);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ApiResult | null>(null);
@@ -99,6 +115,8 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
   const updateField = <K extends keyof PayloadState>(field: K, value: PayloadState[K]) => {
     setPayload((current) => ({ ...current, [field]: value }));
   };
+
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? accounts[0] ?? null;
 
   const runSimulation = async () => {
     setError(null);
@@ -130,8 +148,12 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
       if (payload.scenario === 'SOFT_BLOCK' && !overrideReason) {
         throw new Error('Soft-block simulations require a non-empty override reason.');
       }
+      if (!selectedAccountId || !selectedAccount) {
+        throw new Error('No active trading account is available for Lifecycle V2 simulation.');
+      }
 
       const requestBody = {
+        accountId: selectedAccountId,
         sourceDecisionId: seeded.sourceDecisionId,
         sourceReportId: seeded.sourceReportId,
         instrument: payload.instrument,
@@ -199,6 +221,23 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
           This lab seeds a real internal Decision Report lineage server-side before exercising the V2 activation route.
         </p>
 
+        {!accounts.length ? (
+          <div style={{ marginTop: 20, border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(127,29,29,0.26)', color: '#fecaca', padding: '12px 14px', borderRadius: 12 }}>
+            No active trading account is available for Lifecycle V2 simulation.
+          </div>
+        ) : (
+          <label style={{ display: 'grid', gap: 6, marginTop: 20 }}>
+            <span>account</span>
+            <select value={selectedAccountId} onChange={(event) => setSelectedAccountId(event.target.value)} style={inputStyle}>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} · {account.currency} {account.currentBalance.toLocaleString()} · {account.isActive ? 'ACTIVE' : 'INACTIVE'} · {account.accountType}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 20 }}>
           <label style={{ display: 'grid', gap: 6 }}>
             <span>scenario</span>
@@ -247,9 +286,12 @@ export default function LifecycleTestHarness({ role }: { role: string }) {
         )}
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 20, flexWrap: 'wrap' }}>
-          <button onClick={runSimulation} disabled={busy} style={buttonStyle('#1d4ed8')}>
+          <button onClick={runSimulation} disabled={busy || !selectedAccountId} style={buttonStyle('#1d4ed8')}>
             {busy ? 'Running simulation…' : 'Run Simulation'}
           </button>
+          <div style={{ fontSize: 12, color: '#cbd5e1' }}>
+            {selectedAccount ? `${selectedAccount.name} · ${selectedAccount.currency} ${selectedAccount.currentBalance.toLocaleString()} · ${selectedAccount.isActive ? 'ACTIVE' : 'INACTIVE'}` : 'No account selected'}
+          </div>
           <div style={{ fontSize: 12, color: '#cbd5e1' }}>
             {payload.authoritativeVerdict} · overrideEligible {String(payload.overrideEligible)}
           </div>

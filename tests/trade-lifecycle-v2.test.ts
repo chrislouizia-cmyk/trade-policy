@@ -133,12 +133,26 @@ test('authoritative snapshot location matches production persistence code', () =
 test('internal lifecycle seed reuses the canonical production report persistence contract', () => {
   const seedRoute = readFileSync(new URL('../app/api/internal/lifecycle-test/seed/route.ts', import.meta.url), 'utf8');
 
-  assert.match(seedRoute, /decision_report_sources\)\.insert\(/i);
+  assert.match(seedRoute, /admin\.from\('decision_report_sources'\)\.insert\(/i);
   assert.match(seedRoute, /save_decision_report/i);
-  assert.match(seedRoute, /p_source_id: insertedSource\.id/i);
+  assert.match(seedRoute, /p_source_id: sourceId/i);
   assert.match(seedRoute, /p_user_id: user\.id/i);
   assert.match(seedRoute, /p_idempotency_key: idempotencyKey/i);
   assert.doesNotMatch(seedRoute, /from\('decision_reports'\)\.insert\(/i);
+});
+
+test('internal lifecycle lab uses account-backed activation instead of manual balance fields', () => {
+  const harness = readFileSync(new URL('../components/admin/LifecycleTestHarness.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../app/admin/lifecycle-test/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(harness, /accountId: selectedAccountId/i);
+  assert.match(harness, /riskPercent: Number\(payload\.riskPercent\)/i);
+  assert.doesNotMatch(harness, /balanceAtEntry/i);
+  assert.doesNotMatch(harness, /riskAmount/i);
+  assert.match(harness, /No active trading account is available for Lifecycle V2 simulation\./i);
+  assert.match(page, /from\('trading_accounts'\)/i);
+  assert.match(page, /eq\('is_archived', false\)/i);
+  assert.match(migration, /Manual activation requires a valid balance_at_entry\./i);
 });
 
 test('internal smoke mode is gated behind a dedicated server flag and internal request signal', () => {
