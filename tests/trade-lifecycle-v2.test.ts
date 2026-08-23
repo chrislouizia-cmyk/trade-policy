@@ -9,6 +9,42 @@ const activateRoute = readFileSync(new URL('../app/api/trades/activate/route.ts'
 const closeRoute = readFileSync(new URL('../app/api/trades/[id]/close/route.ts', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/073_trade_lifecycle_v2_rpcs.sql', import.meta.url), 'utf8');
 const historicalDecisionReportsMigration = readFileSync(new URL('../supabase/migrations/042_historical_decision_reports.sql', import.meta.url), 'utf8');
+const productionTradeRecordColumns = [
+  'user_id',
+  'source',
+  'status',
+  'instrument',
+  'direction',
+  'setup_type',
+  'session',
+  'entry',
+  'stop_loss',
+  'take_profit',
+  'rr',
+  'score',
+  'verdict',
+  'chart_analysis',
+  'rule_snapshot',
+  'created_at',
+  'updated_at',
+  'account_id',
+  'balance_at_entry',
+  'risk_amount',
+  'strategy_profile_id',
+  'strategy_name_at_entry'
+];
+const invalidTradeRecordLifecycleColumns = [
+  'strategy_snapshot',
+  'original_verdict',
+  'original_verdict_reason',
+  'taken_against_verdict',
+  'override_reason',
+  'override_conditions',
+  'activation_mode',
+  'strategy_revision_id',
+  'source_decision_id',
+  'source_report_id'
+];
 
 test('activate_trade_v2 is defined as a server-owned service-role RPC with correct exposure', () => {
   assert.match(migration, /create or replace function public\.activate_trade_v2\(/i);
@@ -41,25 +77,47 @@ test('activate route is server-only and uses service-role V2 RPC', () => {
   assert.doesNotMatch(activateRoute, /insert\s+into\s+public\.active_trades/i);
 });
 
-test('trade_records stores strategy state through rule_snapshot without a trade_records.strategy_snapshot column', () => {
+test('trade_records insert matches the real production schema contract and excludes lifecycle-only fields', () => {
   const tradeRecordsInsert = migration.match(/insert into public\.trade_records\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
   const tradeRecordsValues = migration.match(/values\s*\(([\s\S]*?)\)\s*returning id into v_trade_record_id;/i)?.[1] ?? '';
+  const tradeRecordsColumns = tradeRecordsInsert
+    .split(',')
+    .map((column) => column.trim().toLowerCase())
+    .filter(Boolean);
 
-  assert.doesNotMatch(tradeRecordsInsert, /strategy_snapshot/i);
-  assert.match(tradeRecordsInsert, /rule_snapshot/i);
+  for (const invalidColumn of invalidTradeRecordLifecycleColumns) {
+    assert.doesNotMatch(tradeRecordsInsert, new RegExp(`\\b${invalidColumn}\\b`, 'i'));
+  }
+
+  for (const validColumn of productionTradeRecordColumns) {
+    assert.ok(tradeRecordsColumns.includes(validColumn), `${validColumn} should be present in the trade_records insert`);
+  }
+
+  assert.match(tradeRecordsInsert, /\brule_snapshot\b/i);
   assert.match(tradeRecordsValues, /p_strategy_snapshot/i);
   assert.equal((tradeRecordsValues.match(/\bp_strategy_snapshot\b/g) ?? []).length, 1);
   assert.match(migration, /insert into public\.active_trades[\s\S]*strategy_snapshot[\s\S]*p_strategy_snapshot/i);
 });
 
-test('trade_records keeps the valid snapshot contract without the invalid strategy_snapshot mapping', () => {
-  const tradeRecordsInsert = migration.match(/insert into public\.trade_records\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
-  const tradeRecordsValues = migration.match(/values\s*\(([\s\S]*?)\)\s*returning id into v_trade_record_id;/i)?.[1] ?? '';
+test('close_trade_v2 updates only production-safe trade_records fields', () => {
+  const closeUpdateBlock = migration.match(/update\s+public\.trade_records\s*set\s*([\s\S]*?)\s*where\s+id\s*=\s*v_trade\.trade_record_id/i)?.[0] ?? '';
+  const validCloseFields = [
+    'status',
+    'outcome',
+    'result_r',
+    'closed_at',
+    'realized_pnl',
+    'fees',
+    'updated_at'
+  ];
 
-  assert.doesNotMatch(tradeRecordsInsert, /strategy_snapshot/i);
-  assert.match(tradeRecordsInsert, /rule_snapshot/i);
-  assert.equal((tradeRecordsValues.match(/\bp_strategy_snapshot\b/g) ?? []).length, 1);
-  assert.match(migration, /insert into public\.active_trades[\s\S]*strategy_snapshot[\s\S]*p_strategy_snapshot/i);
+  for (const field of validCloseFields) {
+    assert.match(closeUpdateBlock, new RegExp(`\\b${field}\\b`, 'i'));
+  }
+
+  for (const invalidField of invalidTradeRecordLifecycleColumns) {
+    assert.doesNotMatch(closeUpdateBlock, new RegExp(`\\b${invalidField}\\b`, 'i'));
+  }
 });
 
 test('close route is server-only and uses service-role V2 close RPC', () => {

@@ -1,10 +1,5 @@
--- Trade Police v21: real server-owned lifecycle V2 persistence boundary.
--- This migration introduces the authenticated server-only activation and close RPCs.
--- It deliberately keeps the existing V1 lifecycle in place while adding the clean V2 boundary.
--- Reuses the existing unique index active_trades_user_source_decision_unique
---   on public.active_trades (user_id, source_decision_id)
---   where source_decision_id is not null;
--- Decision-report activation requires both source_decision_id and source_report_id.
+-- Corrective migration for the production schema contract:
+-- active_trades owns the V2 lifecycle metadata; trade_records only stores canonical trade record fields.
 
 create or replace function public.activate_trade_v2(
   p_user_id uuid,
@@ -619,6 +614,35 @@ grant execute on function public.activate_trade_v2(
   jsonb
 ) to service_role;
 
+comment on function public.activate_trade_v2(
+  uuid,
+  text,
+  text,
+  numeric,
+  numeric,
+  numeric,
+  uuid,
+  uuid,
+  uuid,
+  uuid,
+  text,
+  numeric,
+  numeric,
+  text,
+  numeric,
+  jsonb,
+  boolean,
+  numeric,
+  numeric,
+  text,
+  text,
+  text,
+  jsonb,
+  text,
+  boolean,
+  jsonb
+) is 'Server-owned V2 activation boundary that creates exactly one successful activation, enforces authoritative decision lineage, blocks hard overrides, and prevents duplicate source_decision activations.';
+
 create or replace function public.close_trade_v2(
   p_user_id uuid,
   p_trade_id uuid,
@@ -700,6 +724,7 @@ begin
   if p_outcome is not null and lower(trim(p_outcome)) <> lower(v_close_outcome) then
     raise exception 'Close outcome conflicts with the calculated result.';
   end if;
+
   v_now := now();
 
   update public.active_trades
@@ -741,15 +766,16 @@ begin
     p_user_id,
     v_trade.id,
     'TRADE_CLOSED',
-    v_close_outcome,
+    v_trade.original_verdict,
     p_close_price,
     v_result_r,
     jsonb_build_object(
       'close_price', p_close_price,
+      'result_r', v_result_r,
       'outcome', v_close_outcome,
-      'realized_pnl', v_realized_pnl,
       'fees', greatest(coalesce(p_fees, 0), 0),
-      'notes', p_notes
+      'realized_pnl', v_realized_pnl,
+      'close_notes', p_notes
     )
   );
 
@@ -766,42 +792,55 @@ begin
 end;
 $$;
 
-alter function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) owner to postgres;
+alter function public.close_trade_v2(
+  uuid,
+  uuid,
+  numeric,
+  numeric,
+  text,
+  text
+) owner to postgres;
 
-revoke all on function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) from public;
-revoke execute on function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) from anon;
-revoke execute on function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) from authenticated;
-grant execute on function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) to service_role;
+revoke all on function public.close_trade_v2(
+  uuid,
+  uuid,
+  numeric,
+  numeric,
+  text,
+  text
+) from public;
+revoke execute on function public.close_trade_v2(
+  uuid,
+  uuid,
+  numeric,
+  numeric,
+  text,
+  text
+) from anon;
+revoke execute on function public.close_trade_v2(
+  uuid,
+  uuid,
+  numeric,
+  numeric,
+  text,
+  text
+) from authenticated;
+grant execute on function public.close_trade_v2(
+  uuid,
+  uuid,
+  numeric,
+  numeric,
+  text,
+  text
+) to service_role;
 
-comment on function public.activate_trade_v2(
-  uuid,
-  text,
-  text,
-  numeric,
-  numeric,
-  numeric,
+comment on function public.close_trade_v2(
   uuid,
   uuid,
-  uuid,
-  uuid,
-  text,
   numeric,
   numeric,
   text,
-  numeric,
-  jsonb,
-  boolean,
-  numeric,
-  numeric,
-  text,
-  text,
-  text,
-  jsonb,
-  text,
-  boolean,
-  jsonb
-) is 'Server-owned V2 activation boundary that creates exactly one successful activation, enforces authoritative decision lineage, blocks hard overrides, and prevents duplicate source_decision activations.';
-
-comment on function public.close_trade_v2(uuid, uuid, numeric, numeric, text, text) is 'Server-owned V2 close boundary that finalizes an active trade exactly once and writes a single close lifecycle event.';
+  text
+) is 'Server-owned V2 close boundary that resolves active-trade P&L and updates only production-safe trade_records columns.';
 
 notify pgrst, 'reload schema';

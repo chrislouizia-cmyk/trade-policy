@@ -269,16 +269,7 @@ begin
       balance_at_entry,
       risk_amount,
       strategy_profile_id,
-      strategy_name_at_entry,
-      original_verdict,
-      original_verdict_reason,
-      taken_against_verdict,
-      override_reason,
-      override_conditions,
-      activation_mode,
-      strategy_revision_id,
-      source_decision_id,
-      source_report_id
+      strategy_name_at_entry
     ) values (
       p_user_id,
       'EXECUTED',
@@ -301,16 +292,7 @@ begin
       v_balance_at_entry_value,
       v_risk_amount_value,
       p_strategy_profile_id,
-      null,
-      p_original_verdict,
-      p_original_verdict_reason,
-      p_taken_against_verdict or p_activation_mode = 'OVERRIDE',
-      p_override_reason,
-      coalesce(p_override_conditions, '[]'::jsonb),
-      p_activation_mode,
-      p_strategy_revision_id,
-      p_source_decision_id,
-      p_source_report_id
+      null
     )
     returning id into v_trade_record_id;
 
