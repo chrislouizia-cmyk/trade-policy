@@ -41,6 +41,27 @@ test('activate route is server-only and uses service-role V2 RPC', () => {
   assert.doesNotMatch(activateRoute, /insert\s+into\s+public\.active_trades/i);
 });
 
+test('trade_records stores strategy state through rule_snapshot without a trade_records.strategy_snapshot column', () => {
+  const tradeRecordsInsert = migration.match(/insert into public\.trade_records\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
+  const tradeRecordsValues = migration.match(/values\s*\(([\s\S]*?)\)\s*returning id into v_trade_record_id;/i)?.[1] ?? '';
+
+  assert.doesNotMatch(tradeRecordsInsert, /strategy_snapshot/i);
+  assert.match(tradeRecordsInsert, /rule_snapshot/i);
+  assert.match(tradeRecordsValues, /p_strategy_snapshot/i);
+  assert.equal((tradeRecordsValues.match(/\bp_strategy_snapshot\b/g) ?? []).length, 1);
+  assert.match(migration, /insert into public\.active_trades[\s\S]*strategy_snapshot[\s\S]*p_strategy_snapshot/i);
+});
+
+test('trade_records keeps the valid snapshot contract without the invalid strategy_snapshot mapping', () => {
+  const tradeRecordsInsert = migration.match(/insert into public\.trade_records\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
+  const tradeRecordsValues = migration.match(/values\s*\(([\s\S]*?)\)\s*returning id into v_trade_record_id;/i)?.[1] ?? '';
+
+  assert.doesNotMatch(tradeRecordsInsert, /strategy_snapshot/i);
+  assert.match(tradeRecordsInsert, /rule_snapshot/i);
+  assert.equal((tradeRecordsValues.match(/\bp_strategy_snapshot\b/g) ?? []).length, 1);
+  assert.match(migration, /insert into public\.active_trades[\s\S]*strategy_snapshot[\s\S]*p_strategy_snapshot/i);
+});
+
 test('close route is server-only and uses service-role V2 close RPC', () => {
   assert.match(closeRoute, /const admin = createAdminClient\(\);/);
   assert.match(closeRoute, /admin\.rpc\('close_trade_v2'/);
