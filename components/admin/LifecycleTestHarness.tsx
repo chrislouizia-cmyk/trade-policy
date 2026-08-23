@@ -162,6 +162,7 @@ export default function LifecycleTestHarness({ role, accounts }: { role: string;
         stopLoss: Number(payload.stopLoss),
         takeProfit: Number(payload.takeProfit),
         riskPercent: Number(payload.riskPercent),
+        setupType: 'INTERNAL_LIFECYCLE_SMOKE_TEST',
         activationMode,
         overrideReason,
         originalVerdict: seeded.authoritativeVerdict,
@@ -180,7 +181,6 @@ export default function LifecycleTestHarness({ role, accounts }: { role: string;
             closePrice,
             fees: 0,
             notes: 'Internal lifecycle smoke test close',
-            outcome: 'BREAKEVEN',
           });
           setCloseResult(closeResponse as ApiResult);
         }

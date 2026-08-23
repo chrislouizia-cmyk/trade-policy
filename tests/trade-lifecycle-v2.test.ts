@@ -220,6 +220,14 @@ test('internal lifecycle seed reuses the canonical production report persistence
   assert.doesNotMatch(seedRoute, /from\('decision_reports'\)\.insert\(/i);
 });
 
+test('internal lifecycle smoke harness provides valid setup typing and avoids conflicting close outcome', () => {
+  const harness = readFileSync(new URL('../components/admin/LifecycleTestHarness.tsx', import.meta.url), 'utf8');
+
+  assert.match(harness, /setupType:\s*'INTERNAL_LIFECYCLE_SMOKE_TEST'/i);
+  assert.doesNotMatch(harness, /setupType:\s*null/i);
+  assert.doesNotMatch(harness, /outcome:\s*'BREAKEVEN'/i);
+});
+
 test('internal lifecycle lab uses account-backed activation instead of manual balance fields', () => {
   const harness = readFileSync(new URL('../components/admin/LifecycleTestHarness.tsx', import.meta.url), 'utf8');
   const page = readFileSync(new URL('../app/admin/lifecycle-test/page.tsx', import.meta.url), 'utf8');
