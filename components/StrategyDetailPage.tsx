@@ -211,51 +211,56 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   }
 
   const strategyRules = rules.filter((rule) => rule.enabled !== false || rule.mandatory);
+  const strategySessions = (strategy.allowed_sessions && strategy.allowed_sessions.length ? strategy.allowed_sessions : sessions.map((s) => s.session_code ?? '')).filter(Boolean);
 
   return (
-    <main className="container" style={{ maxWidth: 1320 }}>
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="button-row" style={{ marginTop: 0, justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
+    <main className="container strategy-detail-shell" style={{ maxWidth: 1320 }}>
+      <section className="card strategy-detail-header" aria-label="Strategy detail header">
+        <div className="strategy-detail-header-row">
+          <div className="strategy-detail-heading">
             <p className="eyebrow">STRATEGY DETAIL</p>
-            <h1 style={{ margin: '6px 0 4px' }}>{strategy.name}</h1>
-            <small className="muted">{strategy.description || 'No description saved.'}</small>
-          </div>
-          <div className="button-row" style={{ marginTop: 0 }}>
-            <Link className="button-link secondary" href="/profile">Back to Strategies</Link>
+            <div className="strategy-detail-title-row">
+              <h1>{strategy.name}</h1>
+              <Link className="button-link secondary strategy-detail-back-link" href="/profile">Back to Strategies</Link>
+            </div>
+            <small className="muted strategy-detail-subtitle">{strategy.description || 'No description saved.'}</small>
           </div>
         </div>
-      </div>
 
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="button-row" style={{ marginTop: 0, alignItems: 'center' }}>
+        <div className="button-row strategy-detail-tabs" style={{ marginTop: 0 }}>
           {(['overview', 'rules', 'backtests', 'forward-test'] as TabKey[]).map((key) => (
             <button
               key={key}
               type="button"
-              className={tab === key ? 'primary' : 'secondary'}
+              className={tab === key ? 'primary strategy-detail-tab active' : 'secondary strategy-detail-tab'}
               onClick={() => setTab(key)}
-              style={{ minWidth: 120 }}
             >
               {key === 'overview' ? 'Overview' : key === 'rules' ? 'Rules' : key === 'backtests' ? 'Backtests' : 'Forward Test'}
             </button>
           ))}
         </div>
-      </div>
+      </section>
 
       {tab === 'overview' && (
-        <div className="grid grid-3">
+        <div className="grid grid-3 strategy-detail-grid">
           <section className="card strategy-detail-card">
             <p className="eyebrow">PROFILE</p>
             <h3>Strategy summary</h3>
-            <ul className="strategy-detail-summary-list">
-              <li><strong>Instruments:</strong> {(strategy.instruments ?? []).join(', ') || '—'}</li>
-              <li><strong>Timeframes:</strong> {strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</li>
-              <li><strong>Risk:</strong> {strategy.maximum_risk_percent ?? '—'}%</li>
-              <li><strong>Min RR:</strong> {strategy.minimum_rr ?? '—'}</li>
-              <li><strong>Signal readiness:</strong> {strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</li>
-              <li><strong>Sessions:</strong> {(strategy.allowed_sessions ?? sessions.map((s) => s.session_code ?? '') ?? []).join(', ') || '—'}</li>
-            </ul>
+            <div className="strategy-detail-summary-list">
+              <div className="strategy-detail-meta-row"><span>Instruments</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
+              <div className="strategy-detail-meta-row"><span>Timeframes</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
+              <div className="strategy-detail-meta-row"><span>Risk</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
+              <div className="strategy-detail-meta-row"><span>Min RR</span><strong>{strategy.minimum_rr ?? '—'}</strong></div>
+              <div className="strategy-detail-meta-row"><span>Signal readiness</span><strong>{strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</strong></div>
+              <div className="strategy-detail-meta-row strategy-detail-meta-row-wrap">
+                <span>Sessions</span>
+                <strong className="strategy-detail-chip-list">
+                  {strategySessions.length ? strategySessions.map((session) => (
+                    <span key={session} className="strategy-detail-chip">{session}</span>
+                  )) : <span className="muted">—</span>}
+                </strong>
+              </div>
+            </div>
           </section>
 
           <section className="card strategy-detail-card">
@@ -263,9 +268,9 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
             <h3>{strategyRules.length} enabled</h3>
             <div className="strategy-detail-rule-stack">
               {strategyRules.slice(0, 5).map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="card strategy-detail-rule-card">
+                <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card">
                   <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
-                  <small className="muted" style={{ display: 'block', marginTop: 6 }}>{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
+                  <small className="muted">{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
                 </div>
               ))}
               {strategyRules.length === 0 && <p className="muted">No enabled rules saved yet.</p>}
@@ -275,14 +280,14 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
           <section className="card strategy-detail-card">
             <p className="eyebrow">BACKTESTING</p>
             <h3>V1 readiness</h3>
-            <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+            <div className="strategy-detail-backtest-stack">
               <div>
-                <div className="button-row" style={{ marginTop: 0, justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div className="strategy-detail-usage-row">
                   <strong>{usageCount}</strong>
                   <small className="muted">{backtestStatusLabel}</small>
                 </div>
-                <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: 10, borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{ width: `${usagePercent}%`, background: 'linear-gradient(90deg, #7aa2ff, #4cd7a9)', height: '100%' }} />
+                <div className="strategy-detail-progress-track">
+                  <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
                 </div>
               </div>
               <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
@@ -292,20 +297,20 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       )}
 
       {tab === 'rules' && (
-        <section className="card">
+        <section className="card strategy-detail-section-card">
           <p className="eyebrow">RULES</p>
           <h3>Configured rule set</h3>
-          <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+          <div className="strategy-detail-rule-list">
             {strategyRules.length === 0 ? (
               <p className="muted">No rules have been configured for this strategy.</p>
             ) : (
               strategyRules.map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="card strategy-detail-rule-card" style={{ padding: 16, margin: 0 }}>
-                  <div className="button-row" style={{ justifyContent: 'space-between', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
-                    <strong style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{rule.label || rule.rule_key || 'Rule'}</strong>
+                <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card compact">
+                  <div className="strategy-detail-rule-header">
+                    <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
                     <span className="badge">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
                   </div>
-                  <small className="muted" style={{ display: 'block', marginTop: 8, overflowWrap: 'anywhere' }}>
+                  <small className="muted">
                     {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
                   </small>
                 </div>
@@ -316,9 +321,9 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       )}
 
       {tab === 'backtests' && (
-        <div className="stack">
-          <section className="card">
-            <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0 }}>
+        <div className="stack strategy-detail-backtests-stack">
+          <section className="card strategy-detail-section-card">
+            <div className="strategy-detail-header-row strategy-detail-backtests-head">
               <div>
                 <p className="eyebrow">BACKTESTS</p>
                 <h3>Monthly usage</h3>
@@ -326,13 +331,13 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
               <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
             </div>
 
-            <div style={{ marginTop: 18 }}>
-              <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0 }}>
+            <div className="strategy-detail-backtest-summary">
+              <div className="strategy-detail-usage-row">
                 <strong>{usageCount}</strong>
                 <small className="muted">Plan: {planCode || 'FREE'} · {limitValue === null ? 'Unlimited backtests' : `limit ${limitValue}`}</small>
               </div>
-              <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: 12, borderRadius: 999, overflow: 'hidden' }}>
-                <div style={{ width: `${usagePercent}%`, background: 'linear-gradient(90deg, #7aa2ff, #4cd7a9)', height: '100%' }} />
+              <div className="strategy-detail-progress-track large">
+                <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
               </div>
             </div>
 
