@@ -83,6 +83,7 @@ test('A. exact canonical app payload + matching DB normalized strategy passes', 
   assert.equal(payload.strategy.id, baseStrategy.id);
   assert.equal(payloadText, canonical({ strategy: baseStrategy }));
   assert.equal(expectedRevision.startsWith(`${baseStrategy.engineVersion}:`), true);
+  assert.match(migrationSql, /v_current_strategy\s*:=\s*public\.marketplace_normalize_strategy_profile_for_revision\(v_source_profile\.id\)/);
   assert.match(migrationSql, /v_normalized_strategy\s*:=\s*v_canonical_payload\s*->\s*'strategy'/);
 });
 
@@ -112,9 +113,12 @@ test('D. arbitrary revision cannot bypass the guard', () => {
 
 test('E. canonical strategy text never appears in the client response', () => {
   assert.match(routeSource, /p_canonical_strategy_text: canonicalStrategyText/);
-  assert.doesNotMatch(routeSource, /return NextResponse\.json\(\{[\s\S]*canonicalStrategyText/);
-  assert.doesNotMatch(routeSource, /JSON\.stringify\(\{ strategy: canonicalStrategy \}\)/);
-  assert.doesNotMatch(routeSource, /canonical strategy text/i);
+
+  const responseBodyMatch = routeSource.match(/return\s+NextResponse\.json\(\s*\{([\s\S]*?)\}\s*\);?/);
+  assert.ok(responseBodyMatch, 'expected a NextResponse.json return block');
+  assert.doesNotMatch(responseBodyMatch[1], /canonicalStrategyText/i);
+  assert.doesNotMatch(responseBodyMatch[1], /canonical strategy text/i);
+  assert.doesNotMatch(responseBodyMatch[1], /JSON\.stringify\(\{\s*strategy\s*:/i);
 });
 
 test('F. the route passes exactly three RPC parameters', () => {

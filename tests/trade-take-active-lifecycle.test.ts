@@ -15,7 +15,7 @@ test('override activation returns a persisted trade together with explicit ACTIV
 });
 
 test('activation rpc enforces real database idempotency and removes the fake idempotency parameter',()=>{
-  assert.match(route,/createAdminClient\(\)\.rpc\('activate_trade_atomically_v1'/);
+  assert.match(route,/const admin = createAdminClient\(\);[\s\S]*admin\.rpc\('activate_trade_atomically_v1'/);
   assert.doesNotMatch(route,/p_idempotency_key|idempotencyKey/i);
   assert.match(rpcMigration,/create unique index if not exists active_trades_user_source_decision_unique/i);
   assert.match(rpcMigration,/where source_decision_id is not null/i);
