@@ -2,8 +2,17 @@ import type {StrategyProfile,TimeframeLayer,TimeframeRole} from '@/types/trade';
 
 const definitions:Array<[TimeframeRole,keyof StrategyProfile]>=[['MACRO','macroTimeframe'],['TREND','trendTimeframe'],['CONFIRMATION','confirmationTimeframe'],['ENTRY','entryTimeframe'],['TRIGGER','triggerTimeframe']];
 
+function normalizeTimeframe(value: string | undefined | null): string {
+  if (typeof value !== 'string') return 'Not configured';
+  const trimmed = value.trim();
+  return trimmed || 'Not configured';
+}
+
 export function strategyTimeframeLayers(strategy:StrategyProfile):TimeframeLayer[]{
-  return definitions.flatMap(([role,key])=>{const timeframe=strategy[key];return typeof timeframe==='string'&&timeframe.trim()?[{role,timeframe}]:[]});
+  return definitions.map(([role, key]) => ({
+    role,
+    timeframe: normalizeTimeframe(typeof strategy[key] === 'string' ? strategy[key] : undefined),
+  }));
 }
 
 export function strategyTimeframeContext(strategy:StrategyProfile):string{
@@ -12,4 +21,8 @@ export function strategyTimeframeContext(strategy:StrategyProfile):string{
   return `Trade Police checks ${layers.map(({ role, timeframe }) => `${role.toLowerCase()} ${timeframe}`).join(' · ')} against your saved rules.`;
 }
 
-export function strategyTimeframes(strategy:StrategyProfile):string[]{return [...new Set(strategyTimeframeLayers(strategy).map(layer=>layer.timeframe))]}
+export function strategyTimeframes(strategy:StrategyProfile):string[]{
+  return [...new Set(strategyTimeframeLayers(strategy)
+    .map((layer) => layer.timeframe)
+    .filter((timeframe) => timeframe !== 'Not configured'))];
+}

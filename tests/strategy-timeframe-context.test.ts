@@ -51,9 +51,10 @@ const marketAnalyzeRoute = readFileSync(new URL('../app/api/market/analyze/route
 const tradeValidator = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
 const liveMarketPanel = readFileSync(new URL('../components/LiveMarketPanel.tsx', import.meta.url), 'utf8');
 
-test('strategy-specific timeframe context and analysis input differ between A and B without hardcoded fallback timeframes', () => {
+test('explicit strategy timeframe contract renders configured values and Not configured for missing roles', () => {
   const contextA = strategyTimeframeContext(strategyA as any);
   const contextB = strategyTimeframeContext(strategyB as any);
+  const contextC = strategyTimeframeContext(minimalStrategy as any);
 
   assert.equal(
     contextA,
@@ -61,14 +62,23 @@ test('strategy-specific timeframe context and analysis input differ between A an
   );
   assert.equal(
     contextB,
-    'Trade Police checks trend H4 · confirmation H1 · entry M15 against your saved rules.',
+    'Trade Police checks macro Not configured · trend H4 · confirmation H1 · entry M15 · trigger Not configured against your saved rules.',
   );
+  assert.equal(
+    contextC,
+    'Trade Police checks macro Not configured · trend H4 · confirmation Not configured · entry M15 · trigger Not configured against your saved rules.',
+  );
+
   assert.notEqual(contextA, contextB);
+  assert.notEqual(contextB, contextC);
+
   assert.deepEqual(strategyTimeframes(strategyA as any), ['D1', 'H4', 'H1', 'M20', 'M5']);
   assert.deepEqual(strategyTimeframes(strategyB as any), ['H4', 'H1', 'M15']);
-  assert.notDeepEqual(strategyTimeframes(strategyA as any), strategyTimeframes(strategyB as any));
-  assert.doesNotMatch(contextA, /macro.*D1.*H4.*H1.*M20.*M5.*macro/);
-  assert.doesNotMatch(contextB, /macro|trigger/);
+  assert.deepEqual(strategyTimeframes(minimalStrategy as any), ['H4', 'M15']);
+
+  assert.doesNotMatch(contextA, /Not configured|default|fallback/);
+  assert.doesNotMatch(contextB, /macro D1|trigger M5|default|fallback/);
+  assert.doesNotMatch(contextC, /macro D1|confirmation H1|trigger M5|default|fallback/);
 
   assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadActiveStrategy\(supabase,user\.id\);/);
   assert.doesNotMatch(marketAnalyzeRoute, /loadStrategyById\s*\(/);
@@ -90,10 +100,21 @@ test('strategy-specific timeframe context and analysis input differ between A an
   assert.doesNotMatch(tradeValidator, /node:crypto/);
 });
 
-test('minimal strategy omits undefined roles and never displays nonexistent roles', () => {
-  const context = strategyTimeframeContext(minimalStrategy as any);
+test('switching strategies immediately updates every timeframe role in the sentence', () => {
+  const first = strategyTimeframeContext(strategyA as any);
+  const second = strategyTimeframeContext({
+    ...strategyA,
+    macroTimeframe: undefined,
+    trendTimeframe: 'H1',
+    confirmationTimeframe: 'M15',
+    entryTimeframe: 'M5',
+    triggerTimeframe: 'M1',
+  } as any);
 
-  assert.equal(context, 'Trade Police checks trend H4 · entry M15 against your saved rules.');
-  assert.doesNotMatch(context, /macro|confirmation|trigger/);
-  assert.deepEqual(strategyTimeframes(minimalStrategy as any), ['H4', 'M15']);
+  assert.notEqual(first, second);
+  assert.equal(
+    second,
+    'Trade Police checks macro Not configured · trend H1 · confirmation M15 · entry M5 · trigger M1 against your saved rules.',
+  );
+  assert.doesNotMatch(second, /D1|H4|M30|default|fallback/);
 });

@@ -33,16 +33,6 @@ export default async function AppHeader({
   return (
     <>
       <header className="app-shell-header client-header">
-        <div className="client-greeting-row client-shell-top">
-          <div className="client-greeting personal-greeting">
-            <strong>{greeting()}, {displayName}.</strong>
-            <small>{description}</small>
-          </div>
-          <div className="shell-header-actions">
-            <TradePoliceShield />
-          </div>
-        </div>
-
         <div className="app-brand-row shell-brand-row">
           <Link href="/dashboard" className="app-brand" aria-label="Trade Police">
             <Image src="/brand/trade-police-logo.png" alt="Trade Police" width={220} height={46} className="brand-logo-wordmark brand-logo-header" />
@@ -51,8 +41,16 @@ export default async function AppHeader({
             </span>
           </Link>
           <div className="app-user shell-user-controls">
+            <TradePoliceShield />
             <KeyboardShortcuts />
             <SignOutButton />
+          </div>
+        </div>
+
+        <div className="client-greeting-row client-shell-top">
+          <div className="client-greeting personal-greeting">
+            <strong>{greeting()}, {displayName}.</strong>
+            <small>{description}</small>
           </div>
         </div>
 
