@@ -247,222 +247,226 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
         </div>
       </section>
 
-      {tab === 'overview' && (
-        <div className="grid grid-3 strategy-detail-grid">
-          <section className="card strategy-detail-card">
-            <p className="eyebrow">PROFILE</p>
-            <h3>Strategy summary</h3>
-            <div className="strategy-detail-summary-list">
-              <div className="strategy-detail-meta-row"><span>Instruments</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
-              <div className="strategy-detail-meta-row"><span>Timeframes</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
-              <div className="strategy-detail-meta-row"><span>Risk</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
-              <div className="strategy-detail-meta-row"><span>Min RR</span><strong>{strategy.minimum_rr ?? '—'}</strong></div>
-              <div className="strategy-detail-meta-row"><span>Signal readiness</span><strong>{strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</strong></div>
-              <div className="strategy-detail-meta-row strategy-detail-meta-row-wrap">
-                <span>Sessions</span>
-                <strong className="strategy-detail-chip-list">
-                  {strategySessions.length ? strategySessions.map((session) => (
-                    <span key={session} className="strategy-detail-chip">{session}</span>
-                  )) : <span className="muted">—</span>}
-                </strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="card strategy-detail-card">
-            <p className="eyebrow">RULES</p>
-            <h3>{strategyRules.length} enabled</h3>
-            <div className="strategy-detail-rule-stack">
-              {strategyRules.slice(0, 5).map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card">
-                  <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
-                  <small className="muted">{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
-                </div>
-              ))}
-              {strategyRules.length === 0 && <p className="muted">No enabled rules saved yet.</p>}
-            </div>
-          </section>
-
-          <section className="card strategy-detail-card">
-            <p className="eyebrow">BACKTESTING</p>
-            <h3>V1 readiness</h3>
-            <div className="strategy-detail-backtest-stack">
-              <div>
-                <div className="strategy-detail-usage-row">
-                  <strong>{usageCount}</strong>
-                  <small className="muted">{backtestStatusLabel}</small>
-                </div>
-                <div className="strategy-detail-progress-track">
-                  <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
-                </div>
-              </div>
-              <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {tab === 'rules' && (
-        <section className="card strategy-detail-section-card">
-          <p className="eyebrow">RULES</p>
-          <h3>Configured rule set</h3>
-          <div className="strategy-detail-rule-list">
-            {strategyRules.length === 0 ? (
-              <p className="muted">No rules have been configured for this strategy.</p>
-            ) : (
-              strategyRules.map((rule) => (
-                <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card compact">
-                  <div className="strategy-detail-rule-header">
-                    <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
-                    <span className="badge">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
+      <div className="strategy-detail-panel">
+        <div className="strategy-detail-tab-panel">
+          {tab === 'overview' && (
+            <div className="grid grid-3 strategy-detail-grid">
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">PROFILE</p>
+                <h3>Strategy summary</h3>
+                <div className="strategy-detail-summary-list">
+                  <div className="strategy-detail-meta-row"><span>Instruments</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Timeframes</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Risk</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Min RR</span><strong>{strategy.minimum_rr ?? '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Signal readiness</span><strong>{strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</strong></div>
+                  <div className="strategy-detail-meta-row strategy-detail-meta-row-wrap">
+                    <span>Sessions</span>
+                    <strong className="strategy-detail-chip-list">
+                      {strategySessions.length ? strategySessions.map((session) => (
+                        <span key={session} className="strategy-detail-chip">{session}</span>
+                      )) : <span className="muted">—</span>}
+                    </strong>
                   </div>
-                  <small className="muted">
-                    {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
-                  </small>
                 </div>
-              ))
-            )}
-          </div>
-        </section>
-      )}
+              </section>
 
-      {tab === 'backtests' && (
-        <div className="stack strategy-detail-backtests-stack">
-          <section className="card strategy-detail-section-card">
-            <div className="strategy-detail-header-row strategy-detail-backtests-head">
-              <div>
-                <p className="eyebrow">BACKTESTS</p>
-                <h3>Monthly usage</h3>
-              </div>
-              <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
-            </div>
-
-            <div className="strategy-detail-backtest-summary">
-              <div className="strategy-detail-usage-row">
-                <strong>{usageCount}</strong>
-                <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `limit ${limitValue}`}</small>
-              </div>
-              <div className="strategy-detail-progress-track large">
-                <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
-              </div>
-            </div>
-
-            {formOpen && (
-              <form onSubmit={handleCreateBacktest} style={{ marginTop: 20, display: 'grid', gap: 16, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="grid grid-2">
-                  <label>
-                    Instrument
-                    <select value={form.instrument} onChange={(event) => setForm((current) => ({ ...current, instrument: event.target.value }))}>
-                      {(strategy.instruments ?? ['XAUUSD']).map((instrument) => (
-                        <option key={instrument} value={instrument}>{instrument}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    Period
-                    <select value={form.periodPreset} onChange={(event) => setForm((current) => ({ ...current, periodPreset: event.target.value }))}>
-                      <option value="1M">1M</option>
-                      <option value="3M">3M</option>
-                      <option value="6M">6M</option>
-                      <option value="Custom">Custom</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Starting balance
-                    <input type="number" min="1" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} />
-                  </label>
-
-                  <label>
-                    Execution model
-                    <select value={form.executionModel} onChange={(event) => setForm((current) => ({ ...current, executionModel: event.target.value }))}>
-                      <option value="STANDARD">Standard</option>
-                      <option value="CONSERVATIVE">Conservative</option>
-                    </select>
-                  </label>
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">RULES</p>
+                <h3>{strategyRules.length} enabled</h3>
+                <div className="strategy-detail-rule-stack">
+                  {strategyRules.slice(0, 5).map((rule) => (
+                    <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card">
+                      <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
+                      <small className="muted">{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
+                    </div>
+                  ))}
+                  {strategyRules.length === 0 && <p className="muted">No enabled rules saved yet.</p>}
                 </div>
+              </section>
 
-                {form.periodPreset === 'Custom' && (
-                  <div className="grid grid-2">
-                    <label>
-                      Start date
-                      <input type="date" value={form.customStart} onChange={(event) => setForm((current) => ({ ...current, customStart: event.target.value }))} />
-                    </label>
-                    <label>
-                      End date
-                      <input type="date" value={form.customEnd} onChange={(event) => setForm((current) => ({ ...current, customEnd: event.target.value }))} />
-                    </label>
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">BACKTESTING</p>
+                <h3>V1 readiness</h3>
+                <div className="strategy-detail-backtest-stack">
+                  <div>
+                    <div className="strategy-detail-usage-row">
+                      <strong>{usageCount}</strong>
+                      <small className="muted">{backtestStatusLabel}</small>
+                    </div>
+                    <div className="strategy-detail-progress-track">
+                      <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
+                    </div>
                   </div>
-                )}
-
-                <div className="button-row" style={{ marginTop: 0 }}>
-                  <button type="submit" className="primary" disabled={saving}>{saving ? 'Queueing…' : 'Queue Backtest'}</button>
-                  <button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button>
+                  <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
                 </div>
-              </form>
-            )}
+              </section>
+            </div>
+          )}
 
-            {message && <p className="muted" style={{ marginTop: 14 }}>{message}</p>}
-          </section>
-
-          <section className="card">
-            <p className="eyebrow">RUN HISTORY</p>
-            <h3>Past runs</h3>
-            <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-              {runs.length === 0 ? (
-                <p className="muted">No backtests have been queued for this strategy yet.</p>
-              ) : (
-                runs.map((run) => (
-                  <div key={run.id} className="card strategy-detail-run-card" style={{ padding: 16, margin: 0 }}>
-                    <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{run.instrument || 'XAUUSD'}</strong>
-                        <small className="muted" style={{ display: 'block' }}>{run.status}</small>
+          {tab === 'rules' && (
+            <section className="card strategy-detail-section-card">
+              <p className="eyebrow">RULES</p>
+              <h3>Configured rule set</h3>
+              <div className="strategy-detail-rule-list">
+                {strategyRules.length === 0 ? (
+                  <p className="muted">No rules have been configured for this strategy.</p>
+                ) : (
+                  strategyRules.map((rule) => (
+                    <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card compact">
+                      <div className="strategy-detail-rule-header">
+                        <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
+                        <span className="badge">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
                       </div>
-                      <button type="button" className="secondary" onClick={() => setSelectedRunId(run.id)}>View Report</button>
+                      <small className="muted">
+                        {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
+                      </small>
                     </div>
-                    <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
-                      <div><small className="muted">Revision</small><div>{run.strategy_revision_id || '—'}</div></div>
-                      <div><small className="muted">Period</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
-                      <div><small className="muted">Created</small><div>{formatDate(run.created_at)}</div></div>
-                    </div>
-                    <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
-                      <div><small className="muted">Total trades</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
-                      <div><small className="muted">Net return</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
-                      <div><small className="muted">Max drawdown</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          {selectedRun && (
-            <section className="card">
-              <p className="eyebrow">REPORT</p>
-              <h3>Selected backtest</h3>
-              <div className="grid grid-3" style={{ marginTop: 10 }}>
-                <div><small className="muted">Status</small><div>{selectedRun.status}</div></div>
-                <div><small className="muted">Strategy revision</small><div>{selectedRun.strategy_revision_id || '—'}</div></div>
-                <div><small className="muted">Created</small><div>{formatDate(selectedRun.created_at)}</div></div>
-              </div>
-              <div className="button-row" style={{ marginTop: 18 }}>
-                <button type="button" className="secondary" disabled>View Report</button>
+                  ))
+                )}
               </div>
             </section>
           )}
-        </div>
-      )}
 
-      {tab === 'forward-test' && (
-        <section className="card">
-          <p className="eyebrow">FORWARD TEST</p>
-          <h3>Forward Testing</h3>
-          <p className="muted" style={{ marginTop: 12 }}>Coming soon</p>
-          <p className="muted" style={{ marginTop: 12 }}>Validate your strategy against live market conditions before using it in execution.</p>
-        </section>
-      )}
+          {tab === 'backtests' && (
+            <div className="stack strategy-detail-backtests-stack">
+              <section className="card strategy-detail-section-card">
+                <div className="strategy-detail-header-row strategy-detail-backtests-head">
+                  <div>
+                    <p className="eyebrow">BACKTESTS</p>
+                    <h3>Monthly usage</h3>
+                  </div>
+                  <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
+                </div>
+
+                <div className="strategy-detail-backtest-summary">
+                  <div className="strategy-detail-usage-row">
+                    <strong>{usageCount}</strong>
+                    <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `limit ${limitValue}`}</small>
+                  </div>
+                  <div className="strategy-detail-progress-track large">
+                    <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
+                  </div>
+                </div>
+
+                {formOpen && (
+                  <form onSubmit={handleCreateBacktest} style={{ marginTop: 20, display: 'grid', gap: 16, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="grid grid-2">
+                      <label>
+                        Instrument
+                        <select value={form.instrument} onChange={(event) => setForm((current) => ({ ...current, instrument: event.target.value }))}>
+                          {(strategy.instruments ?? ['XAUUSD']).map((instrument) => (
+                            <option key={instrument} value={instrument}>{instrument}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label>
+                        Period
+                        <select value={form.periodPreset} onChange={(event) => setForm((current) => ({ ...current, periodPreset: event.target.value }))}>
+                          <option value="1M">1M</option>
+                          <option value="3M">3M</option>
+                          <option value="6M">6M</option>
+                          <option value="Custom">Custom</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Starting balance
+                        <input type="number" min="1" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} />
+                      </label>
+
+                      <label>
+                        Execution model
+                        <select value={form.executionModel} onChange={(event) => setForm((current) => ({ ...current, executionModel: event.target.value }))}>
+                          <option value="STANDARD">Standard</option>
+                          <option value="CONSERVATIVE">Conservative</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {form.periodPreset === 'Custom' && (
+                      <div className="grid grid-2">
+                        <label>
+                          Start date
+                          <input type="date" value={form.customStart} onChange={(event) => setForm((current) => ({ ...current, customStart: event.target.value }))} />
+                        </label>
+                        <label>
+                          End date
+                          <input type="date" value={form.customEnd} onChange={(event) => setForm((current) => ({ ...current, customEnd: event.target.value }))} />
+                        </label>
+                      </div>
+                    )}
+
+                    <div className="button-row" style={{ marginTop: 0 }}>
+                      <button type="submit" className="primary" disabled={saving}>{saving ? 'Queueing…' : 'Queue Backtest'}</button>
+                      <button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button>
+                    </div>
+                  </form>
+                )}
+
+                {message && <p className="muted" style={{ marginTop: 14 }}>{message}</p>}
+              </section>
+
+              <section className="card">
+                <p className="eyebrow">RUN HISTORY</p>
+                <h3>Past runs</h3>
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  {runs.length === 0 ? (
+                    <p className="muted">No backtests have been queued for this strategy yet.</p>
+                  ) : (
+                    runs.map((run) => (
+                      <div key={run.id} className="card strategy-detail-run-card" style={{ padding: 16, margin: 0 }}>
+                        <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{run.instrument || 'XAUUSD'}</strong>
+                            <small className="muted" style={{ display: 'block' }}>{run.status}</small>
+                          </div>
+                          <button type="button" className="secondary" onClick={() => setSelectedRunId(run.id)}>View Report</button>
+                        </div>
+                        <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
+                          <div><small className="muted">Revision</small><div>{run.strategy_revision_id || '—'}</div></div>
+                          <div><small className="muted">Period</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
+                          <div><small className="muted">Created</small><div>{formatDate(run.created_at)}</div></div>
+                        </div>
+                        <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
+                          <div><small className="muted">Total trades</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
+                          <div><small className="muted">Net return</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
+                          <div><small className="muted">Max drawdown</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              {selectedRun && (
+                <section className="card">
+                  <p className="eyebrow">REPORT</p>
+                  <h3>Selected backtest</h3>
+                  <div className="grid grid-3" style={{ marginTop: 10 }}>
+                    <div><small className="muted">Status</small><div>{selectedRun.status}</div></div>
+                    <div><small className="muted">Strategy revision</small><div>{selectedRun.strategy_revision_id || '—'}</div></div>
+                    <div><small className="muted">Created</small><div>{formatDate(selectedRun.created_at)}</div></div>
+                  </div>
+                  <div className="button-row" style={{ marginTop: 18 }}>
+                    <button type="button" className="secondary" disabled>View Report</button>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {tab === 'forward-test' && (
+            <section className="card">
+              <p className="eyebrow">FORWARD TEST</p>
+              <h3>Forward Testing</h3>
+              <p className="muted" style={{ marginTop: 12 }}>Coming soon</p>
+              <p className="muted" style={{ marginTop: 12 }}>Validate your strategy against live market conditions before using it in execution.</p>
+            </section>
+          )}
+        </div>
+      </div>
     </main>
   );
 }
