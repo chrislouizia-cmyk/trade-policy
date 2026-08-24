@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { canonicalStrategyRevisionPayload } from '@/lib/historical-decisions/fingerprint';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { loadStrategyById } from '@/lib/server/active-strategy';
 import { getHQMarketplaceContext, toMarketplacePreview } from '@/lib/server/hq-marketplace';
@@ -259,15 +260,22 @@ export async function POST(request:Request) {
   }
 
   const canonicalStrategy = await loadStrategyById(admin, sourceProfile.user_id, sourceProfile.id);
+  const canonicalStrategyText = canonicalStrategyRevisionPayload(canonicalStrategy);
   const sourceStrategyRevisionId = strategyRevisionId(canonicalStrategy);
+
+  console.log(`APP_SOURCE_STRATEGY_REVISION_ID=${sourceStrategyRevisionId}`);
 
   const { data: creationResult, error: creationError } = await supabase.rpc('create_internal_marketplace_release_v1', {
     p_strategy_profile_id: sourceProfile.id,
     p_source_strategy_revision_id: sourceStrategyRevisionId,
+    p_canonical_strategy_text: canonicalStrategyText,
   });
 
   if (creationError) {
     const message = String(creationError.message ?? 'Internal test release creation failed.');
+    const details = typeof (creationError as { details?: unknown })?.details === 'string' ? (creationError as { details: string }).details : null;
+    const hint = typeof (creationError as { hint?: unknown })?.hint === 'string' ? (creationError as { hint: string }).hint : null;
+
     if (message.includes('already exists for this strategy revision') || message.includes('already exists')) {
       return NextResponse.json({ error: 'An internal test release already exists for this strategy revision.', code: 'DUPLICATE_MARKETPLACE_RELEASE' }, { status: 409 });
     }
@@ -280,7 +288,14 @@ export async function POST(request:Request) {
     if (message.includes('Founder permission required')) {
       return NextResponse.json({ error: 'Founder-only access required.', code: 'FORBIDDEN' }, { status: 403 });
     }
-    console.error('[HQ marketplace create failure]', { message, strategyProfileId, userId: user.id });
+    console.error('[HQ marketplace create failure]', {
+      message,
+      details,
+      hint,
+      strategyProfileId,
+      userId: user.id,
+      sourceStrategyRevisionId,
+    });
     return NextResponse.json({ error: 'Internal test release could not be created.', code: 'RELEASE_CREATE_FAILED' }, { status: 500 });
   }
 

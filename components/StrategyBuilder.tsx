@@ -144,6 +144,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,rules,sessions),[profile,rules,sessions]);
   const finalReviewNameError=validateStrategyName(profile.name);
   const quickstartRequested = searchParams.get('quickstart') === '1';
+  const selectedStrategyId = searchParams.get('strategy');
+  const requestedMode = searchParams.get('mode');
 
   useEffect(() => {
     const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Monterrey';
@@ -182,6 +184,50 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
     }
   }, [quickstartRequested, loading]);
+
+  useEffect(() => {
+    if (!selectedStrategyId || !profiles.length) return;
+    const target = profiles.find((item) => item.id === selectedStrategyId);
+    if (!target) return;
+
+    const resolveRequestedAction = () => {
+      if (requestedMode === 'duplicate') {
+        void duplicate(target);
+        return;
+      }
+
+      if (requestedMode === 'edit') {
+        if (v2Baseline && v2Draft && isStrategyDirty(v2Baseline, v2Draft)) {
+          setPendingNavigation(() => () => {
+            void openProfile(target);
+            if (target.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) {
+              openV2Edit();
+            } else {
+              setBuilderStep('identity');
+            }
+          });
+          setDirtyPrompt(true);
+          return;
+        }
+
+        void openProfile(target);
+        if (target.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) {
+          openV2Edit();
+        } else {
+          setBuilderStep('identity');
+        }
+        return;
+      }
+
+      void openProfile(target);
+    };
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete('strategy');
+    nextUrl.searchParams.delete('mode');
+    window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    resolveRequestedAction();
+  }, [profiles, selectedStrategyId, requestedMode, v2Baseline, v2Draft]);
 
   useEffect(() => {
     setStopLimits((current) => deriveStopLimitsForInstruments(profile.instruments, current));
@@ -465,12 +511,12 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
           <div className="sidebar-head"><div><p className="muted">STRATEGIES</p><h2>My Strategies</h2></div><button type="button" onClick={startNew}>Create New Strategy</button></div>
           <div className="strategy-list">
             {activeProfiles.map((item) => (
-              <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+              <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => requestOpenProfile(item)}>
                 <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
               </button>
             ))}
             {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
-              <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
+              <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => requestOpenProfile(item)}>
                 <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
               </button>
             ))}</>}

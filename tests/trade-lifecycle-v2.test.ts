@@ -228,6 +228,80 @@ test('internal lifecycle smoke harness provides valid setup typing and avoids co
   assert.doesNotMatch(harness, /outcome:\s*'BREAKEVEN'/i);
 });
 
+test('canonical active_trades schema excludes strategy_version and every insert column is valid', () => {
+  const activeTradeMonitor = readFileSync(new URL('../supabase/migrations/005_active_trade_monitor.sql', import.meta.url), 'utf8');
+  const tradingAccountsLedger = readFileSync(new URL('../supabase/migrations/007_trading_accounts_and_ledger.sql', import.meta.url), 'utf8');
+  const sourceLinks = readFileSync(new URL('../supabase/migrations/045_trade_activation_source_links.sql', import.meta.url), 'utf8');
+  const overrideMetadata = readFileSync(new URL('../supabase/migrations/066_trade_take_anyway_override_metadata.sql', import.meta.url), 'utf8');
+  const strategyRevision = readFileSync(new URL('../supabase/migrations/068_active_trades_strategy_revision_id.sql', import.meta.url), 'utf8');
+  const correctiveMigration = readFileSync(new URL('../supabase/migrations/076_align_active_trades_v2_schema.sql', import.meta.url), 'utf8');
+
+  const canonicalColumns = new Set([
+    'id',
+    'user_id',
+    'strategy_profile_id',
+    'trade_record_id',
+    'instrument',
+    'direction',
+    'entry',
+    'stop_loss',
+    'take_profit',
+    'risk_percent',
+    'initial_rr',
+    'setup_type',
+    'initial_score',
+    'initial_analysis',
+    'status',
+    'current_price',
+    'current_r',
+    'mfe_r',
+    'mae_r',
+    'last_verdict',
+    'last_verdict_reason',
+    'last_analysis',
+    'last_price_at',
+    'last_analyzed_at',
+    'taken_against_verdict',
+    'original_verdict',
+    'original_verdict_reason',
+    'override_reason',
+    'close_price',
+    'result_r',
+    'outcome',
+    'close_notes',
+    'opened_at',
+    'closed_at',
+    'created_at',
+    'updated_at',
+    'account_id',
+    'balance_at_entry',
+    'risk_amount',
+    'realized_pnl',
+    'fees',
+    'balance_after_close',
+    'strategy_name_at_entry',
+    'strategy_snapshot',
+    'source_decision_id',
+    'source_report_id',
+    'strategy_revision_id',
+    'activation_mode',
+    'override_conditions',
+  ]);
+
+  const insertMatch = correctiveMigration.match(/insert into public\.active_trades\s*\(([\s\S]*?)\)\s*values/i)?.[1] ?? '';
+  const insertColumns = insertMatch
+    .split(',')
+    .map((column) => column.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const column of insertColumns) {
+    assert.ok(canonicalColumns.has(column), `Column ${column} is not part of the canonical active_trades schema.`);
+  }
+  assert.ok(!canonicalColumns.has('strategy_version'));
+  assert.ok(canonicalColumns.has('strategy_revision_id'));
+  assert.doesNotMatch(correctiveMigration, /insert into public\.active_trades\s*\([\s\S]*strategy_version/i);
+});
+
 test('internal lifecycle lab uses account-backed activation instead of manual balance fields', () => {
   const harness = readFileSync(new URL('../components/admin/LifecycleTestHarness.tsx', import.meta.url), 'utf8');
   const page = readFileSync(new URL('../app/admin/lifecycle-test/page.tsx', import.meta.url), 'utf8');

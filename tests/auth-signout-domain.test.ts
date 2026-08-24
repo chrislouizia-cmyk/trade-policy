@@ -29,6 +29,15 @@ test('HQ authorization remains server enforced', () => {
 test('auth logging excludes cookie names and session values', () => {
   const server = read('lib/supabase/server.ts');
   const proxy = read('lib/supabase/proxy.ts');
-  assert.doesNotMatch(`${server}\n${proxy}`, /auth-debug|cookieNames|cookieCount/);
+
+  assert.doesNotMatch(
+    `${server}\n${proxy}`,
+    /cookieValues\s*:|cookieCount\s*:|session\s*:\s*|access_token|refresh_token/i,
+  );
   assert.match(proxy, /Session verification failed/);
+  assert.match(proxy, /AUTH_ROUTE_DIAGNOSTIC/);
+  assert.match(proxy, /authStateCategory/);
+  assert.match(proxy, /hasMatchingSupabaseAuthCookies/);
+  assert.doesNotMatch(proxy, /cookieValues\s*:|cookieCount\s*:|session\s*:\s*|access_token|refresh_token/i);
+  assert.match(proxy, /pathname,\s*\n\s*redirectDestination:|authStateCategory,\s*\n\s*hasMatchingSupabaseAuthCookies/);
 });

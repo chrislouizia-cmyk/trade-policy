@@ -50,7 +50,7 @@ test('active_trades strategy_revision_id contract matches the app and migration'
   assert.match(migrationSql, /notify pgrst, 'reload schema';/i);
 
   const routeSource = readFileSync(new URL('../app/api/trades/take/route.ts', import.meta.url), 'utf8');
-  assert.match(routeSource, /strategyRevisionId: typeof body\.strategySnapshot\?\.revisionId === 'string' \? body\.strategySnapshot\.revisionId : null/);
+  assert.match(routeSource, /p_strategy_revision_id:\s*typeof body\.strategySnapshot\?\.revisionId === 'string' \? body\.strategySnapshot\.revisionId : null/i);
 
   const historicalRowsRemainValid = buildActiveTradeRow({
     userId: '44444444-4444-4444-8444-444444444444',
@@ -64,5 +64,5 @@ test('active_trades strategy_revision_id contract matches the app and migration'
   });
 
   assert.equal(historicalRowsRemainValid.strategy_revision_id, null);
-  assert.equal(typeof historicalRowsRemainValid.strategy_revision_id, 'object');
+  assert.equal(historicalRowsRemainValid.strategy_revision_id, null);
 });

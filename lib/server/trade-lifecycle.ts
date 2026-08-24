@@ -62,8 +62,16 @@ export function canActivateTradeFromDecision(input: TradeActivationInput, option
   };
 }
 
+export function canActivateTradeFromDecisionV2(input: TradeActivationInput, options?: TradeActivationOptions): TradeActivationResult {
+  return canActivateTradeFromDecision(input, options);
+}
+
 export function evaluateTradeAuthorizationEligibility(input: TradeAuthorizationInput) {
   return evaluateEligibility(input);
+}
+
+export function evaluateTradeAuthorizationEligibilityV2(input: TradeAuthorizationInput) {
+  return evaluateTradeAuthorizationEligibility(input);
 }
 
 export function resolveTradeJournalAction(input: TradeActivationInput & { mode: 'ACTIVATE' | 'MISSED' }): TradeActivationResult {
@@ -72,6 +80,10 @@ export function resolveTradeJournalAction(input: TradeActivationInput & { mode: 
   }
 
   return canActivateTradeFromDecision(input);
+}
+
+export function resolveTradeJournalActionV2(input: TradeActivationInput & { mode: 'ACTIVATE' | 'MISSED' }): TradeActivationResult {
+  return resolveTradeJournalAction(input);
 }
 
 export function canCloseTrade(input: TradeCloseInput): TradeCloseResult {
@@ -87,6 +99,14 @@ export function canCloseTrade(input: TradeCloseInput): TradeCloseResult {
   };
 }
 
+export function canCloseTradeV2(input: TradeCloseInput): TradeCloseResult {
+  return canCloseTrade(input);
+}
+
 export function finalizeTradeLifecycle(input: TradeCloseInput): TradeCloseResult {
   return canCloseTrade(input);
+}
+
+export function finalizeTradeLifecycleV2(input: TradeCloseInput): TradeCloseResult {
+  return finalizeTradeLifecycle(input);
 }

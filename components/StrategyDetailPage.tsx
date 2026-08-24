@@ -154,6 +154,20 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   const backtestStatusLabel = limitValue === null ? (normalizedPlanCode === 'FOUNDER' ? 'Founder access' : 'Unlimited backtests') : limitValue === 0 ? 'Plan unavailable' : `${limitValue} max / month`;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
 
+  function handleBackToStrategies() {
+    window.location.assign('/profile');
+  }
+
+  function handleEditStrategy() {
+    if (!strategy.id) return;
+    window.location.assign(`/profile?strategy=${encodeURIComponent(strategy.id)}&mode=edit`);
+  }
+
+  function handleDuplicateStrategy() {
+    if (!strategy.id) return;
+    window.location.assign(`/profile?strategy=${encodeURIComponent(strategy.id)}&mode=duplicate`);
+  }
+
   async function refreshBacktests() {
     const response = await fetch('/api/backtests', { cache: 'no-store' });
     if (!response.ok) return;
@@ -227,7 +241,11 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
             <p className="eyebrow">STRATEGY DETAIL</p>
             <div className="strategy-detail-title-row">
               <h1>{strategy.name}</h1>
-              <Link className="button-link secondary strategy-detail-back-link" href="/profile">Back to Strategies</Link>
+              <div className="button-row" style={{ marginTop: 0 }}>
+                <button type="button" className="button-link secondary strategy-detail-back-link" onClick={handleBackToStrategies}>Back to Strategies</button>
+                <button type="button" className="button-link secondary" onClick={handleEditStrategy}>Edit strategy</button>
+                <button type="button" className="button-link secondary" onClick={handleDuplicateStrategy}>Duplicate</button>
+              </div>
             </div>
             <small className="muted strategy-detail-subtitle">{strategy.description || 'No description saved.'}</small>
           </div>

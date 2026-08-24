@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { publicApiError } from '@/lib/server/public-error';
+import { assertValidInternalLifecycleSourceIds } from '@/lib/server/internal-lifecycle-lineage';
 import { attachTradeLifecycleSimulationMetadata, isTradeLifecycleSimulationRequest, isTradeLifecycleV2Enabled } from '@/lib/server/trade-lifecycle-v2';
 
 const requestSchema = z.object({
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
 
     const payload = parsed.data;
     const simulationRequest = isTradeLifecycleSimulationRequest(request);
+    if (simulationRequest) {
+      assertValidInternalLifecycleSourceIds(payload.sourceDecisionId, payload.sourceReportId);
+    }
     const strategySnapshot = simulationRequest
       ? attachTradeLifecycleSimulationMetadata(payload.strategySnapshot ?? {})
       : (payload.strategySnapshot ?? {});
