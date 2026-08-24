@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { serverEntitlementOverride } from '@/lib/billing/overrides';
 import { getAnchoredMonthlyPeriod } from '@/lib/billing/period';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
@@ -287,6 +288,11 @@ export async function getBacktestRunForUser(userId: string, runId: string) {
 }
 
 export async function getBacktestPlanCodeForUser(userId: string) {
+  const founderOverride = serverEntitlementOverride(userId);
+  if (founderOverride) {
+    return founderOverride;
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('billing_subscriptions')

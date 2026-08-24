@@ -54,6 +54,12 @@ test('founder backtests are unlimited and bypass the monthly cap', () => {
   assert.match(helper, /limit === null \|\| \(Number\(usage\.run_count \?\? 0\) < Number\(limit\)\)/i);
 });
 
+test('backtest plan resolution honors the server-side founder override before querying billing state', () => {
+  assert.match(helper, /serverEntitlementOverride\(userId\)/i);
+  assert.match(helper, /if \(founderOverride\) \{\s*return founderOverride;/is);
+  assert.doesNotMatch(helper, /return '\w+';\s*\n\s*const admin = createAdminClient\(\);/i);
+});
+
 test('backtest plan limits preserve the canonical unlimited representation and finite plan values', () => {
   assert.match(helper, /PRO:\s*3/i);
   assert.match(helper, /ELITE:\s*10/i);
