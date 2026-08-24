@@ -55,11 +55,14 @@ function collectReadinessDiagnostics(strategy:StrategyProfile,evidence:Record<st
   }).filter((ruleId):ruleId is string=>Boolean(ruleId)));
   const unmatchedStrategyRuleKeys=ruleKeys.filter((ruleKey)=>!resolveComposerRuleId(ruleKey));
   const unmatchedEvidenceKeys=evidenceKeys.filter((evidenceKey)=>!normalizedEvidenceIds.has(resolveComposerRuleId(evidenceKey) ?? ''));
-  const reason = evidenceKeys.length === 0 || report.conditions.length === 0
-    ? 'No evidence was produced for the required readiness rules.'
-    : unmatchedStrategyRuleKeys.length || unmatchedEvidenceKeys.length
-      ? `Readiness is using the current analysis evidence, but ${unmatchedStrategyRuleKeys.length ? `${unmatchedStrategyRuleKeys.length} strategy rule${unmatchedStrategyRuleKeys.length===1?'':'s'} could not be normalized` : 'no strategy rules were normalized'}${unmatchedEvidenceKeys.length ? ` and ${unmatchedEvidenceKeys.length} evidence key${unmatchedEvidenceKeys.length===1?'':'s'} were not matched` : ''}.`
-      : 'Readiness is derived from the current analysis evidence and required strategy rules.';
+  const hasUsableRequiredRules = (strategy.rules ?? []).some((rule) => rule.enabled && rule.mandatory && !!resolveComposerRuleId(rule.ruleKey) && ['AUTOMATIC', 'MANUAL', 'EXTERNAL'].includes(String(rule.evaluationMode ?? '').toUpperCase()) && Number(rule.weight ?? 0) > 0);
+  const reason = !hasUsableRequiredRules
+    ? 'ZERO_REQUIRED_RULES: no valid mandatory rule could be reconstructed for this strategy.'
+    : evidenceKeys.length === 0 || report.conditions.length === 0
+      ? 'No evidence was produced for the required readiness rules.'
+      : unmatchedStrategyRuleKeys.length || unmatchedEvidenceKeys.length
+        ? `Readiness is using the current analysis evidence, but ${unmatchedStrategyRuleKeys.length ? `${unmatchedStrategyRuleKeys.length} strategy rule${unmatchedStrategyRuleKeys.length===1?'':'s'} could not be normalized` : 'no strategy rules were normalized'}${unmatchedEvidenceKeys.length ? ` and ${unmatchedEvidenceKeys.length} evidence key${unmatchedEvidenceKeys.length===1?'':'s'} were not matched` : ''}.`
+        : 'Readiness is derived from the current analysis evidence and required strategy rules.';
   return {reason,unmatchedEvidenceKeys,unmatchedStrategyRuleKeys,normalizedRuleKeys:[...resolvedRuleIds]};
 }
 

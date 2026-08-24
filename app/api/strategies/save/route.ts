@@ -4,9 +4,33 @@ import { z } from 'zod';
 import { getBillingState } from '@/lib/billing/entitlements';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
+import { deriveRequiredEvidence, ZeroRequiredRulesError } from '@/lib/strategy-policy';
 import { validateStrategyName } from '@/lib/strategy-name';
+import type { StrategyRule } from '@/types/trade';
 
 export const dynamic = 'force-dynamic';
+
+const strategyRuleSchema = z
+  .object({
+    rule_key: z.string().trim().min(1),
+    label: z.string().trim().min(1),
+    enabled: z.boolean(),
+    mandatory: z.boolean(),
+    weight: z.union([z.number(), z.string()]).transform((value) => Number(value)).refine((value) => Number.isFinite(value) && value > 0),
+    minimum_confidence: z.union([z.number(), z.string()]).transform((value) => Number(value)).refine((value) => Number.isFinite(value) && value >= 0),
+    timeframe_role: z.enum(['MACRO', 'TREND', 'CONFIRMATION', 'ENTRY', 'TRIGGER']),
+    evaluation_mode: z.enum(['AUTOMATIC', 'MANUAL', 'EXTERNAL']).optional().default('AUTOMATIC'),
+  })
+  .transform((rule) => ({
+    ruleKey: rule.rule_key,
+    label: rule.label,
+    enabled: rule.enabled,
+    mandatory: rule.mandatory,
+    weight: Number(rule.weight),
+    minimumConfidence: Number(rule.minimum_confidence),
+    timeframeRole: rule.timeframe_role,
+    evaluationMode: rule.evaluation_mode,
+  }) satisfies StrategyRule);
 
 const schema = z.object({
   strategyId: z.string().uuid().nullable(),
@@ -64,7 +88,7 @@ const schema = z.object({
     .array(z.record(z.string(), z.unknown()))
     .min(1),
   sessions: z.array(z.record(z.string(), z.unknown())),
-  rules: z.array(z.record(z.string(), z.unknown())),
+  rules: z.array(strategyRuleSchema),
   stopLimits: z.array(z.record(z.string(), z.unknown())),
 });
 
@@ -98,6 +122,14 @@ export async function POST(request: Request) {
     }
 
     const payload = parsed.data;
+    const requiredEvidence = deriveRequiredEvidence(payload.rules, payload.profile.evidence_weights ?? {});
+    if (!requiredEvidence.length && payload.activate) {
+      return apiError(
+        'STRATEGY_REQUIRED_RULE_MISSING',
+        'Strategy setup required: add at least one enabled, supported, mandatory rule before saving or activating this playbook.',
+        409,
+      );
+    }
 
     if (!payload.strategyId) {
       const billing = await getBillingState(user.id);
@@ -153,11 +185,19 @@ export async function POST(request: Request) {
         ).data ?? []
       : [];
 
+    const derivedRequiredEvidence = deriveRequiredEvidence(payload.rules, payload.profile.evidence_weights ?? {});
+    if (!derivedRequiredEvidence.length && payload.activate) {
+      throw new ZeroRequiredRulesError();
+    }
+
     const { data, error } = await supabase.rpc(
       'save_strategy_bundle',
       {
         p_strategy_id: payload.strategyId,
-        p_profile: payload.profile,
+        p_profile: {
+          ...payload.profile,
+          required_evidence: derivedRequiredEvidence,
+        },
         p_instruments: payload.instruments,
         p_sessions: payload.sessions,
         p_rules: payload.rules,
@@ -184,7 +224,7 @@ export async function POST(request: Request) {
 
     const modeWrites = payload.rules.map((rule) => {
       const requested = String(
-        rule.evaluation_mode ?? 'AUTOMATIC',
+        rule.evaluationMode ?? 'AUTOMATIC',
       );
 
       const evaluationMode = [
@@ -204,7 +244,7 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         .eq(
           'rule_key',
-          String(rule.rule_key ?? ''),
+          String(rule.ruleKey ?? ''),
         );
     });
 
@@ -222,31 +262,35 @@ export async function POST(request: Request) {
     }
 
     if (payload.strategyId) {
-      const fields = [
-        'label',
-        'enabled',
-        'mandatory',
-        'weight',
-        'minimum_confidence',
-        'timeframe_role',
-        'evaluation_mode',
-      ];
+      const normalizeComparableRule = (rule: StrategyRule) => JSON.stringify([
+        rule.label,
+        rule.enabled,
+        rule.mandatory,
+        rule.weight,
+        rule.minimumConfidence,
+        rule.timeframeRole,
+        rule.evaluationMode ?? 'AUTOMATIC',
+      ]);
 
       const before = new Map(
         previousRules.map((rule: Record<string, unknown>) => [
           String(rule.rule_key),
-          JSON.stringify(
-            fields.map((field) => rule[field] ?? null),
-          ),
+          JSON.stringify([
+            rule.label ?? null,
+            Boolean(rule.enabled),
+            Boolean(rule.mandatory),
+            Number(rule.weight ?? 0),
+            Number(rule.minimum_confidence ?? 0),
+            rule.timeframe_role ?? null,
+            String(rule.evaluation_mode ?? 'AUTOMATIC'),
+          ]),
         ]),
       );
 
       const after = new Map(
         payload.rules.map((rule) => [
-          String(rule.rule_key ?? ''),
-          JSON.stringify(
-            fields.map((field) => rule[field] ?? null),
-          ),
+          String(rule.ruleKey ?? ''),
+          normalizeComparableRule(rule),
         ]),
       );
 
@@ -313,6 +357,14 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
+    if (error instanceof ZeroRequiredRulesError) {
+      return apiError(
+        'STRATEGY_REQUIRED_RULE_MISSING',
+        error.message,
+        409,
+      );
+    }
+
     const detail =
       error instanceof Error
         ? error.message

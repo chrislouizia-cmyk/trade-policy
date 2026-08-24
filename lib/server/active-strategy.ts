@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
-import { normalizeStrategyPolicy, normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { assertUsableRequiredRules, normalizeStrategyPolicy, normalizeStrategyProfile } from '@/lib/strategy-policy';
 import { reconstructActiveEvidenceConfiguration } from '@/lib/active-strategy-evidence';
 
 type SupabaseServerClient = any;
@@ -180,7 +180,7 @@ async function loadStrategy(
     newsBlockMinutesAfter: Number(profile.news_block_minutes_after ?? 15),
     newsCurrencies: profile.news_currencies ?? ['USD', 'GBP', 'JPY'],
     requireTrendAlignment: Boolean(profile.require_trend_alignment),
-    requiredEvidence: requiredEvidence.length ? requiredEvidence : profile.required_evidence ?? [],
+    requiredEvidence: requiredEvidence.length ? requiredEvidence : [],
     evidenceWeights,
     rules,
     stopLimits: profile.stop_limits ?? {},
@@ -200,6 +200,7 @@ async function loadStrategy(
     aiBehavior: profile.ai_behavior ?? undefined,
   };
   const normalized=normalizeStrategyProfile(strategy);
+  assertUsableRequiredRules(normalized);
   normalizeStrategyPolicy(normalized);
   return normalized;
 }

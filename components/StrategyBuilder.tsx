@@ -16,7 +16,7 @@ import StrategyBuilderV2 from '@/components/StrategyBuilderV2';
 import StrategyDetailPage from '@/components/StrategyDetailPage';
 import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
-import { normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { deriveRequiredEvidence, normalizeStrategyProfile } from '@/lib/strategy-policy';
 import { resolveBuilderEntryMode } from '@/lib/strategy-builder-entry';
 import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
@@ -366,7 +366,11 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     enabledRules.forEach((rule) => {
       if (rule.ruleKey in evidenceWeights) evidenceWeights[rule.ruleKey as EvidenceKey] = rule.weight;
     });
-    const requiredEvidence = enabledRules.filter((rule) => rule.mandatory && rule.ruleKey in evidenceWeights).map((rule) => rule.ruleKey as EvidenceKey);
+    const requiredEvidence = deriveRequiredEvidence(enabledRules, evidenceWeights);
+    if (!requiredEvidence.length) {
+      setMessage('Strategy setup required: add at least one enabled, supported, mandatory rule before saving or activating this playbook.');
+      return false;
+    }
     const legacyStopLimits = { ...saveProfile.stopLimits };
     saveStops.forEach((limit) => { legacyStopLimits[limit.instrument] = limit.maximumValue; });
 

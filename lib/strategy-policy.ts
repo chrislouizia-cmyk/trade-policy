@@ -1,5 +1,6 @@
 import { DEFAULT_STRATEGY_PROFILE } from '../types/trade.ts';
-import type { AIBehaviorProfile, EvidenceKey, StopLimit, StrategyProfile } from '@/types/trade';
+import type { AIBehaviorProfile, EvidenceKey, StopLimit, StrategyProfile, StrategyRule } from '../types/trade.ts';
+import { normalizeActiveStrategyEvidenceKey } from './active-strategy-evidence.ts';
 
 export type StrategyPolicy={
   instruments:string[];timeframes:{macro?:string;trend:string;confirmation:string;entry:string;trigger?:string};minimumRR:number;maximumRisk:number;
@@ -18,6 +19,62 @@ export function normalizeStrategyProfile(strategy:StrategyProfile):StrategyProfi
 export class StrategyConfigurationError extends Error{
   missingFields:string[];
   constructor(fields:string[]){super(`Active strategy configuration is incomplete: ${fields.join(', ')}.`);this.name='StrategyConfigurationError';this.missingFields=fields;}
+}
+
+export class ZeroRequiredRulesError extends StrategyConfigurationError {
+  constructor(){
+    super(['at least one enabled mandatory rule']);
+    this.name='ZeroRequiredRulesError';
+    this.message='Strategy setup required: add at least one enabled, supported, mandatory rule before saving or activating this playbook.';
+  }
+}
+
+function qualifiesAsUsableRequiredRule(rule: Partial<StrategyRule> | undefined): boolean {
+  if (!rule || !rule.enabled || !rule.mandatory) return false;
+
+  const normalized = normalizeActiveStrategyEvidenceKey(String(rule.ruleKey ?? ''));
+  if (!normalized) return false;
+
+  const evaluationMode = String(rule.evaluationMode ?? '').toUpperCase();
+  if (evaluationMode === 'DESCRIPTIVE') return false;
+  if (!['AUTOMATIC', 'MANUAL', 'EXTERNAL'].includes(evaluationMode)) return false;
+
+  const weight = Number(rule.weight ?? 0);
+  if (!Number.isFinite(weight) || weight <= 0) return false;
+
+  return true;
+}
+
+export function deriveRequiredEvidence(
+  rules: readonly StrategyRule[] | undefined,
+  evidenceWeights: Partial<Record<string, number>> | undefined,
+): EvidenceKey[] {
+  const usable = new Set<EvidenceKey>();
+
+  for (const rule of rules ?? []) {
+    if (!qualifiesAsUsableRequiredRule(rule)) continue;
+    const normalized = normalizeActiveStrategyEvidenceKey(rule.ruleKey);
+    if (!normalized) continue;
+    usable.add(normalized);
+  }
+
+  return [...usable];
+}
+
+export function assertUsableRequiredRules(strategy: Pick<StrategyProfile, 'rules' | 'requiredEvidence' | 'evidenceWeights'>): void {
+  const requiredEvidence = deriveRequiredEvidence(strategy.rules, strategy.evidenceWeights ?? {});
+  if (!requiredEvidence.length) {
+    throw new ZeroRequiredRulesError();
+  }
+
+  const usablePersistedRequired = (strategy.requiredEvidence ?? []).filter((key) =>
+    evidenceKeys.includes(key as EvidenceKey) &&
+    Number(strategy.evidenceWeights?.[key as EvidenceKey] ?? 0) > 0,
+  );
+
+  if (!usablePersistedRequired.length && !requiredEvidence.length) {
+    throw new ZeroRequiredRulesError();
+  }
 }
 
 export function normalizeStrategyPolicy(strategy:StrategyProfile):StrategyPolicy{
