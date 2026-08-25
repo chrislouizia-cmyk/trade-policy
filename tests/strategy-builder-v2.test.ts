@@ -12,9 +12,12 @@ import {
 } from '../lib/strategy-builder-v2.ts';
 
 import { createPersistedV2RuleTree, type RuleSelection } from '../lib/strategy-builder-v2.ts';
-import { canReviewStrategyDraft, emptyStrategyCopilotDraft, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
+import { persistedStrategyToV2State, v2StateToPersistedStrategy } from '../lib/strategy-builder-v2-persistence.ts';
+import { canReviewStrategyDraft, emptyStrategyCopilotDraft, extractStructuredDraftFromText, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
 import { resolveBuilderEntryMode } from '../lib/strategy-builder-entry.ts';
 import { STRATEGY_CREATION_MODE_LABELS, canReachFinalReviewDirectlyFromSelector, getStrategyCreationModes } from '../lib/strategy-creation-flow.ts';
+import { DEFAULT_STRATEGY_PROFILE, type EvidenceKey } from '../types/trade.ts';
+import { assertUsableRequiredRules, deriveRequiredEvidence, ZeroRequiredRulesError } from '../lib/strategy-policy.ts';
 
 test('new strategy entry routes into the V2 builder while existing profiles stay on compatibility mode', () => {
   assert.equal(resolveBuilderEntryMode({ existingStrategyId: null, isNewStrategyRequest: true }), true);
@@ -142,6 +145,149 @@ test('ui path preserves XAUUSD and keeps the copilot draft in review until expli
   assert.equal(secondTurn.strategyDraft.riskPercent, 1);
   assert.equal(secondTurn.strategyDraft.minimumRR, 2);
   assert.ok(secondTurn.changes.some((change) => change.includes('London')));
+});
+
+test('exact EURUSD London-session prompt preserves the real rule set, timeframes, and risk policy through extraction', () => {
+  const exactPrompt = `I day trade EURUSD during the London session.
+
+Use H4 as the macro timeframe, H1 for trend, M30 for confirmation, M15 for entry, and M1 for the trigger.
+
+Required rules:
+- H1 trend must be aligned with the trade direction.
+- A break of structure must be confirmed on M30.
+- Entry is allowed only after a confirmed retest on M15.
+
+Optional confluence:
+- A fair value gap near the retest area.
+
+Maximum risk per trade is 0.5%.
+Minimum risk-to-reward ratio is 1:2.
+Do not trade during high-impact EUR or USD news.`;
+
+  const next = extractStructuredDraftFromText(exactPrompt, emptyStrategyCopilotDraft());
+
+  assert.equal(next.instrument, 'EURUSD');
+  assert.deepEqual(next.sessions, ['London']);
+  assert.ok(next.rules.some((rule) => rule.key === 'trend-alignment' && rule.requirement === 'REQUIRED' && rule.timeframe === 'H1'));
+  assert.ok(next.rules.some((rule) => rule.key === 'bos' && rule.requirement === 'REQUIRED' && rule.timeframe === 'M30'));
+  assert.ok(next.rules.some((rule) => rule.key === 'retest' && rule.requirement === 'REQUIRED' && rule.timeframe === 'M15'));
+  assert.ok(next.rules.some((rule) => rule.key === 'fair-value-gap' && rule.requirement === 'OPTIONAL' && rule.group === 'ANY'));
+  assert.deepEqual(next.timeframes.slice().sort(), ['H1', 'H4', 'M1', 'M15', 'M30'].sort());
+  assert.equal(next.riskPercent, 0.5);
+  assert.equal(next.minimumRR, 2);
+});
+
+test('exact EURUSD 3/1 semantics remain intact through extraction, normalization, merge, persistence, resave, and activation checks', () => {
+  const exactPrompt = `I day trade EURUSD during the London session.
+
+Use H4 as the macro timeframe, H1 for trend, M30 for confirmation, M15 for entry, and M1 for the trigger.
+
+Required rules:
+- H1 trend must be aligned with the trade direction.
+- A break of structure must be confirmed on M30.
+- Entry is allowed only after a confirmed retest on M15.
+
+Optional confluence:
+- A fair value gap near the retest area.
+
+Maximum risk per trade is 0.5%.
+Minimum risk-to-reward ratio is 1:2.
+Do not trade during high-impact EUR or USD news.`;
+
+  const extracted = extractStructuredDraftFromText(exactPrompt, emptyStrategyCopilotDraft());
+  assert.equal(extracted.rules.filter((rule) => rule.requirement === 'REQUIRED').length, 3);
+  assert.equal(extracted.rules.filter((rule) => rule.requirement === 'OPTIONAL').length, 1);
+
+  const normalized = normalizeStrategyCopilotReply({
+    message: 'Drafted the exact EURUSD rule set.',
+    intent: 'UPDATE',
+    strategyDraft: extracted,
+    changes: [],
+    unresolvedQuestions: [],
+  }, emptyStrategyCopilotDraft());
+  assert.equal(normalized.strategyDraft.rules.filter((rule) => rule.requirement === 'REQUIRED').length, 3);
+  assert.equal(normalized.strategyDraft.rules.filter((rule) => rule.requirement === 'OPTIONAL').length, 1);
+
+  const merged = mergeStrategyCopilotDraft(emptyStrategyCopilotDraft(), normalized.strategyDraft);
+  assert.equal(merged.rules.filter((rule) => rule.requirement === 'REQUIRED').length, 3);
+  assert.equal(merged.rules.filter((rule) => rule.requirement === 'OPTIONAL').length, 1);
+
+  const state = {
+    name: 'EURUSD London Flow',
+    instruments: ['EURUSD'],
+    sessions: ['LONDON'],
+    methodologyIds: ['trend-following', 'supply-demand'],
+    ruleSelections: merged.rules,
+    contextTimeframe: 'H4',
+    executionTimeframe: 'M15',
+    riskPercent: 0.5,
+    minimumRR: 2,
+  };
+
+  const baseProfile = {
+    ...DEFAULT_STRATEGY_PROFILE,
+    id: 'eurusd-london-flow',
+    name: 'EURUSD London Flow',
+    instruments: ['EURUSD'],
+    allowedSessions: ['LONDON'],
+    macroTimeframe: 'H4',
+    trendTimeframe: 'H1',
+    confirmationTimeframe: 'M30',
+    entryTimeframe: 'M15',
+    triggerTimeframe: 'M1',
+    maximumRiskPercent: 0.5,
+    minimumRR: 2,
+    requiredEvidence: ['h4TrendAligned', 'h1TrendAligned', 'structurePattern'] as const,
+    evidenceWeights: {
+      h4TrendAligned: 10,
+      h1TrendAligned: 10,
+      structurePattern: 10,
+      liquiditySweep: 10,
+      chochConfirmed: 10,
+      bosConfirmed: 10,
+      orderBlock: 7,
+      fairValueGap: 7,
+      retestConfirmed: 6,
+    },
+  } satisfies typeof DEFAULT_STRATEGY_PROFILE;
+
+  const persisted = v2StateToPersistedStrategy(baseProfile, state as never);
+  assert.equal(persisted.rules.filter((rule) => rule.mandatory).length, 3);
+  assert.equal(persisted.rules.filter((rule) => !rule.mandatory).length, 1);
+
+  const reloaded = persistedStrategyToV2State(persisted.profile, persisted.rules, persisted.sessions);
+  assert.equal(reloaded.ruleSelections.filter((rule) => rule.requirement === 'REQUIRED').length, 3);
+  assert.equal(reloaded.ruleSelections.filter((rule) => rule.requirement === 'OPTIONAL').length, 1);
+
+  const resaved = v2StateToPersistedStrategy(persisted.profile, reloaded);
+  assert.equal(resaved.rules.filter((rule) => rule.mandatory).length, 3);
+  assert.equal(resaved.rules.filter((rule) => !rule.mandatory).length, 1);
+
+  const evidenceWeights = {
+    h4TrendAligned: 10,
+    h1TrendAligned: 10,
+    structurePattern: 10,
+    liquiditySweep: 10,
+    chochConfirmed: 10,
+    bosConfirmed: 10,
+    orderBlock: 7,
+    fairValueGap: 7,
+    retestConfirmed: 6,
+  } satisfies Record<EvidenceKey, number>;
+
+  const valid = {
+    rules: resaved.rules,
+    requiredEvidence: deriveRequiredEvidence(resaved.rules, evidenceWeights),
+    evidenceWeights,
+  };
+  assert.doesNotThrow(() => assertUsableRequiredRules(valid));
+
+  const optionalOnly = {
+    rules: resaved.rules.filter((rule) => !rule.mandatory),
+    requiredEvidence: [],
+    evidenceWeights,
+  };
+  assert.throws(() => assertUsableRequiredRules(optionalOnly), /Strategy setup required/i);
 });
 
 test('V2 exposes the required methodologies and rule libraries', () => {

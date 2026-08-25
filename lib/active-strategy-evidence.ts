@@ -1,5 +1,14 @@
 import type { EvidenceKey, StrategyRule } from '../types/trade.ts';
 const evidenceKeys: EvidenceKey[] = ['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','orderBlock','fairValueGap','retestConfirmed'];
-const aliases: Readonly<Record<string, EvidenceKey>> = Object.freeze({ 'liquidity-sweep':'liquiditySweep',choch:'chochConfirmed','order-block':'orderBlock','fair-value-gap':'fairValueGap' });
+const aliases: Readonly<Record<string, EvidenceKey>> = Object.freeze({
+  'liquidity-sweep':'liquiditySweep',
+  choch:'chochConfirmed',
+  bos:'bosConfirmed',
+  'order-block':'orderBlock',
+  'fair-value-gap':'fairValueGap',
+  'trend-alignment':'h1TrendAligned',
+  retest:'retestConfirmed',
+  'retest-confirmed':'retestConfirmed',
+});
 export function normalizeActiveStrategyEvidenceKey(ruleKey:string):EvidenceKey|null{return evidenceKeys.includes(ruleKey as EvidenceKey)?ruleKey as EvidenceKey:aliases[ruleKey]??null;}
 export function reconstructActiveEvidenceConfiguration(rules:readonly StrategyRule[],profileWeights:Record<string,unknown>|null|undefined){const evidenceWeights:Record<string,number>={},requiredEvidence:EvidenceKey[]=[];for(const rule of rules){if(!rule.enabled)continue;const key=normalizeActiveStrategyEvidenceKey(rule.ruleKey);const evaluationMode=String(rule.evaluationMode??'').toUpperCase();if(!key||evaluationMode==='DESCRIPTIVE'||!['AUTOMATIC','MANUAL','EXTERNAL'].includes(evaluationMode)||!Number.isFinite(rule.weight)||rule.weight<=0)continue;evidenceWeights[key]=Number(rule.weight);if(rule.mandatory)requiredEvidence.push(key);}if(!Object.keys(evidenceWeights).length){for(const [key,value] of Object.entries(profileWeights??{})){const normalized=normalizeActiveStrategyEvidenceKey(key);const numeric=Number(value);if(normalized&&Number.isFinite(numeric)&&numeric>0)evidenceWeights[normalized]=numeric;}}return{evidenceWeights,requiredEvidence:[...new Set(requiredEvidence)]};}

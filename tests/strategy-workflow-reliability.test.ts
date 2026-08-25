@@ -22,3 +22,26 @@ test('strategy detail and builder use the canonical profile workflow for back, e
   assert.match(builder, /if \(requestedMode === 'edit'\)/);
   assert.match(builder, /requestOpenProfile\(item\)/);
 });
+
+test('strategy detail tabs keep a single full-width layout contract', () => {
+  const detail = read('components/StrategyDetailPage.tsx');
+  const stylesheet = read('app/trade-police.css');
+
+  assert.match(detail, /strategy-detail-panel/);
+  assert.match(detail, /strategy-detail-tab-panel/);
+  assert.match(detail, /strategy-detail-section-card/);
+  assert.match(stylesheet, /\.strategy-detail-panel\{[^}]*width:\s*100%/);
+  assert.match(stylesheet, /\.strategy-detail-tab-panel\{[^}]*width:\s*100%/);
+  assert.match(stylesheet, /\.strategy-detail-section-card\{[^}]*width:\s*100%/);
+});
+
+test('completion success card keeps a resilient responsive container and title layout', () => {
+  const component = read('components/StrategyLearningConfirmation.tsx');
+  const stylesheet = read('app/trade-police.css');
+
+  assert.match(component, /strategy-complete-card/);
+  assert.match(component, /strategy-complete-hero/);
+  assert.match(stylesheet, /\.strategy-complete-card\{[^}]*width:\s*min\(100%/);
+  assert.match(stylesheet, /\.strategy-complete-hero\{[^}]*min-width:\s*0/);
+  assert.match(stylesheet, /overflow-wrap:\s*anywhere|word-break:\s*break-word/);
+});

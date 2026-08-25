@@ -289,6 +289,17 @@ export function buildCanonicalRuleSelectionListFromText(rawMessage: string, curr
     });
   };
 
+  const explicitMappings = [
+    { key: 'trend-alignment', condition: /(h1.*trend|trend.*h1|trend.*aligned.*trade direction|aligned with the trade direction)/i, requirement: 'REQUIRED' as const, group: 'ALL' as const, timeframe: 'H1' },
+    { key: 'bos', condition: /(break of structure.*m30|m30.*break of structure|break of structure.*confirmed.*m30)/i, requirement: 'REQUIRED' as const, group: 'ALL' as const, timeframe: 'M30' },
+    { key: 'retest', condition: /(retest.*m15|m15.*retest|entry.*allowed only.*retest|confirmed retest.*m15)/i, requirement: 'REQUIRED' as const, group: 'ALL' as const, timeframe: 'M15' },
+    { key: 'fair-value-gap', condition: /(fair value gap|fvg)/i, requirement: 'OPTIONAL' as const, group: 'ANY' as const, timeframe: 'M15' },
+  ];
+
+  for (const mapping of explicitMappings) {
+    if (mapping.condition.test(rawMessage)) addRule(mapping.key, mapping.group, mapping.requirement, mapping.timeframe);
+  }
+
   if (lower.includes('liquidity sweep') || lower.includes('liquidity')) addRule('liquidity-sweep', 'ALL', 'REQUIRED');
   if (lower.includes('choch')) addRule('choch', 'ALL', 'REQUIRED');
   if (lower.includes('order block') || lower.includes('ob')) addRule('order-block', 'ANY', 'OPTIONAL');
@@ -309,6 +320,11 @@ export function buildCanonicalRuleSelectionListFromText(rawMessage: string, curr
   }
 
   return rules.length ? rules : currentDraft.rules;
+}
+
+function extractMentionedTimeframes(rawMessage: string): string[] {
+  const matches = rawMessage.match(/\b(?:H4|H1|M30|M15|M1|D1|W1|M5)\b/gi) ?? [];
+  return [...new Set(matches.map((value) => value.toUpperCase()))];
 }
 
 export function extractStructuredDraftFromText(rawMessage: string, currentDraft: StrategyCopilotDraft = emptyStrategyCopilotDraft()): StrategyCopilotDraft {
@@ -334,7 +350,17 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
     nextDraft.sessions = [...sessions];
   }
 
-  const instrumentGuess = /gold|xauusd/i.test(rawMessage) ? 'XAUUSD' : /silver|xagusd/i.test(rawMessage) ? 'XAGUSD' : currentDraft.instrument;
+  const instrumentGuess = /eurusd|euro\s*\/\s*usd|euro usd|euro-usd/i.test(rawMessage)
+    ? 'EURUSD'
+    : /gbpusd|pound\s*\/\s*usd|pound usd|pound-usd/i.test(rawMessage)
+      ? 'GBPUSD'
+      : /usdjpy|dollar\s*\/\s*jpy|dollar jpy|dollar-jpy/i.test(rawMessage)
+        ? 'USDJPY'
+        : /gold|xauusd/i.test(rawMessage)
+          ? 'XAUUSD'
+          : /silver|xagusd/i.test(rawMessage)
+            ? 'XAGUSD'
+            : currentDraft.instrument;
   if (instrumentGuess) nextDraft.instrument = instrumentGuess;
 
   const rules = buildCanonicalRuleSelectionListFromText(rawMessage, currentDraft);
@@ -354,14 +380,18 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
     }
   }
 
+  const explicitTimeframes = extractMentionedTimeframes(rawMessage);
+  const riskMatch = rawMessage.match(/maximum risk per trade is\s*([0-9]+(?:\.[0-9]+)?)\s*%?/i);
+  const rrMatch = rawMessage.match(/minimum risk-to-reward ratio is\s*(?:1\s*:\s*)?([0-9]+(?:\.[0-9]+)?)/i);
+
   nextDraft.rules = rules;
-  nextDraft.timeframes = currentDraft.timeframes.length ? currentDraft.timeframes : ['M5'];
+  nextDraft.timeframes = explicitTimeframes.length ? explicitTimeframes : currentDraft.timeframes.length ? currentDraft.timeframes : ['M5'];
   nextDraft.logicTree = {
     logic: anyRequested ? 'ALL' : 'ALL',
     children: rules.map((rule) => rule.key),
   };
-  nextDraft.riskPercent = currentDraft.riskPercent;
-  nextDraft.minimumRR = currentDraft.minimumRR;
+  nextDraft.riskPercent = riskMatch ? Number(riskMatch[1]) : currentDraft.riskPercent;
+  nextDraft.minimumRR = rrMatch ? Number(rrMatch[1]) : currentDraft.minimumRR;
 
   return nextDraft;
 }
