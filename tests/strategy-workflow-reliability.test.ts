@@ -20,6 +20,8 @@ test('strategy detail and builder use the canonical profile workflow for back, e
   assert.match(builder, /const requestedMode = searchParams\.get\('mode'\);/);
   assert.match(builder, /if \(requestedMode === 'duplicate'\)/);
   assert.match(builder, /if \(requestedMode === 'edit'\)/);
+  assert.match(builder, /const hydrated = await openProfile\(target\)/);
+  assert.match(builder, /openV2Edit\(hydrated\.profile, hydrated\.rules, hydrated\.sessions\)/);
   assert.match(builder, /requestOpenProfile\(item\)/);
 });
 
@@ -33,6 +35,9 @@ test('strategy detail tabs keep a single full-width layout contract', () => {
   assert.match(stylesheet, /\.strategy-detail-panel\{[^}]*width:\s*100%/);
   assert.match(stylesheet, /\.strategy-detail-tab-panel\{[^}]*width:\s*100%/);
   assert.match(stylesheet, /\.strategy-detail-section-card\{[^}]*width:\s*100%/);
+  assert.match(detail, /card strategy-detail-panel/);
+  assert.match(detail, /strategy-detail-view/);
+  assert.match(stylesheet, /\.strategy-detail-panel\.card\{[^}]*height:\s*clamp\(/);
 });
 
 test('completion success card keeps a resilient responsive container and title layout', () => {

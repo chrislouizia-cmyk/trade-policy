@@ -87,6 +87,12 @@ test('getBillingState applies the server-side FOUNDER override after normal plan
   assert.equal(applyServerEntitlementOverride('00000000-0000-4000-8000-000000000000', free), free);
 });
 
+test('private beta entitlement remains available without a paid Stripe subscription', () => {
+  const period = getAnchoredMonthlyPeriod(new Date('2026-01-10T00:00:00.000Z'), new Date('2026-01-10T00:00:00.000Z'));
+  const state = buildBillingState({ data: { plan: 'PRIVATE_BETA', status: 'inactive' }, error: null }, 0, period);
+  assert.equal(state.plan, 'PRIVATE_BETA');
+});
+
 test('monthly usage cycles remain anchored to the first analysis day', () => {
   const anchor = new Date('2026-07-15T05:37:15.915Z');
   const august = getAnchoredMonthlyPeriod(anchor, new Date('2026-08-20T12:00:00Z'));

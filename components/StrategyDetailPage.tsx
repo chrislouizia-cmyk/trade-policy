@@ -73,6 +73,7 @@ type StrategyDetailPageProps = {
 
 const BACKTEST_LIMITS: Record<string, number | null> = {
   FREE: 0,
+  PRIVATE_BETA: 10,
   PRO: 3,
   ELITE: 10,
   TEAM: 70,
@@ -150,8 +151,9 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
     });
   }, [runs]);
   const usageCount = monthlyRuns.length;
+  const remainingCredits = limitValue === null ? null : Math.max(0, limitValue - usageCount);
   const usagePercent = limitValue === null ? 0 : (limitValue > 0 ? Math.min(100, (usageCount / limitValue) * 100) : 0);
-  const backtestStatusLabel = limitValue === null ? (normalizedPlanCode === 'FOUNDER' ? 'Founder access' : 'Unlimited backtests') : limitValue === 0 ? 'Plan unavailable' : `${limitValue} max / month`;
+  const backtestStatusLabel = limitValue === null ? (normalizedPlanCode === 'FOUNDER' ? 'Founder access' : 'Unlimited backtests') : limitValue === 0 ? 'Plan unavailable' : `${remainingCredits} of ${limitValue} credits left`;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
 
   function handleBackToStrategies() {
@@ -265,10 +267,10 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
         </div>
       </section>
 
-      <div className="strategy-detail-panel">
+      <div className="card strategy-detail-panel">
         <div className="strategy-detail-tab-panel">
           {tab === 'overview' && (
-            <div className="grid grid-3 strategy-detail-grid">
+            <div className="grid grid-3 strategy-detail-grid strategy-detail-view">
               <section className="card strategy-detail-card">
                 <p className="eyebrow">PROFILE</p>
                 <h3>Strategy summary</h3>
@@ -323,7 +325,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
           )}
 
           {tab === 'rules' && (
-            <section className="card strategy-detail-section-card">
+            <section className="card strategy-detail-section-card strategy-detail-view">
               <p className="eyebrow">RULES</p>
               <h3>Configured rule set</h3>
               <div className="strategy-detail-rule-list">
@@ -347,7 +349,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
           )}
 
           {tab === 'backtests' && (
-            <div className="stack strategy-detail-backtests-stack">
+            <div className="stack strategy-detail-backtests-stack strategy-detail-view">
               <section className="card strategy-detail-section-card">
                 <div className="strategy-detail-header-row strategy-detail-backtests-head">
                   <div>
@@ -360,7 +362,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
                 <div className="strategy-detail-backtest-summary">
                   <div className="strategy-detail-usage-row">
                     <strong>{usageCount}</strong>
-                    <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `limit ${limitValue}`}</small>
+                    <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `${remainingCredits} of ${limitValue} credits left`}</small>
                   </div>
                   <div className="strategy-detail-progress-track large">
                     <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
@@ -476,7 +478,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
           )}
 
           {tab === 'forward-test' && (
-            <section className="card">
+            <section className="card strategy-detail-forward-card strategy-detail-view">
               <p className="eyebrow">FORWARD TEST</p>
               <h3>Forward Testing</h3>
               <p className="muted" style={{ marginTop: 12 }}>Coming soon</p>

@@ -197,25 +197,22 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       }
 
       if (requestedMode === 'edit') {
+        const openRequestedEditor = async () => {
+          const hydrated = await openProfile(target);
+          if (!hydrated) return;
+          if (target.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) {
+            openV2Edit(hydrated.profile, hydrated.rules, hydrated.sessions);
+          } else {
+            setBuilderStep('identity');
+          }
+        };
         if (v2Baseline && v2Draft && isStrategyDirty(v2Baseline, v2Draft)) {
-          setPendingNavigation(() => () => {
-            void openProfile(target);
-            if (target.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) {
-              openV2Edit();
-            } else {
-              setBuilderStep('identity');
-            }
-          });
+          setPendingNavigation(() => () => { void openRequestedEditor(); });
           setDirtyPrompt(true);
           return;
         }
 
-        void openProfile(target);
-        if (target.personalRules?.some((rule) => rule.key === 'trade-police-v2-metadata')) {
-          openV2Edit();
-        } else {
-          setBuilderStep('identity');
-        }
+        void openRequestedEditor();
         return;
       }
 
@@ -274,7 +271,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   async function openProfile(target: StrategyProfile) {
     setProfile(target);
     setV2EntryOpen(false);
-    if (!target.id) return;
+    if (!target.id) return null;
     const supabase = createClient();
     const [{ data: sessionRows }, { data: ruleRows }, { data: stopRows }, { data: instrumentRows }] = await Promise.all([
       supabase.from('strategy_sessions').select('*').eq('strategy_id', target.id).order('created_at'),
@@ -291,11 +288,15 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       isDefault: target.isDefault,
       instruments: savedInstruments,
     }, stopRows?.length ? stopRows.map((row: any) => ({ instrument: row.instrument, method: row.method, minimumValue: Number(row.minimum_value ?? 0), preferredValue: Number(row.preferred_value ?? row.maximum_value), maximumValue: Number(row.maximum_value), atrMultiplier: row.atr_multiplier === null ? undefined : Number(row.atr_multiplier) })) : []);
-    setProfile({ ...target, instruments: hydrated.profile.instruments });
-    setSessions(sessionRows?.length ? sessionRows.map((row: any) => ({ id: row.id, sessionCode: row.session_code, name: row.name, timezone: row.timezone, startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), days: row.days, allowOpenOutside: row.allow_open_outside, allowHoldOutside: row.allow_hold_outside, isCustom: row.is_custom })) : PRESET_SESSIONS.filter((item) => target.allowedSessions.includes(item.sessionCode)));
-    setRules(ruleRows?.length ? ruleRows.map((row: any) => ({ ruleKey: row.rule_key, label: row.label, enabled: row.enabled, mandatory: row.mandatory, weight: Number(row.weight), minimumConfidence: row.minimum_confidence, timeframeRole: row.timeframe_role, evaluationMode:row.evaluation_mode??'AUTOMATIC' })) : DEFAULT_RULES.map((rule) => ({ ...rule, mandatory: target.requiredEvidence.includes(rule.ruleKey as EvidenceKey), weight: target.evidenceWeights[rule.ruleKey as EvidenceKey] ?? rule.weight })));
+    const nextProfile = { ...target, instruments: hydrated.profile.instruments };
+    const nextSessions = sessionRows?.length ? sessionRows.map((row: any) => ({ id: row.id, sessionCode: row.session_code, name: row.name, timezone: row.timezone, startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), days: row.days, allowOpenOutside: row.allow_open_outside, allowHoldOutside: row.allow_hold_outside, isCustom: row.is_custom })) : PRESET_SESSIONS.filter((item) => target.allowedSessions.includes(item.sessionCode));
+    const nextRules = ruleRows?.length ? ruleRows.map((row: any) => ({ ruleKey: row.rule_key, label: row.label, enabled: row.enabled, mandatory: row.mandatory, weight: Number(row.weight), minimumConfidence: row.minimum_confidence, timeframeRole: row.timeframe_role, evaluationMode:row.evaluation_mode??'AUTOMATIC' })) : DEFAULT_RULES.map((rule) => ({ ...rule, mandatory: target.requiredEvidence.includes(rule.ruleKey as EvidenceKey), weight: target.evidenceWeights[rule.ruleKey as EvidenceKey] ?? rule.weight }));
+    setProfile(nextProfile);
+    setSessions(nextSessions);
+    setRules(nextRules);
     setStopLimits(hydrated.stopLimits);
     setMessage('');
+    return { profile: nextProfile, rules: nextRules, sessions: nextSessions };
   }
   function requestOpenProfile(target: StrategyProfile) { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{void openProfile(target)});setDirtyPrompt(true);return;} void openProfile(target); }
 
@@ -321,9 +322,9 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     setBuilderStep('identity');
     setMessage('Choose a creation mode to start your new strategy.');
   }
-  function openV2Edit(){
-    if(!profile.id)return;
-    const hydrated=persistedStrategyToV2State(profile,rules,sessions);
+  function openV2Edit(targetProfile = profile, targetRules = rules, targetSessions = sessions){
+    if(!targetProfile.id)return;
+    const hydrated=persistedStrategyToV2State(targetProfile,targetRules,targetSessions);
     setV2State(hydrated);setV2Baseline(hydrated);setV2Draft(hydrated);setV2EntryMode('EDIT');setV2EntryOpen(true);setMessage('');
   }
 

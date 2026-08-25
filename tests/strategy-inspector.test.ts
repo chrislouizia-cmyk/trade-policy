@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';import test from 'node:test';import{read
 test('Strategy detail renders the canonical single-card experience for saved strategies',()=>{
   const detail=readFileSync(new URL('../components/StrategyDetailPage.tsx',import.meta.url),'utf8');
   for(const text of ['STRATEGY DETAIL','Overview','Rules','Backtests','Forward Test','Founder access','Unlimited'])assert.match(detail,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
-  assert.match(detail,/Plan:\s*\{normalizedPlanCode\s*\|\|\s*'FREE'\}\s*·\s*\{limitValue === null \? 'Unlimited' : `limit \$\{limitValue\}`\}/);
+  assert.match(detail,/PRIVATE_BETA:\s*10/);
+  assert.match(detail,/Plan:\s*\{normalizedPlanCode\s*\|\|\s*'FREE'\}\s*·\s*\{limitValue === null \? 'Unlimited' : `\$\{remainingCredits\} of \$\{limitValue\} credits left`\}/);
   assert.doesNotMatch(detail,/No backtest plan access/i);
   assert.doesNotMatch(detail,/limit 0/i);
   assert.doesNotMatch(detail,/Phase 2 placeholder/i);

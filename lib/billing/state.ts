@@ -37,9 +37,10 @@ export function buildBillingState(
   const status = String(sub?.status ?? 'inactive');
   let plan: PlanCode = 'FREE';
 
-  if (paid.has(status)) {
+  if (rawPlan === 'PRIVATE_BETA') {
+    plan = 'PRIVATE_BETA';
+  } else if (paid.has(status)) {
     switch (rawPlan) {
-      case 'PRIVATE_BETA':
       case 'PRO':
       case 'ELITE':
       case 'TEAM':

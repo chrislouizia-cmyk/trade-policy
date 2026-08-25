@@ -10,6 +10,7 @@ import type { StrategyProfile } from '@/types/trade';
 
 export const BACKTEST_PLAN_LIMITS = {
   FREE: 0,
+  PRIVATE_BETA: 10,
   PRO: 3,
   ELITE: 10,
   TEAM: 70,
@@ -306,6 +307,9 @@ export async function getBacktestPlanCodeForUser(userId: string) {
 
   const status = String(data?.status ?? 'inactive').toLowerCase();
   const plan = String(data?.plan ?? 'FREE').toUpperCase();
+  if (plan === 'PRIVATE_BETA') {
+    return 'PRIVATE_BETA';
+  }
   const paid = ['active', 'trialing'].includes(status);
   if (!paid) {
     return 'FREE';

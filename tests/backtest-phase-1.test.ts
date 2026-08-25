@@ -39,12 +39,19 @@ test('RLS grants require ownership reads and server-role writes', () => {
 test('quota is server-side with plan limits and no client trust path', () => {
   assert.match(helper, /BACKTEST_PLAN_LIMITS/i);
   assert.match(helper, /FREE: 0/i);
+  assert.match(helper, /PRIVATE_BETA: 10/i);
   assert.match(helper, /PRO: 3/i);
   assert.match(helper, /ELITE: 10/i);
   assert.match(helper, /TEAM: 70/i);
   assert.match(helper, /FOUNDER:\s*null/i);
   assert.match(helper, /checkBacktestQuota\(/i);
   assert.match(helper, /if \(!quota\.allowed\)/i);
+  assert.doesNotMatch(helper, /localStorage|sessionStorage|window\./i);
+});
+
+test('private beta receives server-owned backtest credits without requiring a paid subscription', () => {
+  assert.match(helper, /PRIVATE_BETA:\s*10/i);
+  assert.match(helper, /if \(plan === 'PRIVATE_BETA'\) \{\s*return 'PRIVATE_BETA';\s*\}/is);
   assert.doesNotMatch(helper, /localStorage|sessionStorage|window\./i);
 });
 

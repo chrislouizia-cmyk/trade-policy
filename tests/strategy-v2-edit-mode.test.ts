@@ -14,7 +14,7 @@ test('CREATE and EDIT are explicit V2 intents, not inferred from populated field
 });
 
 test('editing hydrates the exact persisted strategy and opens the shared editor directly',()=>{
-  assert.match(builder,/function openV2Edit\(\)[\s\S]*persistedStrategyToV2State\(profile,rules,sessions\)[\s\S]*setV2Baseline\(hydrated\)[\s\S]*setV2Draft\(hydrated\)[\s\S]*setV2EntryMode\('EDIT'\)[\s\S]*setV2EntryOpen\(true\)/);
+  assert.match(builder,/function openV2Edit\(targetProfile = profile, targetRules = rules, targetSessions = sessions\)[\s\S]*persistedStrategyToV2State\(targetProfile,targetRules,targetSessions\)[\s\S]*setV2Baseline\(hydrated\)[\s\S]*setV2Draft\(hydrated\)[\s\S]*setV2EntryMode\('EDIT'\)[\s\S]*setV2EntryOpen\(true\)/);
   assert.match(builder,/mode=\{v2EntryMode\}/);
   assert.match(builder,/key=\{`\$\{v2EntryMode\}:\$\{profile\.id\?\?'new'\}`\}/);
   assert.match(v2,/mode==='EDIT'\?'EDIT STRATEGY':'NEW STRATEGY'/);

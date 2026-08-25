@@ -2360,3 +2360,16 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 @media(max-width:1050px){.marketplace-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.marketplace-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.marketplace-profile-list{grid-template-columns:1fr}} 
 @media(max-width:767px){.live-panel>.decision-explanation-hero{margin-inline:-2px}.decision-explanation-hero .decision-hero-verdict{font-size:clamp(36px,12vw,54px);white-space:nowrap;word-break:normal;overflow-wrap:normal}.decision-final-risk-button{min-height:48px}.marketplace-create-modal{padding:16px}.marketplace-create-header{align-items:center}.marketplace-preview-grid{grid-template-columns:1fr}.marketplace-create-footer{flex-direction:column-reverse}.marketplace-create-footer .button{width:100%}} 
 @media(max-width:640px){.marketplace-hero{padding:18px}.marketplace-hero dl,.marketplace-product-grid,.marketplace-controls{grid-template-columns:1fr}.marketplace-product-card dl{grid-template-columns:1fr}.compact-button{justify-self:stretch;width:100%}.marketplace-create-modal-backdrop{padding:12px}.marketplace-profile-list{grid-template-columns:1fr}}
+
+/* Strategy detail uses one stable canvas across every tab. */
+.strategy-detail-panel.card{width:100%;height:clamp(620px,72vh,820px);min-height:620px;padding:18px;box-sizing:border-box}
+.strategy-detail-view{width:100%;min-height:100%;box-sizing:border-box}
+.strategy-detail-grid{align-items:stretch;grid-auto-rows:1fr}
+.strategy-detail-grid>.strategy-detail-card{height:100%}
+.strategy-detail-section-card{width:100%}
+.strategy-detail-backtests-stack{align-content:start}
+.strategy-detail-forward-card{display:flex;min-height:100%;flex-direction:column;justify-content:flex-start}
+.strategy-complete-card{width:min(100%,1100px);min-width:0;margin-inline:auto}
+.strategy-complete-hero{min-width:0}
+.strategy-complete-hero>div,.strategy-complete-hero h2{min-width:0;overflow-wrap:anywhere}
+@media(max-width:760px){.strategy-detail-panel.card{height:auto;min-height:560px;padding:12px}}
