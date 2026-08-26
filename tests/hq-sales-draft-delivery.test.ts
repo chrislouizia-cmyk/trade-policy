@@ -4,12 +4,12 @@ import {readFileSync} from 'node:fs';
 
 const route=readFileSync(new URL('../app/api/hq/sales/drafts/[id]/send/route.ts',import.meta.url),'utf8');
 const composer=readFileSync(new URL('../components/hq/SalesDraftComposer.tsx',import.meta.url),'utf8');
-const migration=readFileSync(new URL('../supabase/migrations/047_hq_sales_draft_delivery.sql',import.meta.url),'utf8');
+const migration=readFileSync(new URL('../supabase/migrations/080_reconcile_047_055_secondary_history.sql',import.meta.url),'utf8');
 const gmail=readFileSync(new URL('../lib/server/gmail-delivery.ts',import.meta.url),'utf8');
 
 test('send reserves a saved draft, delivers through Gmail, then completes it atomically',()=>{
   assert.match(route,/staff_sales_reserve_draft_send/);assert.match(route,/sendWithGmail/);assert.match(route,/staff_sales_complete_draft_send/);
-  assert.match(migration,/status='SENDING'/);assert.match(migration,/status='SENT'/);assert.match(migration,/sent_at=now\(\),sent_by=auth\.uid\(\),delivery_provider/);
+  assert.match(migration,/status\s*=\s*'SENDING'/);assert.match(migration,/status\s*=\s*'SENT'/);assert.match(migration,/sent_at\s*=\s*now\(\)\s*,\s*sent_by\s*=\s*auth\.uid\(\)\s*,\s*delivery_provider/);
   assert.match(gmail,/gmail\.googleapis\.com\/gmail\/v1\/users\/me\/messages\/send/);
 });
 test('HQ health evaluates Gmail OAuth configuration without exposing credentials',()=>{
@@ -19,7 +19,7 @@ test('HQ health evaluates Gmail OAuth configuration without exposing credentials
 });
 test('provider failure restores the editable draft and records an audit event',()=>{
   assert.match(route,/staff_sales_fail_draft_send/);assert.match(route,/The draft was kept intact/);
-  assert.match(migration,/status=coalesce\(pre_send_status,'DRAFT'\)/);assert.match(migration,/'GMAIL','FAILED',d\.delivery_error_code/);
+  assert.match(migration,/status\s*=\s*coalesce\s*\(\s*pre_send_status\s*,\s*'DRAFT'\s*\)/);assert.match(migration,/'GMAIL'\s*,\s*'FAILED'\s*,\s*d\.delivery_error_code/);
 });
 test('a post-provider persistence failure stays locked rather than risking a duplicate email',()=>{
   assert.match(route,/let providerAccepted=false/);assert.match(route,/if\(!providerAccepted\)await supabase\.rpc\('staff_sales_fail_draft_send'/);assert.match(route,/remains locked to prevent a duplicate send/);
