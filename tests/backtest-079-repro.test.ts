@@ -32,3 +32,20 @@ test('079 includes the live quota and lifecycle semantics required for atomic cr
   assert.match(migration, /Backtest run cannot transition from % to FAILED\.|Run is no longer eligible for failure handling\./i);
   assert.match(migration, /v_total_used \+ v_total_reserved/i);
 });
+
+test('079 patches legacy 077/078 upgrade state before validating the contract and reconciles missing run reservations', () => {
+  assert.match(migration, /update public\.backtest_usage\s+set\s+limit_count = case/i);
+  assert.match(migration, /when upper\(coalesce\(nullif\(trim\(plan_code\), ''\), 'FREE'\)\) = 'FREE' then 0/i);
+  assert.match(migration, /when upper\(coalesce\(nullif\(trim\(plan_code\), ''\), 'FREE'\)\) = 'FOUNDER' then null/i);
+  assert.match(migration, /unlimited = case[\s\S]*when upper\(coalesce\(nullif\(trim\(plan_code\), ''\), 'FREE'\)\) = 'FOUNDER' then true/i);
+  assert.match(migration, /check \(\(\(unlimited = true\) and \(limit_count is null\)\) or \(\(unlimited = false\) and \(limit_count is not null\) and \(limit_count >= 0\)\)\)/i);
+  assert.match(migration, /insert into public\.backtest_credit_reservations/i);
+  assert.match(migration, /on conflict \(run_id\) do nothing/i);
+  assert.match(migration, /case\s*\n\s*when br\.status in \('QUEUED', 'RUNNING'\) then 'RESERVED'/i);
+  assert.match(migration, /when br\.status in \('FAILED', 'CANCELLED'\) then 'LEGACY_RUN_RECONCILIATION'/i);
+  assert.match(migration, /with legacy_run_usage as/i);
+  assert.match(migration, /count\(\*\) filter \(where status = 'CONSUMED'\)\s*::integer as used_count/i);
+  assert.match(migration, /count\(\*\) filter \(where status = 'RESERVED'\)\s*::integer as reserved_count/i);
+  assert.match(migration, /not lru\.unlimited as counts_against_limit/i);
+  assert.match(migration, /update public\.backtest_usage bu\s+set used_count = coalesce\(rc\.used_count, 0\),\s+reserved_count = coalesce\(rc\.reserved_count, 0\)/i);
+});

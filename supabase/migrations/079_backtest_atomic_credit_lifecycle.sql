@@ -59,6 +59,24 @@ alter table public.backtest_usage
 alter table public.backtest_usage
   alter column reserved_count set default 0;
 
+-- Backfill legacy 077/078 rows before validating the runtime contract. This keeps
+-- existing plan limits and founder unlimited status aligned with the live billing rules.
+update public.backtest_usage
+   set limit_count = case
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'FREE' then 0
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'PRIVATE_BETA' then 10
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'PRO' then 3
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'ELITE' then 10
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'TEAM' then 70
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'FOUNDER' then null
+         else 0
+       end,
+       unlimited = case
+         when upper(coalesce(nullif(trim(plan_code), ''), 'FREE')) = 'FOUNDER' then true
+         else false
+       end,
+       updated_at = now();
+
 -- Ensure the plan contract matches the live runtime: PRIVATE_BETA and FOUNDER both valid.
 -- This is safe even if the older repo migration already inserted a narrower check.
 alter table public.backtest_usage
@@ -170,6 +188,115 @@ create unique index if not exists backtest_credit_reservations_run_id_key
 
 create index if not exists backtest_credit_reservations_user_period_status_idx
   on public.backtest_credit_reservations (user_id, period_start, status);
+
+-- Reconcile any queued/running/completed/failed legacy backtest runs that never received a reservation.
+-- This is idempotent and safe on empty databases because it uses an insert ... on conflict guard.
+do $$
+begin
+  with legacy_run_usage as (
+    select
+      br.id as run_id,
+      br.user_id,
+      br.workspace_id,
+      br.created_at,
+      br.started_at,
+      br.completed_at,
+      br.updated_at,
+      bu.id as usage_id,
+      bu.billing_period_start,
+      bu.billing_period_end,
+      bu.unlimited,
+      row_number() over (
+        partition by br.id
+        order by
+          case when bu.last_run_id = br.id then 0 else 1 end,
+          bu.updated_at desc nulls last,
+          bu.created_at desc nulls last,
+          bu.id
+      ) as row_rank
+    from public.backtest_runs br
+    join public.backtest_usage bu
+      on bu.user_id = br.user_id
+     and bu.workspace_id is not distinct from br.workspace_id
+     and br.created_at >= bu.billing_period_start
+     and br.created_at < bu.billing_period_end
+    where not exists (
+      select 1
+      from public.backtest_credit_reservations bcr
+      where bcr.run_id = br.id
+    )
+  )
+  insert into public.backtest_credit_reservations (
+    user_id,
+    run_id,
+    usage_id,
+    period_start,
+    status,
+    counts_against_limit,
+    reserved_at,
+    consumed_at,
+    released_at,
+    release_reason,
+    created_at,
+    updated_at
+  )
+  select
+    lru.user_id,
+    lru.run_id,
+    lru.usage_id,
+    lru.billing_period_start,
+    case
+      when br.status in ('QUEUED', 'RUNNING') then 'RESERVED'
+      when br.status = 'COMPLETED' then 'CONSUMED'
+      when br.status in ('FAILED', 'CANCELLED') then 'RELEASED'
+      else 'RESERVED'
+    end as status,
+    not lru.unlimited as counts_against_limit,
+    coalesce(br.started_at, br.created_at, br.updated_at, now()) as reserved_at,
+    case
+      when br.status = 'COMPLETED' then coalesce(br.completed_at, br.started_at, br.created_at, br.updated_at, now())
+      else null
+    end as consumed_at,
+    case
+      when br.status in ('FAILED', 'CANCELLED') then coalesce(br.completed_at, br.started_at, br.created_at, br.updated_at, now())
+      else null
+    end as released_at,
+    case
+      when br.status in ('FAILED', 'CANCELLED') then 'LEGACY_RUN_RECONCILIATION'
+      else null
+    end as release_reason,
+    coalesce(br.created_at, now()) as created_at,
+    coalesce(br.updated_at, now()) as updated_at
+  from legacy_run_usage lru
+  join public.backtest_runs br on br.id = lru.run_id
+  where lru.row_rank = 1
+  on conflict (run_id) do nothing;
+end $$;
+
+with reservation_counts as (
+  select
+    usage_id,
+    count(*) filter (where status = 'CONSUMED')::integer as used_count,
+    count(*) filter (where status = 'RESERVED')::integer as reserved_count
+  from public.backtest_credit_reservations
+  group by usage_id
+)
+update public.backtest_usage bu
+   set used_count = coalesce(rc.used_count, 0),
+       reserved_count = coalesce(rc.reserved_count, 0),
+       updated_at = now()
+  from reservation_counts rc
+ where rc.usage_id = bu.id;
+
+update public.backtest_usage bu
+   set used_count = 0,
+       reserved_count = 0,
+       updated_at = now()
+ where not exists (
+   select 1
+   from public.backtest_credit_reservations bcr
+   where bcr.usage_id = bu.id
+ );
 
 -- 4) Reconcile usage ledger uniqueness with the live runtime.
 create unique index if not exists backtest_usage_user_workspace_period_unique
