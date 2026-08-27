@@ -90,11 +90,15 @@ export type BacktestUsage = {
   id: string;
   user_id: string;
   workspace_id: string | null;
-  plan_code: 'FREE' | 'PRO' | 'ELITE' | 'TEAM';
+  plan_code: 'FREE' | 'PRIVATE_BETA' | 'PRO' | 'ELITE' | 'TEAM' | 'FOUNDER';
   billing_period_start: string;
   billing_period_end: string;
   run_count: number;
   limit_value: number;
+  used_count?: number;
+  reserved_count?: number;
+  limit_count?: number | null;
+  unlimited?: boolean;
   last_run_id: string | null;
   created_at: string;
   updated_at: string;

@@ -8,6 +8,7 @@ const allLinks = [
   ['Team','/hq/team','staff.view'],
   ['Company','/hq/organizations','organizations.view'],
   ['Sales','/hq/sales','sales.view'],
+  ['Beta','/hq/private-beta','beta.manage'],
   ['Compliance','/hq/compliance','compliance.view'],
   ['Support','/hq/support','support.view'],
   ['System Operations','/hq/system','system.health'],
@@ -24,9 +25,6 @@ export default function HQNav({permissions}:{permissions:string[]}){
   const link=([label,href]:readonly [string,string,string])=><a className={isActive(href)?'active':undefined} aria-current={isActive(href)?'page':undefined} key={`${href}-${label}`} href={href}>{label}</a>;
   const mobilePrimary=links.filter(([label])=>primaryMobileLabels.has(label));
   const mobileMore=links.filter(([label])=>!primaryMobileLabels.has(label));
-  const operations=links.find(([label])=>label==='System Operations');
-  // Desktop is the operational surface: do not hide primary workspaces behind
-  // an interaction-only "More" menu. CSS may still wrap on narrow widths.
   const desktopPrimary=links;
   const mobileMoreActive=mobileMore.some(([,href])=>isActive(href));
   return <>

@@ -21,6 +21,7 @@ const schema = z.object({
   dataProvider: z.string().default('Twelve Data'),
   dataRevisionFingerprint: z.string().default(''),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
+  idempotencyKey: z.string().trim().min(1).max(160).nullable().optional(),
 });
 
 export async function POST(request: Request) {
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
       dataRevisionFingerprint: payload.dataRevisionFingerprint,
       metadata: payload.metadata,
       planCode,
+      idempotencyKey: payload.idempotencyKey ?? null,
     });
 
     return NextResponse.json({
@@ -87,8 +89,8 @@ export async function POST(request: Request) {
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Backtest could not be created.';
-    if (message.includes('quota exceeded')) {
-      return apiError('BACKTEST_LIMIT_REACHED', message, 429, { plan: 'PRO' });
+    if (message.toLowerCase().includes('quota exceeded')) {
+      return apiError('BACKTEST_LIMIT_REACHED', message, 429);
     }
     return apiError('BACKTEST_CREATION_FAILED', message, 500);
   }

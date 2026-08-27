@@ -1,4 +1,5 @@
 import OnboardingChecklist from '@/components/OnboardingChecklist';
+import PrivateBetaCard from '@/components/PrivateBetaCard';
 
 type Props = {
   displayName: string;
@@ -38,6 +39,8 @@ export default function Dashboard(p: Props) {
         hasStrategy={Boolean(p.strategy)}
         hasTrade={p.hasTrade}
       />}
+
+      <PrivateBetaCard />
 
       <div className="grid grid-4 metric-grid compact-dashboard-grid">
         <Card

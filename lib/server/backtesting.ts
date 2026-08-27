@@ -1,15 +1,14 @@
 import 'server-only';
 
 import { serverEntitlementOverride } from '@/lib/billing/overrides';
-import { getAnchoredMonthlyPeriod } from '@/lib/billing/period';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { stableFingerprint } from '@/lib/market-intelligence/serialization/stable-fingerprint';
-import type { BacktestRun, BacktestRunStatus, BacktestUsage } from '@/types/backtesting';
+import type { BacktestRun, BacktestUsage } from '@/types/backtesting';
 import type { StrategyProfile } from '@/types/trade';
 
 export const BACKTEST_PLAN_LIMITS = {
-  FREE: 0,
+  FREE: 1,
   PRIVATE_BETA: 10,
   PRO: 3,
   ELITE: 10,
@@ -108,7 +107,7 @@ export async function checkBacktestQuota(
   const usage = row ?? (await ensureBacktestUsageRow(userId, workspaceId, planCode, now));
 
   return {
-    allowed: limit === null || (Number(usage.run_count ?? 0) < Number(limit)),
+    allowed: limit === null || (Number(usage.used_count ?? usage.run_count ?? 0) + Number(usage.reserved_count ?? 0) < Number(limit)),
     usage: usage as BacktestUsage,
     limit,
   };
@@ -133,66 +132,49 @@ export async function createBacktestRun(input: {
   dataRevisionFingerprint?: string;
   metadata?: Record<string, unknown>;
   planCode?: string;
+  idempotencyKey?: string | null;
 }) {
   const admin = createAdminClient();
-  const planCode = String(input.planCode ?? 'FREE').toUpperCase();
-  const quota = await checkBacktestQuota(input.userId, input.workspaceId ?? null, planCode);
+  const { data: creation, error: creationError } = await admin.rpc('backtest_create_run_atomic', {
+    p_user_id: input.userId,
+    p_workspace_id: input.workspaceId ?? null,
+    p_strategy_profile_id: input.strategyProfileId,
+    p_strategy_revision_id: input.strategyRevisionId,
+    p_strategy_snapshot_hash: input.strategySnapshotHash,
+    p_strategy_snapshot_json: input.strategySnapshotJson,
+    p_instrument: input.instrument,
+    p_execution_timeframe: input.executionTimeframe,
+    p_period_start: input.periodStart,
+    p_period_end: input.periodEnd,
+    p_starting_balance: Number(input.startingBalance),
+    p_risk_configuration: input.riskConfiguration ?? {},
+    p_execution_model: input.executionModel ?? {},
+    p_engine_version: input.engineVersion ?? '1.0.0',
+    p_data_provider: input.dataProvider ?? 'Twelve Data',
+    p_data_revision_fingerprint: input.dataRevisionFingerprint ?? '',
+    p_metadata: input.metadata ?? {},
+    p_plan_code: String(input.planCode ?? 'FREE').toUpperCase(),
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
 
-  if (!quota.allowed) {
-    throw new Error(`Backtest quota exceeded for plan ${planCode}.`);
+  if (creationError) {
+    throw new Error(`Backtest run creation failed. ${creationError.message}`.trim());
+  }
+
+  const runId = String((creation as any)?.run_id ?? '');
+  if (!runId) {
+    throw new Error('Backtest run creation failed. Atomic RPC returned no run id.');
   }
 
   const { data: run, error: runError } = await admin
     .from('backtest_runs')
-    .insert({
-      user_id: input.userId,
-      workspace_id: input.workspaceId ?? null,
-      strategy_profile_id: input.strategyProfileId,
-      strategy_revision_id: input.strategyRevisionId,
-      strategy_snapshot_hash: input.strategySnapshotHash,
-      strategy_snapshot_json: input.strategySnapshotJson,
-      instrument: input.instrument,
-      execution_timeframe: input.executionTimeframe,
-      period_start: input.periodStart,
-      period_end: input.periodEnd,
-      starting_balance: Number(input.startingBalance),
-      risk_configuration: input.riskConfiguration ?? {},
-      execution_model: input.executionModel ?? {},
-      engine_version: input.engineVersion ?? '1.0.0',
-      data_provider: input.dataProvider ?? 'Twelve Data',
-      data_revision_fingerprint: input.dataRevisionFingerprint ?? '',
-      status: 'QUEUED',
-      failure_reason: null,
-      metadata: input.metadata ?? {},
-    })
     .select('*')
+    .eq('id', runId)
+    .eq('user_id', input.userId)
     .single();
 
   if (runError || !run) {
-    throw new Error(`Backtest run creation failed. ${runError?.message ?? ''}`.trim());
-  }
-
-  const { data: usageRow, error: usageError } = await admin
-    .from('backtest_usage')
-    .select('*')
-    .eq('user_id', input.userId)
-    .eq('plan_code', planCode)
-    .eq('billing_period_start', getBacktestPeriod(new Date()).startKey)
-    .maybeSingle();
-
-  if (usageError) {
-    throw new Error(`Backtest usage ledger could not be updated. ${usageError.message}`);
-  }
-
-  if (usageRow) {
-    await admin
-      .from('backtest_usage')
-      .update({
-        run_count: Number(usageRow.run_count ?? 0) + 1,
-        last_run_id: run.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', usageRow.id);
+    throw new Error(`Backtest run ${runId} could not be loaded after atomic creation.`);
   }
 
   return run as BacktestRun;
@@ -295,24 +277,13 @@ export async function getBacktestPlanCodeForUser(userId: string) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('billing_subscriptions')
-    .select('plan,status')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await admin.rpc('backtest_get_plan_code_for_user', {
+    p_user_id: userId,
+  });
 
-  if (error) {
-    throw new Error(`Billing subscription could not be loaded. ${error.message}`);
+  if (error || !data) {
+    throw new Error(`Backtest entitlement could not be resolved. ${error?.message ?? ''}`.trim());
   }
 
-  const status = String(data?.status ?? 'inactive').toLowerCase();
-  const plan = String(data?.plan ?? 'FREE').toUpperCase();
-  if (plan === 'PRIVATE_BETA') {
-    return 'PRIVATE_BETA';
-  }
-  const paid = ['active', 'trialing'].includes(status);
-  if (!paid) {
-    return 'FREE';
-  }
-  return ['PRO', 'ELITE', 'TEAM', 'FOUNDER'].includes(plan) ? plan : 'FREE';
+  return String(data).trim().toUpperCase() as BacktestPlanCode;
 }
