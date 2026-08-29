@@ -36,35 +36,35 @@ test('RLS grants require ownership reads and server-role writes', () => {
   assert.match(migration, /grant select, insert, update, delete on table public\.backtest_usage to service_role/i);
 });
 
-test('quota is server-side with plan limits and no client trust path', () => {
+test('quota is server-side with canonical plan limits and atomic enforcement', () => {
   assert.match(helper, /BACKTEST_PLAN_LIMITS/i);
-  assert.match(helper, /FREE: 0/i);
-  assert.match(helper, /PRIVATE_BETA: 10/i);
-  assert.match(helper, /PRO: 3/i);
-  assert.match(helper, /ELITE: 10/i);
-  assert.match(helper, /TEAM: 70/i);
+  assert.match(helper, /FREE:\s*1/i);
+  assert.match(helper, /PRIVATE_BETA:\s*10/i);
+  assert.match(helper, /PRO:\s*3/i);
+  assert.match(helper, /ELITE:\s*10/i);
+  assert.match(helper, /TEAM:\s*70/i);
   assert.match(helper, /FOUNDER:\s*null/i);
-  assert.match(helper, /checkBacktestQuota\(/i);
-  assert.match(helper, /if \(!quota\.allowed\)/i);
+  assert.match(helper, /admin\.rpc\('backtest_create_run_atomic'/i);
+  assert.match(helper, /admin\.rpc\('backtest_get_plan_code_for_user'/i);
   assert.doesNotMatch(helper, /localStorage|sessionStorage|window\./i);
 });
 
 test('private beta receives server-owned backtest credits without requiring a paid subscription', () => {
   assert.match(helper, /PRIVATE_BETA:\s*10/i);
-  assert.match(helper, /if \(plan === 'PRIVATE_BETA'\) \{\s*return 'PRIVATE_BETA';\s*\}/is);
+  assert.match(helper, /admin\.rpc\('backtest_get_plan_code_for_user'/i);
   assert.doesNotMatch(helper, /localStorage|sessionStorage|window\./i);
 });
 
 test('founder backtests are unlimited and bypass the monthly cap', () => {
   assert.match(helper, /FOUNDER:\s*null/i);
   assert.match(helper, /return normalized in BACKTEST_PLAN_LIMITS \? BACKTEST_PLAN_LIMITS\[normalized as BacktestPlanCode\] : 0;/i);
-  assert.match(helper, /limit === null \|\| \(Number\(usage\.run_count \?\? 0\) < Number\(limit\)\)/i);
+  assert.match(helper, /limit === null \|\| \(Number\(usage\.used_count \?\? usage\.run_count \?\? 0\) \+ Number\(usage\.reserved_count \?\? 0\) < Number\(limit\)\)/i);
 });
 
-test('backtest plan resolution honors the server-side founder override before querying billing state', () => {
-  assert.match(helper, /serverEntitlementOverride\(userId\)/i);
-  assert.match(helper, /if \(founderOverride\) \{\s*return founderOverride;/is);
-  assert.doesNotMatch(helper, /return '\w+';\s*\n\s*const admin = createAdminClient\(\);/i);
+test('backtest plan resolution delegates to the authoritative server-side entitlement resolver', () => {
+  assert.match(helper, /admin\.rpc\('backtest_get_plan_code_for_user'/i);
+  assert.match(helper, /p_user_id:\s*userId/i);
+  assert.doesNotMatch(helper, /serverEntitlementOverride|founderOverride/i);
 });
 
 test('backtest plan limits preserve the canonical unlimited representation and finite plan values', () => {
@@ -81,7 +81,7 @@ test('POST /api/backtests authenticates and freezes strategy state before creati
   assert.match(backtestRoute, /freezeStrategyForBacktest/i);
   assert.match(backtestRoute, /strategyRevisionId: frozen\.strategyRevisionId/i);
   assert.match(backtestRoute, /createBacktestRun\(/i);
-  assert.match(helper, /status:\s*'QUEUED'/i);
+  assert.match(helper, /admin\.rpc\('backtest_create_run_atomic'/i);
   assert.match(backtestRoute, /return NextResponse\.json\(\{\s*runId: run\.id/i);
 });
 

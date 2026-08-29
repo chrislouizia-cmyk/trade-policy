@@ -4,7 +4,6 @@ import test from 'node:test';
 import { buildBillingState } from '../lib/billing/state.ts';
 import { getAnchoredMonthlyPeriod, getMonthlyPeriodStartKey } from '../lib/billing/period.ts';
 import { planFor } from '../lib/billing/plans.ts';
-import { applyServerEntitlementOverride, serverEntitlementOverride } from '../lib/billing/overrides.ts';
 
 const billingEntitlementsSource = readFileSync(
   new URL('../lib/billing/entitlements.ts', import.meta.url),
@@ -54,37 +53,23 @@ test('analysis limits match each designed plan', () => {
   assert.equal(planFor('FOUNDER').monthlyAnalysisLimit, null);
 });
 
-test('getBillingState applies the server-side FOUNDER override after normal plan resolution', () => {
-  const founderUserIds = [
-    '65a21633-51ea-419b-bd0c-e43f81c63b4e',
-    'cee066a8-a590-4c1a-9c56-5e1c3617ca26',
-    '935d9d88-893b-4163-b276-50bdb63c55e0',
-  ];
-  const free = buildBillingState({ data: null, error: null }, 12, {
-    startKey: '2026-08-15',
-    endKey: '2026-09-15',
-  });
-  assert.equal(free.plan, 'FREE');
-  assert.match(
-    billingEntitlementsSource,
-    /const state = buildBillingState\([\s\S]*return applyServerEntitlementOverride\(userId, state\);/,
+test('getBillingState applies the canonical server-side entitlement override after normal plan resolution', () => {
+  const overridesSource = readFileSync(
+    new URL('../lib/billing/overrides.ts', import.meta.url),
+    'utf8',
   );
 
-  for (const userId of founderUserIds) {
-    const founder = applyServerEntitlementOverride(userId, free);
-    assert.equal(serverEntitlementOverride(userId), 'FOUNDER');
-    assert.equal(founder.plan, 'FOUNDER');
-    assert.equal(founder.entitlements.monthlyAnalysisLimit, null);
-    assert.equal(founder.entitlements.maximumActiveStrategies, null);
-    assert.equal(founder.entitlements.canViewCompleteDecisionReport, true);
-    assert.equal(founder.entitlements.canUseExpandedHistory, true);
-    assert.equal(founder.entitlements.canUseExpandedAnalytics, true);
-    assert.equal(founder.usage, 12);
-    assert.equal(founder.usagePeriodStart, '2026-08-15');
-  }
-
-  assert.equal(serverEntitlementOverride('00000000-0000-4000-8000-000000000000'), null);
-  assert.equal(applyServerEntitlementOverride('00000000-0000-4000-8000-000000000000', free), free);
+  assert.match(
+    billingEntitlementsSource,
+    /const state = buildBillingState\([\s\S]*return await applyServerEntitlementOverride\(userId, state\);/,
+  );
+  assert.match(overridesSource, /internal_entitlement_overrides/);
+  assert.match(overridesSource, /\.eq\('user_id', userId\)/);
+  assert.match(overridesSource, /\.eq\('active', true\)/);
+  assert.match(overridesSource, /Promise<PlanCode \| null>/);
+  assert.doesNotMatch(overridesSource, /65a21633-51ea-419b-bd0c-e43f81c63b4e/);
+  assert.doesNotMatch(overridesSource, /cee066a8-a590-4c1a-9c56-5e1c3617ca26/);
+  assert.doesNotMatch(overridesSource, /935d9d88-893b-4163-b276-50bdb63c55e0/);
 });
 
 test('private beta entitlement remains available without a paid Stripe subscription', () => {

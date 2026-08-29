@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { serverEntitlementOverride } from '@/lib/billing/overrides';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { stableFingerprint } from '@/lib/market-intelligence/serialization/stable-fingerprint';
@@ -271,11 +270,6 @@ export async function getBacktestRunForUser(userId: string, runId: string) {
 }
 
 export async function getBacktestPlanCodeForUser(userId: string) {
-  const founderOverride = serverEntitlementOverride(userId);
-  if (founderOverride) {
-    return founderOverride;
-  }
-
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('backtest_get_plan_code_for_user', {
     p_user_id: userId,

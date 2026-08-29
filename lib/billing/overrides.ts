@@ -1,17 +1,46 @@
+import 'server-only';
+
+import { createAdminClient } from '../supabase/admin.ts';
 import { planFor, type PlanCode } from './plans.ts';
 import type { BillingState } from './state.ts';
 
-const SERVER_ENTITLEMENT_OVERRIDES: Readonly<Record<string, PlanCode>> = Object.freeze({
-  '65a21633-51ea-419b-bd0c-e43f81c63b4e': 'FOUNDER',
-  'cee066a8-a590-4c1a-9c56-5e1c3617ca26': 'FOUNDER',
-  '935d9d88-893b-4163-b276-50bdb63c55e0': 'FOUNDER',
-});
+type EntitlementOverrideRow = { plan_code: string };
 
-export function serverEntitlementOverride(userId: string): PlanCode | null {
-  return SERVER_ENTITLEMENT_OVERRIDES[userId] ?? null;
+function normalizeOverridePlan(value: unknown): PlanCode | null {
+  const plan = String(value ?? '').trim().toUpperCase();
+  switch (plan) {
+    case 'FREE':
+    case 'PRIVATE_BETA':
+    case 'PRO':
+    case 'ELITE':
+    case 'TEAM':
+    case 'FOUNDER':
+      return plan;
+    default:
+      return null;
+  }
 }
 
-export function applyServerEntitlementOverride(userId: string, state: BillingState): BillingState {
-  const plan = serverEntitlementOverride(userId);
-  return plan ? {...state, plan, entitlements: planFor(plan)} : state;
+export async function serverEntitlementOverride(userId: string): Promise<PlanCode | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('internal_entitlement_overrides')
+    .select('plan_code')
+    .eq('user_id', userId)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Server entitlement override could not be resolved. ${error.message}`);
+  }
+
+  return normalizeOverridePlan((data as EntitlementOverrideRow | null)?.plan_code);
+}
+
+export async function applyServerEntitlementOverride(
+  userId: string,
+  state: BillingState,
+): Promise<BillingState> {
+  const plan = await serverEntitlementOverride(userId);
+  return plan ? { ...state, plan, entitlements: planFor(plan) } : state;
 }

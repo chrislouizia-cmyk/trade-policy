@@ -80,7 +80,7 @@ export async function getBillingState(userId: string): Promise<BillingState> {
     usageResult.count,
     usagePeriod,
   );
-  return applyServerEntitlementOverride(userId, state);
+  return await applyServerEntitlementOverride(userId, state);
 }
 
 export async function reserveAnalysis(
