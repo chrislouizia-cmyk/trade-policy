@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+const detail = fs.readFileSync('components/StrategyDetailPage.tsx','utf8');
+const builder = fs.readFileSync('components/StrategyBuilder.tsx','utf8');
+const css = fs.readFileSync('components/StrategyDetailPage.module.css','utf8');
+test('completed backtests expose persisted results and trades',()=>{assert.match(detail,/from\('backtest_results'\)/);assert.match(detail,/from\('backtest_trades'\)/);assert.match(detail,/Trade history/);assert.doesNotMatch(detail,/disabled>View Report/);});
+test('usage semantics match completed and reserved lifecycle',()=>{assert.match(detail,/run\.status === 'COMPLETED'/);assert.match(detail,/reservedCount/);assert.match(detail,/FREE: 1/);});
+test('legacy edit opens the actual editor',()=>{assert.match(builder,/openV2Edit\(hydrated\.profile, hydrated\.rules, hydrated\.sessions\)/);});
+test('forward test is coming soon and tabs share a stable panel',()=>{assert.match(detail,/Forward Test - Coming soon/);assert.match(detail,/disabled=\{comingSoon\}/);assert.match(css,/height:\s*560px/);});

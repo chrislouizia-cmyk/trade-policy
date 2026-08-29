@@ -18,6 +18,7 @@ import {
 import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
 import { validateStrategyName } from '@/lib/strategy-name';
+import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 export type StrategyBuilderV2Mode='CREATE'|'EDIT';
@@ -182,7 +183,7 @@ export default function StrategyBuilderV2({
     const nameError = validateStrategyName(strategyName); if (nameError) { setCopilotApplyError(nameError); return; }
     if (!contextTimeframe || !executionTimeframe) { setCopilotApplyError('Choose both context and execution timeframes before applying this strategy.'); return; }
     const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
-    const draftInstrument = copilotDraft.instrument && ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', 'NAS100'].includes(copilotDraft.instrument)
+    const draftInstrument = copilotDraft.instrument && SUPPORTED_INSTRUMENT_SYMBOLS.includes(copilotDraft.instrument as any)
       ? copilotDraft.instrument
       : (selectedInstruments[0] ?? 'XAUUSD');
     const draftSessions = copilotDraft.sessions.length ? copilotDraft.sessions : sessions;
@@ -301,7 +302,7 @@ export default function StrategyBuilderV2({
               <div className="field-block">
                 <p className="muted">Markets</p>
                 <div className="chip-list">
-                  {['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'NAS100'].map((instrument) => (
+                  {SUPPORTED_INSTRUMENT_SYMBOLS.map((instrument) => (
                     <button
                       key={instrument}
                       type="button"

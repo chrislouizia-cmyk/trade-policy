@@ -25,6 +25,7 @@ import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft
 import { persistedStrategyToV2State, v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { validateStrategyName } from '@/lib/strategy-name';
 import { isStrategyDirty } from '@/lib/strategy-dirty-state';
+import { strategyCatalogInstruments } from '@/lib/instrument-registry';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -34,12 +35,7 @@ type BuilderStep = typeof BUILDER_STEPS[number][0];
 
 const SETUPS = ['Trend Continuation','Liquidity Sweep Reversal','Breakout and Retest','Order Block Continuation','FVG Continuation','London Breakout','New York Reversal','Range Reversal','Momentum Breakout','Swing Pullback'];
 
-const FALLBACK_CATALOG: CatalogInstrument[] = [
-  ['EURUSD','Euro / US Dollar','MAJOR'],['GBPUSD','British Pound / US Dollar','MAJOR'],['USDJPY','US Dollar / Japanese Yen','MAJOR'],['USDCHF','US Dollar / Swiss Franc','MAJOR'],['AUDUSD','Australian Dollar / US Dollar','MAJOR'],['USDCAD','US Dollar / Canadian Dollar','MAJOR'],['NZDUSD','New Zealand Dollar / US Dollar','MAJOR'],
-  ['EURGBP','Euro / British Pound','MINOR'],['EURJPY','Euro / Japanese Yen','CROSS'],['EURCHF','Euro / Swiss Franc','MINOR'],['EURAUD','Euro / Australian Dollar','CROSS'],['EURCAD','Euro / Canadian Dollar','CROSS'],['EURNZD','Euro / New Zealand Dollar','CROSS'],['GBPJPY','British Pound / Japanese Yen','CROSS'],['GBPCHF','British Pound / Swiss Franc','CROSS'],['GBPAUD','British Pound / Australian Dollar','CROSS'],['GBPCAD','British Pound / Canadian Dollar','CROSS'],['GBPNZD','British Pound / New Zealand Dollar','CROSS'],['AUDJPY','Australian Dollar / Japanese Yen','CROSS'],['AUDNZD','Australian Dollar / New Zealand Dollar','CROSS'],['AUDCAD','Australian Dollar / Canadian Dollar','CROSS'],['AUDCHF','Australian Dollar / Swiss Franc','CROSS'],['CADJPY','Canadian Dollar / Japanese Yen','CROSS'],['CADCHF','Canadian Dollar / Swiss Franc','CROSS'],['CHFJPY','Swiss Franc / Japanese Yen','CROSS'],['NZDJPY','New Zealand Dollar / Japanese Yen','CROSS'],['NZDCAD','New Zealand Dollar / Canadian Dollar','CROSS'],['NZDCHF','New Zealand Dollar / Swiss Franc','CROSS'],
-  ['USDNOK','US Dollar / Norwegian Krone','EXOTIC'],['USDSEK','US Dollar / Swedish Krona','EXOTIC'],['USDMXN','US Dollar / Mexican Peso','EXOTIC'],['USDZAR','US Dollar / South African Rand','EXOTIC'],['USDTRY','US Dollar / Turkish Lira','EXOTIC'],
-  ['XAUUSD','Gold / US Dollar','METAL'],['XAGUSD','Silver / US Dollar','METAL'],
-].map(([symbol, displayName, category]) => ({ symbol, displayName, category, marketType: category === 'METAL' ? 'METALS' : 'FOREX' }));
+const FALLBACK_CATALOG: CatalogInstrument[] = strategyCatalogInstruments();
 
 function cloneDefault(): StrategyProfile {
   return JSON.parse(JSON.stringify(DEFAULT_STRATEGY_PROFILE));

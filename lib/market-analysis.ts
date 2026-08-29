@@ -35,7 +35,7 @@ function analyzeTf(timeframe:string,c:Candle[]):TimeframeAnalysis{
   return {timeframe,bias,lastPrice:last.close,atr:round(a),lastSwingHigh:round(recentHigh),lastSwingLow:round(recentLow),bosUp,bosDown,sweepHigh,sweepLow,fvgBullish,fvgBearish,retest};
 }
 
-function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>){
+function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>,referenceTimeMs=Date.now()){
   const frames=strategyTimeframes(strategy);
   for(const frame of frames){
     const candles=series[frame];
@@ -46,7 +46,7 @@ function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>)
     if(!Number.isFinite(latest))throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} has an invalid latest candle timestamp.`);
     const minutes:Record<string,number>={M1:1,M3:3,M5:5,M15:15,M30:30,H1:60,H2:120,H4:240,H6:360,H8:480,H12:720,D1:1440,W1:10080,MN:43200};
     if(!minutes[frame])throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} is not supported by the market-data provider.`);
-    if(Date.now()-latest>minutes[frame]*60_000*4+72*60*60_000)throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} market data is stale.`);
+    if(referenceTimeMs-latest>minutes[frame]*60_000*4+72*60*60_000)throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} market data is stale.`);
   }
   const requiresVolume=JSON.stringify(strategy.strategyMethodologies??[]).toLowerCase().includes('volume');
   if(requiresVolume&&frames.some(frame=>series[frame].some(x=>!Number.isFinite(x.volume))))throw new MarketAnalysisError('DATA_UNAVAILABLE','This strategy requires volume, but the provider did not return it.');
@@ -82,8 +82,10 @@ function scoreConfidence(strategy:StrategyProfile,evidence:Record<string,Evidenc
   return {liveAnalysisConfidence,components,breakdown:{mandatoryConfirmed:confirmedMandatory,mandatoryMissing:missingMandatory,optionalConfirmed:confirmedOptional,contradicted,unsupported,manual,external},relevant};
 }
 
-export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile,series:Record<string,Candle[]>,provider:string,normalizedProviderSymbol=instrument):LiveMarketAnalysis{
-  validateSeries(strategy,series);
+export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile,series:Record<string,Candle[]>,provider:string,normalizedProviderSymbol=instrument,analysisAt?:string):LiveMarketAnalysis{
+  const analysisTimeMs = analysisAt ? Date.parse(analysisAt) : Date.now();
+  if (!Number.isFinite(analysisTimeMs)) throw new MarketAnalysisError('DATA_UNAVAILABLE','Historical analysis timestamp is invalid.');
+  validateSeries(strategy,series,analysisTimeMs);
   const layers=strategyTimeframeLayers(strategy);const timeframes=Object.fromEntries(strategyTimeframes(strategy).map(frame=>[frame,analyzeTf(frame,series[frame])]));
   const t=timeframes[strategy.trendTimeframe];const c=timeframes[strategy.confirmationTimeframe];const e=timeframes[strategy.entryTimeframe];const trigger=strategy.triggerTimeframe?timeframes[strategy.triggerTimeframe]:e;
   const directional=layers.filter(layer=>['MACRO','TREND','CONFIRMATION'].includes(layer.role)).map(layer=>timeframes[layer.timeframe].bias);
@@ -108,5 +110,5 @@ export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile
   const timeframeBiases=Object.fromEntries(Object.entries(timeframes).map(([frame,value])=>[frame,value.bias]));
   const layerAnalysis=layers.map(layer=>{const layerRules=(strategy.rules??[]).filter(rule=>rule.enabled&&rule.timeframeRole===layer.role&&(rule.evaluationMode??'AUTOMATIC')==='AUTOMATIC').map(rule=>normalizeEvidenceId(rule.ruleKey)).filter(id=>(DETECTOR_EVIDENCE_IDS as readonly string[]).includes(id));const confirmedEvidence=layerRules.filter(id=>evidence[id]?.value);return {...layer,bias:timeframes[layer.timeframe].bias,confirmedEvidence,missingEvidence:layerRules.filter(id=>!confirmedEvidence.includes(id)),confidence:layerRules.length?Math.round(confirmedEvidence.length/layerRules.length*100):null}});
   const readinessComponents={mandatoryScore:liveDna.readiness.percentage??0,optionalScore:0,alignmentScore:0,contradictionPenalty:0};
-  return {status,analysisStatus:status,instrument,timeframe:strategy.confirmationTimeframe,strategyId:strategy.id??null,strategySchemaVersion:strategy.engineVersion??((strategy.rules??[]).length?2:1),methodologyIds,primaryMethodology:methodologyIds[0]??strategy.preferredSetups?.[0]??null,provider,providerSymbol:normalizedProviderSymbol,calculatedAt:new Date().toISOString(),latestCandleTimestamp,liveAnalysisConfidence:liveDna.readiness.percentage,strategyConfidenceThreshold:strategy.aiBehavior?.confidenceThreshold??strategy.waitScore,setupReadiness:liveDna.readiness,tradingDnaReport:liveDna.report,detectedTimeframes:strategyTimeframes(strategy),layerAnalysis,timeframeBiases,h4Bias:t.bias,h1Bias:c.bias,timeframeAligned:aligned,timeframes,suggestedDirection:direction,direction,setupType:sweep&&bos?'Liquidity Sweep + ChoCH + BoS':fvg?'FVG Retest':aligned?'Continuation':'Unclear',evidence,breakdown:scored.breakdown,components:readinessComponents,candidates:status==='VALID_ANALYSIS'?candidates:[],warnings,summary,detectorDisplayItems};
+  return {status,analysisStatus:status,instrument,timeframe:strategy.confirmationTimeframe,strategyId:strategy.id??null,strategySchemaVersion:strategy.engineVersion??((strategy.rules??[]).length?2:1),methodologyIds,primaryMethodology:methodologyIds[0]??strategy.preferredSetups?.[0]??null,provider,providerSymbol:normalizedProviderSymbol,calculatedAt:new Date(analysisTimeMs).toISOString(),latestCandleTimestamp,liveAnalysisConfidence:liveDna.readiness.percentage,strategyConfidenceThreshold:strategy.aiBehavior?.confidenceThreshold??strategy.waitScore,setupReadiness:liveDna.readiness,tradingDnaReport:liveDna.report,detectedTimeframes:strategyTimeframes(strategy),layerAnalysis,timeframeBiases,h4Bias:t.bias,h1Bias:c.bias,timeframeAligned:aligned,timeframes,suggestedDirection:direction,direction,setupType:sweep&&bos?'Liquidity Sweep + ChoCH + BoS':fvg?'FVG Retest':aligned?'Continuation':'Unclear',evidence,breakdown:scored.breakdown,components:readinessComponents,candidates:status==='VALID_ANALYSIS'?candidates:[],warnings,summary,detectorDisplayItems};
 }

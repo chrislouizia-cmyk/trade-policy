@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { createBacktestRun, freezeStrategyForBacktest, getBacktestPlanCodeForUser } from '@/lib/server/backtesting';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
+import { loadStrategyById } from '@/lib/server/active-strategy';
+import { isSupportedInstrument } from '@/lib/instrument-registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,22 +43,14 @@ export async function POST(request: Request) {
     }
 
     const payload = parsed.data;
-    const { data: strategy, error: strategyError } = await supabase
-      .from('strategy_profiles')
-      .select('*')
-      .eq('id', payload.strategyProfileId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (strategyError) {
-      return apiError('STRATEGY_LOOKUP_FAILED', strategyError.message, 500);
+    const strategy = await loadStrategyById(supabase, user.id, payload.strategyProfileId);
+    if (!isSupportedInstrument(payload.instrument)) {
+      return apiError('BACKTEST_INSTRUMENT_UNSUPPORTED', `Backtesting is not available for ${payload.instrument}.`, 400);
     }
-
-    if (!strategy) {
-      return apiError('STRATEGY_NOT_FOUND', 'Strategy not found or not owned by this user.', 404);
+    if (!strategy.instruments.includes(payload.instrument)) {
+      return apiError('BACKTEST_INSTRUMENT_NOT_IN_STRATEGY', `${payload.instrument} is not enabled for this strategy.`, 400);
     }
-
-    const frozen = freezeStrategyForBacktest(strategy as any);
+    const frozen = freezeStrategyForBacktest(strategy);
     const planCode = await getBacktestPlanCodeForUser(user.id);
 
     const run = await createBacktestRun({

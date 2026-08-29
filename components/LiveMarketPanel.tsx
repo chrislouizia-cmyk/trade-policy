@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState, useRef } from 'react';
 import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 
@@ -38,8 +38,13 @@ export default function LiveMarketPanel({
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
+  const analysisContextRef = useRef('');
 
-  useEffect(()=>{setAnalysis(null);setError('');},[selectedInstrument,strategy.id]);
+  useEffect(()=>{
+    analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
+    setAnalysis(null);
+    setError('');
+  },[selectedInstrument,strategy.id,strategyRevisionId]);
 
   useEffect(() => {
     if (!strategy.instruments.includes(selectedInstrument)) {
@@ -76,6 +81,7 @@ export default function LiveMarketPanel({
     const timeout=window.setTimeout(()=>controller.abort(),25_000);
     try {
       const requestKey=crypto.randomUUID();
+      const requestContextKey = `${strategy.id}:${strategyRevisionId}:${selectedInstrument}`;
       const response = await fetch('/api/market/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json','Idempotency-Key':requestKey },
@@ -96,6 +102,17 @@ export default function LiveMarketPanel({
       }
 
       if(!result||typeof result!=='object')throw new Error('invalid-response');
+      if (analysisContextRef.current !== requestContextKey) {
+        return;
+      }
+      const appliedStrategyId = (result as any)?.strategyApplied?.id ?? (result as any)?.strategyId ?? null;
+      if (appliedStrategyId && appliedStrategyId !== strategy.id) {
+        return;
+      }
+      if ((result as any)?.instrument && (result as any).instrument !== selectedInstrument) {
+        return;
+      }
+
       setAnalysis(result as ChartAnalysis);
       onApply(result as ChartAnalysis);
     } catch(error) {

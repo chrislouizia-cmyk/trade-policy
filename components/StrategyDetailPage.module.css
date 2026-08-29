@@ -1,0 +1,118 @@
+.detailPanel {
+  width: 100%;
+  height: 560px;
+  min-height: 560px;
+  max-height: 560px;
+  max-width: none;
+  box-sizing: border-box;
+}
+.tabPanel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+.tabPanel > * { width:100%; min-width:0; box-sizing:border-box; }
+.reportCard { width:100%; max-width:none; min-width:0; }
+.reportHeader { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.statusPill { display:inline-flex; align-items:center; border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:7px 10px; font-size:11px; font-weight:700; letter-spacing:.06em; }
+.reportNotice { border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:14px; background:rgba(255,255,255,.03); }
+.reportMetrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:18px 0; }
+.reportMetrics > div { border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; background:rgba(255,255,255,.025); }
+.reportMetrics small,.reportMetrics strong { display:block; }.reportMetrics small { opacity:.58; margin-bottom:6px; }.reportMetrics strong { font-size:20px; }
+.reportSummary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:22px; }
+.reportSummary > div { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid rgba(255,255,255,.07); padding:9px 4px; font-size:12px; }.reportSummary span { opacity:.58; }
+.tradeHistory { border-top:1px solid rgba(255,255,255,.08); padding-top:18px; margin-top:6px; margin-bottom:18px; }.tradeHistoryHeader { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }.tradeHistoryHeader h4 { margin:0; }.tradeHistoryHeader span { opacity:.55; font-size:12px; }
+.tradeRows { display:grid; gap:7px; }.tradeRow { display:grid; grid-template-columns:42px 72px minmax(120px,1.2fr) repeat(4,minmax(90px,1fr)); gap:10px; align-items:center; padding:10px 11px; border:1px solid rgba(255,255,255,.07); border-radius:11px; background:rgba(255,255,255,.02); font-size:11px; }.positive { color:#6fe5a7; }.negative { color:#ef777b; }
+@media (max-width:900px) { .detailPanel { min-height:560px; }.tabPanel { min-height:500px; max-height:none; }.reportMetrics,.reportSummary { grid-template-columns:repeat(2,minmax(0,1fr)); }.tradeRow { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+.tabPanel :global(.strategy-detail-view),
+.tabPanel :global(.strategy-detail-backtests-stack),
+.tabPanel :global(.strategy-detail-section-card),
+.tabPanel :global(.strategy-detail-grid) {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  align-self: stretch !important;
+}
+
+/* Dedicated Backtest Report modal */
+.reportModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(3, 8, 18, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.reportModalShell {
+  position: relative;
+  width: min(1180px, 96vw);
+  height: min(860px, 92vh);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  background: #0b1422;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+}
+
+.reportModalCard {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  padding: 34px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  scroll-behavior: smooth;
+}
+
+.reportModalClose {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(10, 20, 34, 0.92);
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reportModalClose:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 760px) {
+  .reportModalBackdrop {
+    padding: 10px;
+  }
+
+  .reportModalShell {
+    width: 100%;
+    height: 95vh;
+    border-radius: 18px;
+  }
+
+  .reportModalCard {
+    padding: 24px 16px 32px !important;
+  }
+}
