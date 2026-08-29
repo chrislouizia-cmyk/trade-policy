@@ -2,11 +2,15 @@ import type { Candle } from '@/lib/market-analysis';
 
 const MARKET_DATA_TIMEOUT_MS = 12_000;
 
-const intervalMap: Record<string, string> = {
+export const MARKET_DATA_INTERVALS = Object.freeze({
   M1: '1min', M3: '3min', M5: '5min', M15: '15min', M30: '30min',
   H1: '1h', H2: '2h', H4: '4h', H6: '6h', H8: '8h', H12: '12h',
   D1: '1day', W1: '1week', MN: '1month',
-};
+} as const);
+
+export function isMarketDataTimeframe(value: string): value is keyof typeof MARKET_DATA_INTERVALS {
+  return value in MARKET_DATA_INTERVALS;
+}
 
 export function providerSymbol(symbol: string): string {
   const clean = symbol.trim().toUpperCase();
@@ -48,18 +52,28 @@ async function request(params: Record<string, string>) {
 }
 
 export async function fetchSeries(symbol: string, timeframe: string, outputsize = 120): Promise<Candle[]> {
-  if (!intervalMap[timeframe]) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
+  if (!isMarketDataTimeframe(timeframe)) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
   const json = await request({
     endpoint: 'time_series', symbol: providerSymbol(symbol),
-    interval: intervalMap[timeframe],
+    interval: MARKET_DATA_INTERVALS[timeframe],
     outputsize: String(outputsize), order: 'ASC',
   });
   if (!Array.isArray(json.values) || json.values.length === 0) throw new Error(`No market data returned for ${symbol} ${timeframe}.`);
-  const candles = json.values.map((item: any) => ({
-    datetime: item.datetime, open: Number(item.open), high: Number(item.high),
+  return normalizeTwelveDataCandles(json.values, symbol, timeframe);
+}
+
+export function normalizeTwelveDataCandles(values: unknown[], symbol = 'instrument', timeframe = 'timeframe'): Candle[] {
+  const candles = values.map((value) => {
+    const item = value as Record<string, unknown>;
+    const timestamp = String(item.datetime ?? '').trim().replace(' ', 'T');
+    const datetime = timestamp && Number.isFinite(Date.parse(timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`))
+      ? new Date(Date.parse(timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`)).toISOString()
+      : '';
+    return { datetime, open: Number(item.open), high: Number(item.high),
     low: Number(item.low), close: Number(item.close),
     volume: item.volume == null ? undefined : Number(item.volume),
-  }));
+    };
+  });
   const malformed = candles.some((candle: Candle) =>
     typeof candle.datetime !== 'string' || !candle.datetime
     || ![candle.open, candle.high, candle.low, candle.close].every(Number.isFinite)
@@ -69,6 +83,16 @@ export async function fetchSeries(symbol: string, timeframe: string, outputsize 
   );
   if (malformed) throw new Error(`Market data for ${symbol} ${timeframe} is malformed.`);
   return candles;
+}
+
+export async function fetchSeriesRange(symbol: string, timeframe: string, from: string, to: string): Promise<Candle[]> {
+  if (!isMarketDataTimeframe(timeframe)) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
+  const json = await request({
+    endpoint: 'time_series', symbol: providerSymbol(symbol), interval: MARKET_DATA_INTERVALS[timeframe],
+    start_date: new Date(from).toISOString(), end_date: new Date(to).toISOString(), outputsize: '5000', order: 'ASC', timezone: 'UTC',
+  });
+  if (!Array.isArray(json.values) || json.values.length === 0) throw new Error(`No market data returned for ${symbol} ${timeframe}.`);
+  return normalizeTwelveDataCandles(json.values, symbol, timeframe);
 }
 
 export async function fetchPrice(symbol: string): Promise<number> {

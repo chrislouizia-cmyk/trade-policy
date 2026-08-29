@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+
+import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
+import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
+import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry } from '../lib/position-geometry.ts';
+
+const candidate = { id: 'candidate-1', direction: 'BUY' as const, entryLow: 100, entryHigh: 100, stopLoss: 98, takeProfit: 104, rr: 2, status: 'READY' as const, rationale: 'fixture' };
+
+test('candle request validates and normalizes instrument, timeframe, and range', () => {
+  const result = parseMarketCandleRequest({ instrument: 'gbpusd', timeframe: 'h1', from: '2025-01-01T00:00:00.000Z', to: '2025-01-02T00:00:00.000Z' });
+  assert.deepEqual(result, { ok: true, value: { instrument: 'GBPUSD', timeframe: 'H1', from: '2025-01-01T00:00:00.000Z', to: '2025-01-02T00:00:00.000Z' } });
+  assert.equal(parseMarketCandleRequest({ instrument: 'UNKNOWN', timeframe: 'H1', from: '2025-01-01T00:00:00.000Z', to: '2025-01-02T00:00:00.000Z' }).ok, false);
+  assert.equal(parseMarketCandleRequest({ instrument: 'GBPUSD', timeframe: 'H7', from: '2025-01-01T00:00:00.000Z', to: '2025-01-02T00:00:00.000Z' }).ok, false);
+  assert.equal(parseMarketCandleRequest({ instrument: 'GBPUSD', timeframe: 'H1', from: '2025-01-02T00:00:00.000Z', to: '2025-01-01T00:00:00.000Z' }).ok, false);
+});
+
+test('Twelve Data candles normalize deterministically to UTC numeric OHLC', () => {
+  assert.deepEqual(normalizeTwelveDataCandles([{ datetime: '2025-01-01 12:00:00', open: '1', high: '3', low: '0.5', close: '2', volume: '9' }], 'GBPUSD', 'H1'), [{ datetime: '2025-01-01T12:00:00.000Z', open: 1, high: 3, low: 0.5, close: 2, volume: 9 }]);
+  assert.throws(() => normalizeTwelveDataCandles([{ datetime: 'bad', open: 1, high: 3, low: 0.5, close: 2 }]), /malformed/);
+});
+
+test('candidate creates a proposed controlled overlay model', () => {
+  const model = proposedPositionFromCandidate('GBPUSD', candidate)!;
+  assert.equal(model.status, 'PROPOSED');
+  assert.deepEqual(model.currentGeometry, { instrument: 'GBPUSD', direction: 'BUY', entry: 100, stopLoss: 98, takeProfit: 104 });
+  assert.equal(model.selectedCandidateId, 'candidate-1');
+});
+
+test('controlled geometry edits update the overlay and record edited fields', () => {
+  const model = updateProposedGeometry(proposedPositionFromCandidate('GBPUSD', candidate)!, { entry: 101, takeProfit: 105 });
+  assert.equal(model.currentGeometry.entry, 101);
+  assert.deepEqual(model.editedFields, ['entry', 'takeProfit']);
+  assert.equal(model.geometryEdited, true);
+});
+
+test('R:R calculation supports valid long and short geometry', () => {
+  assert.equal(assessPositionGeometry({ instrument: 'GBPUSD', direction: 'BUY', entry: 100, stopLoss: 98, takeProfit: 106 }).rr, 3);
+  assert.equal(assessPositionGeometry({ instrument: 'GBPUSD', direction: 'SELL', entry: 100, stopLoss: 102, takeProfit: 94 }).rr, 3);
+});
+
+test('invalid long and short geometry never fabricates R:R', () => {
+  assert.deepEqual(assessPositionGeometry({ instrument: 'GBPUSD', direction: 'BUY', entry: 100, stopLoss: 101, takeProfit: 104 }), { valid: false, rr: null, reason: 'Long setup requires Stop Loss < Entry < Take Profit.' });
+  assert.deepEqual(assessPositionGeometry({ instrument: 'GBPUSD', direction: 'SELL', entry: 100, stopLoss: 99, takeProfit: 95 }), { valid: false, rr: null, reason: 'Short setup requires Take Profit < Entry < Stop Loss.' });
+});
+
+test('activation freezes accepted geometry and authoritative identities', () => {
+  const proposed = updateProposedGeometry(proposedPositionFromCandidate('GBPUSD', candidate)!, { entry: 101 });
+  const active = activatePositionOverlay(proposed, { activeTradeId: 'trade-1', tradeRecordId: 'record-1', acceptedAt: '2025-01-01T00:00:00.000Z' });
+  assert.equal(active.status, 'ACTIVE');
+  assert.deepEqual(active.acceptedGeometry, proposed.currentGeometry);
+  assert.equal(active.activeTradeId, 'trade-1');
+});
+
+test('proposal provenance preserves original and accepted geometry', () => {
+  const proposed = updateProposedGeometry(proposedPositionFromCandidate('GBPUSD', candidate)!, { entry: 101, takeProfit: 107 });
+  const provenance = positionOverlayProvenance(proposed, '2025-01-01T00:00:00.000Z');
+  assert.equal(provenance.originalProposedGeometry.entry, 100);
+  assert.equal(provenance.acceptedGeometry.entry, 101);
+  assert.equal(provenance.geometryEdited, true);
+  assert.deepEqual(provenance.editedFields, ['entry', 'takeProfit']);
+});
+
+test('controlled chart owns candles, coordinates, overlays, clicks, and switching inputs', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  const panel = fs.readFileSync('components/LiveMarketPanel.tsx', 'utf8');
+  const legacy = fs.readFileSync('components/TradingViewChart.tsx', 'utf8');
+  assert.match(chart, /createChart/); assert.match(chart, /CandlestickSeries/); assert.match(chart, /BaselineSeries/);
+  assert.match(chart, /priceToCoordinate/); assert.match(chart, /subscribeClick/); assert.match(chart, /time:/);
+  assert.match(panel, /chartTimeframe/); assert.match(panel, /selectedInstrument/); assert.doesNotMatch(legacy, /iframe/);
+});
+
+test('candle endpoint is authenticated and has no analysis or billing side effects', () => {
+  const route = fs.readFileSync('app/api/market/candles/route.ts', 'utf8');
+  assert.match(route, /auth\.getUser/); assert.match(route, /parseMarketCandleRequest/); assert.match(route, /fetchSeriesRange/);
+  assert.doesNotMatch(route, /reserveAnalysis|finalizeAnalysis|buildLiveAnalysis|strategy_profiles/);
+});
+
+test('acceptance preserves authoritative take path and never inserts active trades client-side', () => {
+  const validator = fs.readFileSync('components/TradeValidator.tsx', 'utf8');
+  assert.match(validator, /fetch\('\/api\/trades\/take'/);
+  assert.doesNotMatch(validator, /from\('active_trades'\)\.insert/);
+  assert.match(validator, /activatePositionOverlay/);
+  assert.match(validator, /strategyRevisionId:activeStrategyRevisionId/);
+});
+
+test('server persists explicit revision and immutable overlay provenance', () => {
+  const route = fs.readFileSync('app/api/trades/take/route.ts', 'utf8');
+  assert.match(route, /p_strategy_revision_id: body\.strategyRevisionId\.trim\(\)/);
+  assert.match(route, /positionOverlay: positionOverlaySnapshot/);
+  assert.match(route, /acceptedGeometry/); assert.match(route, /originalProposedGeometry/);
+  assert.doesNotMatch(route, /strategySnapshot\?\.revisionId/);
+});

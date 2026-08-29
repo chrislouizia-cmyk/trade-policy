@@ -3,8 +3,9 @@
 import { type ReactNode, useEffect, useState, useRef } from 'react';
 import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
+import type { PositionOverlayModel } from '@/lib/position-geometry';
 
-import {strategyTimeframeContext} from '@/lib/strategy-timeframes';
+import {strategyTimeframeContext, strategyTimeframes} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 
 const scanStages = [
@@ -22,6 +23,7 @@ export default function LiveMarketPanel({
   selectedInstrument,
   onInstrumentChange,
   decisionContent,
+  positionOverlay,
   strategyLoading = false,
 }: {
   strategy: StrategyProfile;
@@ -33,11 +35,14 @@ export default function LiveMarketPanel({
   selectedInstrument: Instrument;
   onInstrumentChange: (instrument: Instrument) => void;
   decisionContent?: ReactNode;
+  positionOverlay: PositionOverlayModel | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
+  const availableTimeframes = strategyTimeframes(strategy);
+  const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
   const analysisContextRef = useRef('');
 
   useEffect(()=>{
@@ -45,6 +50,10 @@ export default function LiveMarketPanel({
     setAnalysis(null);
     setError('');
   },[selectedInstrument,strategy.id,strategyRevisionId]);
+
+  useEffect(() => {
+    if (!availableTimeframes.includes(chartTimeframe)) setChartTimeframe(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
+  }, [availableTimeframes, chartTimeframe, strategy.entryTimeframe]);
 
   useEffect(() => {
     if (!strategy.instruments.includes(selectedInstrument)) {
@@ -160,7 +169,11 @@ export default function LiveMarketPanel({
         </div>
       )}
 
-      <TradingViewChart instrument={selectedInstrument} />
+      <div className="market-chart-toolbar">
+        <strong>{selectedInstrument}</strong>
+        <label>Timeframe<select value={chartTimeframe} onChange={(event) => setChartTimeframe(event.target.value)}>{availableTimeframes.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>
+      </div>
+      <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
       {analysis ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
       {error && <div className="error analysis-error" role="alert"><strong>No decision was produced.</strong><p>{error}</p><small>Failed market-analysis attempts are released and do not consume monthly usage. Your selected instrument and trading rules are unchanged.</small><button type="button" onClick={scan}>Retry analysis</button></div>}

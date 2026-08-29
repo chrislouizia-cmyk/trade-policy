@@ -27,6 +27,7 @@ import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation'
 import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
+import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -99,7 +100,6 @@ function applyDefaultTradeFormValues(
   },
 ) {
   if (!form) return;
-  const candidate = analysis?.candidates?.[0];
   const setValue = (name: string, value: string | number | null | undefined) => {
     const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
     if (!field) return;
@@ -112,12 +112,7 @@ function applyDefaultTradeFormValues(
   const existingRisk = (form.elements.namedItem('riskPercent') as HTMLInputElement | null)?.value;
   const existingTradesToday = (form.elements.namedItem('tradesToday') as HTMLInputElement | null)?.value;
 
-  setValue('instrument', analysis?.instrument ?? selectedInstrument ?? strategy.instruments[0] ?? 'XAUUSD');
   setValue('analysisId', analysis?.analysisId ?? '');
-  setValue('direction', candidate?.direction ?? 'BUY');
-  setValue('entry', candidate?.entryLow ?? candidate?.entryHigh ?? 0);
-  setValue('stopLoss', candidate?.stopLoss ?? 0);
-  setValue('takeProfit', candidate?.takeProfit ?? 0);
   setValue('accountBalance', selectedAccount?.currentBalance ?? (existingBalance ? Number(existingBalance) : accountId ? 0 : 0));
   setValue('riskPercent', existingRisk ? Number(existingRisk) : (strategy.maximumRiskPercent ?? 0.5));
   setValue('tradesToday', existingTradesToday ? Number(existingTradesToday) : 0);
@@ -149,6 +144,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [activeStrategyRevisionId,setActiveStrategyRevisionId]=useState<string|null>(null);
   const [strategyApplying,setStrategyApplying]=useState(false);
   const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
+  const [positionOverlay,setPositionOverlay]=useState<PositionOverlayModel|null>(null);
   const [accounts,setAccounts]=useState<TradingAccount[]>([]);
   const [accountId,setAccountId]=useState('');
   const [typedMessage,setTypedMessage]=useState('');
@@ -325,12 +321,29 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     setReportSave({status:'idle'});reportIdempotencyRef.current='';
     setAnalysis(data);
     syncEvidenceState(data);
+    const candidate = data.candidates.find((item) => item.status === 'READY') ?? data.candidates[0];
+    setPositionOverlay(candidate ? proposedPositionFromCandidate(data.instrument, candidate) : null);
+  }
+
+  function changeGeometry(patch: Partial<PositionGeometry>) {
+    setPositionOverlay((current) => current ? updateProposedGeometry(current, patch) : current);
+    setResult(null);
+    setLastAnalysisInput(null);
+    setActivationSuccess(null);
+  }
+
+  function changeInstrument(instrument: Instrument) {
+    setSelectedInstrument(instrument);
+    if (positionOverlay?.currentGeometry.instrument !== instrument) setPositionOverlay(null);
   }
 
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();
     console.log('submit:start', { reviewActive, analysis: analysis?.analysisId, selectedAccount: selectedAccount?.id, accountId, strategy: strategy.id });
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
+    if (!positionOverlay) { setError('Select a complete setup candidate before running the final risk check.'); return; }
+    const geometryAssessment = assessPositionGeometry(positionOverlay.currentGeometry);
+    if (!geometryAssessment.valid) { setError(geometryAssessment.reason ?? 'The proposed setup geometry is invalid.'); return; }
     applyDefaultTradeFormValues(e.currentTarget, { analysis, selectedAccount, accountId, strategy, selectedInstrument });
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
@@ -366,7 +379,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response.');setResult(data as ValidationResult);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data as any).manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
   }
 
-  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; setSelectedInstrument(analysis.instrument as Instrument); set('entry',c.entryLow??c.entryHigh); set('stopLoss',c.stopLoss); set('takeProfit',c.takeProfit); const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction; setCandidateApplied('Candidate applied.');}
+  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return;setSelectedInstrument(analysis.instrument as Instrument);setPositionOverlay(proposedPositionFromCandidate(analysis.instrument,c));setResult(null);setLastAnalysisInput(null);setCandidateApplied('Candidate applied.');}
   function closeTradeActionModal(){setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null,confirmed:false});setTradeActionError('');}
   function setTradeActionFailure(message:string){setTradeActionError(message);setError(message);}
   function getFieldValue(name:string){const element=document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null; return element?.value ?? '';}
@@ -378,6 +391,10 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   async function saveTakenTrade(mode:'ACTIVATE'|'OVERRIDE'){
     if(tradeSubmissionRef.current)return;
     if(!result){setTradeActionFailure('Run the final risk check before recording the trade.');return;}
+    if(!activeStrategyRevisionId){setTradeActionFailure('The active strategy revision is unavailable. Reload the strategy before recording the trade.');return;}
+    if(!positionOverlay||positionOverlay.status!=='PROPOSED'){setTradeActionFailure('Select a proposed setup before recording the trade.');return;}
+    const geometryAssessment=assessPositionGeometry(positionOverlay.currentGeometry);
+    if(!geometryAssessment.valid||geometryAssessment.rr==null){setTradeActionFailure(geometryAssessment.reason??'The proposed setup geometry is invalid.');return;}
     const isOverride=mode==='OVERRIDE';
     const isReady=authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
     if(!isOverride && !isReady){setTradeActionFailure(authorizationEligibility?.message ?? 'This setup is not currently eligible for final authorization.');return;}
@@ -390,11 +407,12 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     tradeSubmissionRef.current=true;
     setSavingTrade(true);setError('');setTradeActionError('');setActivationSuccess(null);
     try{
+      const acceptedAt=new Date().toISOString();
       const originalReason=result.vetoes[0]||result.observations[0]||(result.verdict==='AUTHORIZED'?'All configured authorization rules passed.':'The setup did not pass final authorization.');
       const balanceAtEntry=selectedAccount?.currentBalance??Number(get('accountBalance'));
       const riskAmount=balanceAtEntry*(Number(get('riskPercent'))/100);
       const overrideConditions = authorizationEligibility?.missingMandatoryConfirmations?.map((item)=>({label:item.label,reason:item.reason})) ?? [];
-      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,highImpactNews:Boolean(autoChecks.highImpactNews),instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:isOverride,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason,overrideConditions,activationMode:isOverride?'OVERRIDE':'READY',analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:reportSave.reportId ?? undefined,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
+      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyRevisionId:activeStrategyRevisionId,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,positionOverlay:positionOverlayProvenance(positionOverlay,acceptedAt),highImpactNews:Boolean(autoChecks.highImpactNews),instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:geometryAssessment.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:isOverride,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason,overrideConditions,activationMode:isOverride?'OVERRIDE':'READY',analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:reportSave.reportId ?? undefined,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
       const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;
       if(!response.ok){
         const payload = data as { error?: unknown; rejection?: { reasonCode?: string; message?: string; state?: string } } | null;
@@ -404,8 +422,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         });
         throw new Error(message);
       }
-      const activation=data as {trade?:{id?:unknown};lifecycleStatus?:unknown;activeTradeCreated?:unknown}|null;
+      const activation=data as {trade?:{id?:unknown};tradeRecordId?:unknown;acceptedAt?:unknown;lifecycleStatus?:unknown;activeTradeCreated?:unknown}|null;
       if(!activation||typeof activation.trade?.id!=='string'||activation.lifecycleStatus!=='ACTIVE'||activation.activeTradeCreated!==true)throw new Error('Trade Police could not confirm an active trade was created. The override was not completed; please try again.');
+      setPositionOverlay(current=>current?activatePositionOverlay(current,{activeTradeId:activation.trade!.id as string,tradeRecordId:typeof activation.tradeRecordId==='string'?activation.tradeRecordId:null,acceptedAt:typeof activation.acceptedAt==='string'?activation.acceptedAt:acceptedAt}):current);
       await loadHistory();
       setActivationSuccess('Trade added to Manage Trades.');
       closeTradeActionModal();
@@ -505,7 +524,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const hasExecutableSetup = Boolean(explanation && analysis?.status === 'VALID_ANALYSIS' && analysis?.candidates?.length);
   const isAuthorizationEligible = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
   const canTakeAnyway = hasExecutableSetup && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' && ['WAIT','BLOCKED'].includes(authorizationEligibility.state) && result?.overrideEligible === true;
-  const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
+  const geometryAssessment = useMemo(() => positionOverlay ? assessPositionGeometry(positionOverlay.currentGeometry) : { valid: false, rr: null, reason: null }, [positionOverlay]);
+  const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY' && geometryAssessment.valid && positionOverlay?.status === 'PROPOSED';
   const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
   const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
   const activationUiState = useMemo(() => resolveTradeActivationUiState({
@@ -548,7 +568,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={setSelectedInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel}/>
+    <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={positionOverlay}/>
 
     <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
@@ -560,15 +580,15 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Active strategy:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
         <section className="workspace-section"><h3>Instrument and Direction</h3>
         <div className="grid grid-2">
-          <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>setSelectedInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
-          <label>Direction<select name="direction"><option>BUY</option><option>SELL</option></select></label>
+          <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>changeInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
+          <label>Direction<select name="direction" value={positionOverlay?.currentGeometry.direction ?? 'BUY'} onChange={(event)=>changeGeometry({direction:event.target.value as 'BUY'|'SELL'})} disabled={positionOverlay?.status==='ACTIVE'}><option>BUY</option><option>SELL</option></select></label>
         </div>
         </section>
         <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No market read yet. Run the live market analysis so Trade Police can show the next step clearly.</p>:<><p>{analysis.summary}</p>{detectorDisplayItems.length>0&&<details className="detector-review-card"><summary>Automatic detector evidence · {detectorDisplayItems.length}</summary><ul>{detectorDisplayItems.map((item)=><li key={`${item.title}-${item.humanLabel}`}><strong>{item.humanLabel}</strong>{item.timeframe&&<span> · {item.timeframe}</span>}</li>)}</ul></details>}{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')&&!w.startsWith('Automatic detector review required.')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected yet. Try a fresh market read or adjust the strategy rules before asking for a final verdict.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Apply to order ticket</button><button type="button" onClick={()=>saveSuggestion(i)}>Save setup</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
-        <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
-          <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
-          <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
-        </div></section>
+        <section className={`workspace-section ${positionOverlay&&!geometryAssessment.valid?'position-geometry-invalid':''}`} id="position-geometry-fields"><h3>Price</h3><div className="grid price-field-grid">
+          <label>Entry<input name="entry" type="number" step="any" value={positionOverlay?.currentGeometry.entry ?? ''} onChange={(event)=>changeGeometry({entry:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" value={positionOverlay?.currentGeometry.stopLoss ?? ''} onChange={(event)=>changeGeometry({stopLoss:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label>
+          <label>Take profit<input name="takeProfit" type="number" step="any" value={positionOverlay?.currentGeometry.takeProfit ?? ''} onChange={(event)=>changeGeometry({takeProfit:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label>
+        </div>{positionOverlay?<p className={geometryAssessment.valid?'position-geometry-summary':'error'}>{geometryAssessment.valid&&geometryAssessment.rr!=null?`${positionOverlay.status} ${positionOverlay.currentGeometry.direction} · Planned R:R 1:${geometryAssessment.rr.toFixed(2)}`:geometryAssessment.reason}</p>:<p className="muted">Select a setup candidate to populate the position geometry.</p>}</section>
         <section className="workspace-section"><h3>Account and Risk</h3><div className="grid grid-2">
           <label>Trading account<select value={accountId} onChange={e=>setAccountId(e.target.value)}><option value="">Manual balance</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.name} · {account.currency} {account.currentBalance.toLocaleString()}</option>)}</select></label>
           <label>Account balance<input key={selectedAccount?.id||'manual'} name="accountBalance" type="number" defaultValue={selectedAccount?.currentBalance} readOnly={Boolean(selectedAccount)} required/></label>

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "NODE_OPTIONS='--conditions=react-server' node --experimental-strip-types --test tests/*.test.ts",
     "backtest:demo": "node --experimental-strip-types scripts/research/run-backtest-demo.ts",
     "backtest:xauusd-baseline": "node --experimental-strip-types scripts/research/run-xauusd-baseline-research.ts",
     "start": "next start",
@@ -15,9 +15,11 @@
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.2",
     "exceljs": "^4.4.0",
+    "lightweight-charts": "^5.2.1",
     "next": "16.2.9",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "server-only": "^0.0.1",
     "stripe": "^22.4.0",
     "zod": "^3.24.2"
   },

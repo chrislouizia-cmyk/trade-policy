@@ -32,6 +32,27 @@ export async function POST(request: Request) {
     if (!body.instrument || !['BUY','SELL'].includes(body.direction) || typeof body.highImpactNews !== 'boolean' || ![entry,stopLoss,takeProfit,riskPercent,initialRR].every(Number.isFinite)) {
       return NextResponse.json({ error: 'Missing or invalid trade information.' }, { status: 400 });
     }
+    if (typeof body.strategyRevisionId !== 'string' || !body.strategyRevisionId.trim()) {
+      return NextResponse.json({ error: 'The active strategy revision is required.' }, { status: 400 });
+    }
+    const proposed = body.positionOverlay?.originalProposedGeometry as Record<string, unknown> | undefined;
+    const originalValues = proposed ? [Number(proposed.entry), Number(proposed.stopLoss), Number(proposed.takeProfit)] : [];
+    if (!proposed || proposed.instrument !== body.instrument || !['BUY','SELL'].includes(String(proposed.direction)) || !originalValues.every(Number.isFinite)) {
+      return NextResponse.json({ error: 'Original proposed position geometry is required.' }, { status: 400 });
+    }
+    const acceptedAt = new Date().toISOString();
+    const acceptedGeometry = { instrument: body.instrument, direction: body.direction, entry, stopLoss, takeProfit };
+    const editedFields = (['instrument','direction','entry','stopLoss','takeProfit'] as const).filter((field) => proposed[field] !== acceptedGeometry[field]);
+    const positionOverlaySnapshot = {
+      selectedCandidateId: typeof body.positionOverlay?.selectedCandidateId === 'string' ? body.positionOverlay.selectedCandidateId : null,
+      originalProposedGeometry: { instrument: proposed.instrument, direction: proposed.direction, entry: originalValues[0], stopLoss: originalValues[1], takeProfit: originalValues[2] },
+      originalPlannedRR: Number.isFinite(Number(body.positionOverlay?.originalPlannedRR)) ? Number(body.positionOverlay.originalPlannedRR) : null,
+      acceptedGeometry,
+      acceptedPlannedRR: initialRR,
+      geometryEdited: editedFields.length > 0,
+      editedFields,
+      acceptedAt,
+    };
     if(body.tradeRecordId&&typeof body.tradeRecordId==='string')cleanup={supabase,userId:user.id,tradeRecordId:body.tradeRecordId};
 
     const decisionCheck = canActivateTradeFromDecision({
@@ -135,7 +156,7 @@ export async function POST(request: Request) {
       p_strategy_profile_id: body.strategyProfileId ?? null,
       p_strategy_name_at_entry: body.strategyNameAtEntry ?? null,
       p_strategy_version: typeof body.strategySnapshot?.version === 'string' ? body.strategySnapshot.version : (typeof body.strategySnapshot?.engineVersion === 'number' ? String(body.strategySnapshot.engineVersion) : null),
-      p_strategy_revision_id: typeof body.strategySnapshot?.revisionId === 'string' ? body.strategySnapshot.revisionId : null,
+      p_strategy_revision_id: body.strategyRevisionId.trim(),
       p_source_decision_id: typeof body.sourceDecisionId === 'string' ? body.sourceDecisionId : null,
       p_source_report_id: typeof body.sourceReportId === 'string' ? body.sourceReportId : null,
       p_instrument: body.instrument,
@@ -155,7 +176,7 @@ export async function POST(request: Request) {
       p_override_conditions: Array.isArray(body.overrideConditions) ? body.overrideConditions : [],
       p_activation_mode: body.activationMode === 'OVERRIDE' ? 'OVERRIDE' : 'READY',
       p_high_impact_news: Boolean(body.highImpactNews),
-      p_strategy_snapshot: { ...(body.strategySnapshot ?? {}), tradeContext: { highImpactNews: Boolean(body.highImpactNews) } },
+      p_strategy_snapshot: { ...(body.strategySnapshot ?? {}), tradeContext: { ...(body.strategySnapshot?.tradeContext ?? {}), highImpactNews: Boolean(body.highImpactNews), positionOverlay: positionOverlaySnapshot } },
     });
 
     if (response.error) throw response.error;
@@ -172,6 +193,7 @@ export async function POST(request: Request) {
       decisionCheck,
       tradeRecordId: activation.trade_record_id,
       activeTradeId: activation.active_trade_id,
+      acceptedAt,
     });
   } catch (error) {
     if(cleanup&&error&&typeof error==='object'&&'code' in error&&(error as {code?:string}).code==='23505'){
