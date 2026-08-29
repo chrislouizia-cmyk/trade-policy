@@ -6,6 +6,7 @@ import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { loadStrategyById } from '@/lib/server/active-strategy';
 import { isSupportedInstrument } from '@/lib/instrument-registry';
+import { buildHistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +50,15 @@ export async function POST(request: Request) {
     }
     if (!strategy.instruments.includes(payload.instrument)) {
       return apiError('BACKTEST_INSTRUMENT_NOT_IN_STRATEGY', `${payload.instrument} is not enabled for this strategy.`, 400);
+    }
+    const historicalRulePlan = buildHistoricalRulePlan(strategy);
+    if (historicalRulePlan.unsupportedRequiredRules.length) {
+      return apiError(
+        'BACKTEST_RULES_UNSUPPORTED',
+        'One or more required strategy rules do not have a deterministic historical detector.',
+        422,
+        { unsupportedRules: historicalRulePlan.unsupportedRequiredRules },
+      );
     }
     const frozen = freezeStrategyForBacktest(strategy);
     const planCode = await getBacktestPlanCodeForUser(user.id);

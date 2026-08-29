@@ -31,9 +31,11 @@ test('executor uses historical Twelve Data and deterministic Trade Police analys
   assert.match(executor, /OHLC_NO_HISTORICAL_SPREAD_DATA/);
 });
 
-test('unsupported required evidence fails rather than being silently invented', () => {
-  assert.match(executor, /Automated backtesting cannot verify required/);
-  assert.match(executor, /Automatic historical detector not available/);
+test('required evidence uses the frozen canonical historical plan', () => {
+  assert.match(createRoute, /BACKTEST_RULES_UNSUPPORTED/);
+  assert.match(executor, /assertHistoricalRulePlanSupported/);
+  assert.match(executor, /evaluateHistoricalRulePlan/);
+  assert.doesNotMatch(executor, /Automatic historical detector not available/);
 });
 
 test('historical analysis has explicit replay clock without changing live default behavior', () => {

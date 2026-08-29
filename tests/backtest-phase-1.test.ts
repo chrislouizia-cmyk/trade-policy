@@ -98,5 +98,6 @@ test('completed runs are immutable except operational fields and strategy snapsh
   assert.match(migration, /failure_reason text/i);
   assert.match(migration, /created_at timestamptz not null default now\(\)/i);
   assert.match(helper, /strategySnapshotHash: fingerprint/i);
-  assert.match(helper, /strategySnapshotJson: JSON\.parse\(JSON\.stringify\(strategy\)\)/i);
+  assert.match(helper, /strategySnapshot = \{ \.\.\.strategy, historicalRulePlan \}/i);
+  assert.match(helper, /strategySnapshotJson: JSON\.parse\(JSON\.stringify\(strategySnapshot\)\)/i);
 });

@@ -2,18 +2,16 @@ import 'server-only';
 
 import { twelveDataSymbolFor } from '@/lib/instrument-registry';
 
-import { buildLiveAnalysis, DETECTOR_EVIDENCE_IDS, normalizeEvidenceId, type Candle } from '@/lib/market-analysis';
+import { buildLiveAnalysis, type Candle } from '@/lib/market-analysis';
+import { evaluateHistoricalRulePlan } from '@/lib/backtesting/historical-detectors';
+import { assertHistoricalRulePlanSupported, buildHistoricalRulePlan, type HistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
 import type { StrategyProfile } from '@/types/trade';
+import { HISTORICAL_TIMEFRAMES } from '@/lib/backtesting/historical-timeframes';
 
-const FRAME_MINUTES: Record<string, number> = {
-  M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H2: 120, H4: 240, D1: 1440, W1: 10080,
-};
-
-const TWELVE_INTERVAL: Record<string, string> = {
-  M1: '1min', M5: '5min', M15: '15min', M30: '30min', H1: '1h', H2: '2h', H4: '4h', D1: '1day', W1: '1week',
-};
+const FRAME_MINUTES: Record<string, number> = Object.fromEntries(Object.entries(HISTORICAL_TIMEFRAMES).map(([timeframe, capability]) => [timeframe, capability.minutes]));
+const TWELVE_INTERVAL: Record<string, string> = Object.fromEntries(Object.entries(HISTORICAL_TIMEFRAMES).map(([timeframe, capability]) => [timeframe, capability.providerInterval]));
 
 type SimulatedTrade = {
   sequence: number; signal_timestamp: string; entry_timestamp: string; exit_timestamp: string;
@@ -49,6 +47,7 @@ type BacktestDiagnostics = {
   rejected_direction: number;
   rejected_daily_limit: number;
   rejected_invalid_risk_geometry: number;
+  rejected_historical_rules: number;
 };
 
 
@@ -71,19 +70,20 @@ function configuredDirection(strategy: StrategyProfile): 'LONG' | 'SHORT' | 'BOT
   }
 }
 
-function assertBacktestableStrategy(strategy: StrategyProfile) {
-  const enabled = (strategy.rules ?? []).filter((rule) => rule.enabled);
-  const blockingHuman = enabled.filter((rule) => rule.mandatory && (rule.evaluationMode ?? 'AUTOMATIC') !== 'AUTOMATIC');
-  if (blockingHuman.length) {
-    throw new Error(`Automated backtesting cannot verify required ${blockingHuman.map((rule) => `${rule.label} (${rule.evaluationMode})`).join(', ')}. Change those rules to automatic or make them optional before running this backtest.`);
-  }
-  const supported = new Set<string>(DETECTOR_EVIDENCE_IDS);
-  const unsupportedAutomatic = enabled.filter(
-    (rule) => (rule.evaluationMode ?? 'AUTOMATIC') === 'AUTOMATIC' && !supported.has(normalizeEvidenceId(rule.ruleKey)),
-  );
-  if (unsupportedAutomatic.length) {
-    throw new Error(`Automatic historical detector not available for: ${unsupportedAutomatic.map((rule) => rule.label).join(', ')}. The run was not scored and its credit will be released.`);
-  }
+function historicalPlan(strategy: StrategyProfile): HistoricalRulePlan {
+  const frozen = (strategy as StrategyProfile & { historicalRulePlan?: HistoricalRulePlan }).historicalRulePlan;
+  return frozen?.version ? frozen : buildHistoricalRulePlan(strategy);
+}
+
+function historicalFrames(strategy: StrategyProfile, plan: HistoricalRulePlan): string[] {
+  return [...new Set([...strategyTimeframes(strategy), ...plan.rules.flatMap((rule) => rule.timeframes)])];
+}
+
+function historicalWarmupBars(plan: HistoricalRulePlan, timeframe: string): number {
+  const numericParameters = plan.rules
+    .filter((rule) => rule.timeframes.includes(timeframe))
+    .flatMap((rule) => Object.values(rule.parameters).filter((value): value is number => typeof value === 'number' && Number.isFinite(value)));
+  return Math.max(120, ...numericParameters.map((value) => Math.ceil(value) + 10));
 }
 
 function isoWithoutZone(value: number) {
@@ -185,7 +185,8 @@ function buildMetrics(startingBalance: number, trades: SimulatedTrade[]) {
 }
 
 export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyProfile, historical: Record<string, Candle[]>): BacktestExecutionOutput {
-  assertBacktestableStrategy(strategy);
+  const rulePlan = historicalPlan(strategy);
+  assertHistoricalRulePlanSupported(rulePlan);
   const periodStart = Date.parse(run.period_start);
   const requestedPeriodEnd = Date.parse(run.period_end);
   const executionFrame = run.execution_timeframe || strategy.triggerTimeframe || strategy.entryTimeframe;
@@ -193,7 +194,8 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
   const execution = historical[executionFrame];
   if (!executionMinutes || !execution?.length) throw new Error(`Execution timeframe ${executionFrame} has no historical data.`);
 
-  const frames = [...new Set(strategyTimeframes(strategy))];
+  const frames = historicalFrames(strategy, rulePlan);
+  const historyBars = Math.max(...frames.map((frame) => historicalWarmupBars(rulePlan, frame)));
   const availableFrameEnds = frames.map((frame) => {
     const data = historical[frame] ?? [];
     const last = data.at(-1);
@@ -227,6 +229,7 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
     rejected_direction: 0,
     rejected_daily_limit: 0,
     rejected_invalid_risk_geometry: 0,
+    rejected_historical_rules: 0,
   };
   let i = execution.findIndex((candle) => Date.parse(candle.datetime) >= periodStart);
   if (i < 0) i = 0;
@@ -246,7 +249,7 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
       let pointer = pointers[frame] ?? 0;
       while (pointer < data.length && Date.parse(data[pointer]!.datetime) + frameMs <= signalAtMs) pointer += 1;
       pointers[frame] = pointer;
-      const slice = data.slice(Math.max(0, pointer - 120), pointer);
+      const slice = data.slice(Math.max(0, pointer - historyBars), pointer);
       if (slice.length < 25) enough = false;
       series[frame] = slice;
     }
@@ -256,6 +259,13 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
       continue;
     }
     diagnostics.multi_timeframe_context_ready += 1;
+
+    const historicalRules = evaluateHistoricalRulePlan(rulePlan, series, run.instrument);
+    if (!historicalRules.passed) {
+      diagnostics.rejected_historical_rules += 1;
+      i += 1;
+      continue;
+    }
 
     let analysis;
     try {
@@ -275,7 +285,7 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
     }
     diagnostics.ready_candidate_found += 1;
 
-    if (analysis.setupReadiness.state !== 'READY') {
+    if (analysis.setupReadiness.state !== 'READY' && !rulePlan.rules.some((rule) => rule.required)) {
       diagnostics.rejected_setup_not_ready += 1;
       i += 1;
       continue;
@@ -375,6 +385,8 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
         rules: strategy.rules ?? [],
         readiness: analysis.setupReadiness,
         evidence: analysis.evidence,
+        historical_rule_plan: rulePlan,
+        historical_rule_evaluations: historicalRules.evaluations,
       },
       entry_reason: candidate.rationale,
       exit_reason: exitReason,
@@ -422,8 +434,9 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
 
 export async function executeBacktestRun(run: BacktestRun): Promise<BacktestExecutionOutput> {
   const strategy = strategyFromSnapshot(run);
-  assertBacktestableStrategy(strategy);
-  const frames = [...new Set([...strategyTimeframes(strategy), run.execution_timeframe])];
+  const rulePlan = historicalPlan(strategy);
+  assertHistoricalRulePlanSupported(rulePlan);
+  const frames = [...new Set([...historicalFrames(strategy, rulePlan), run.execution_timeframe])];
   const historical: Record<string, Candle[]> = {};
   const periodStart = Date.parse(run.period_start);
   const periodEnd = Date.parse(run.period_end);
@@ -431,7 +444,7 @@ export async function executeBacktestRun(run: BacktestRun): Promise<BacktestExec
   for (const frame of frames) {
     const minutes = FRAME_MINUTES[frame];
     if (!minutes || !TWELVE_INTERVAL[frame]) throw new Error(`Historical backtesting does not yet support timeframe ${frame}.`);
-    const warmupStart = new Date(periodStart - minutes * 60_000 * 60).toISOString();
+    const warmupStart = new Date(periodStart - minutes * 60_000 * historicalWarmupBars(rulePlan, frame)).toISOString();
     historical[frame] = await fetchHistoricalFrame(run.instrument, frame, warmupStart, new Date(periodEnd).toISOString());
   }
   return simulateBacktestFromSeries(run, strategy, historical);

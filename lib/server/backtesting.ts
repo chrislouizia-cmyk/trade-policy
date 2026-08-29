@@ -3,6 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { stableFingerprint } from '@/lib/market-intelligence/serialization/stable-fingerprint';
+import { buildHistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
 import type { BacktestRun, BacktestUsage } from '@/types/backtesting';
 import type { StrategyProfile } from '@/types/trade';
 
@@ -24,11 +25,13 @@ export function resolveBacktestPlanLimit(planCode: string | null | undefined): n
 
 export function freezeStrategyForBacktest(strategy: StrategyProfile) {
   const revisionId = strategyRevisionId(strategy);
-  const fingerprint = stableFingerprint({ strategy });
+  const historicalRulePlan = buildHistoricalRulePlan(strategy);
+  const strategySnapshot = { ...strategy, historicalRulePlan };
+  const fingerprint = stableFingerprint({ strategy: strategySnapshot });
   return {
     strategyRevisionId: revisionId,
     strategySnapshotHash: fingerprint,
-    strategySnapshotJson: JSON.parse(JSON.stringify(strategy)),
+    strategySnapshotJson: JSON.parse(JSON.stringify(strategySnapshot)),
   };
 }
 
