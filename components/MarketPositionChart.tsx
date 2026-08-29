@@ -249,7 +249,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       {Number.isFinite(tooltip.candle.volume) ? <span>Vol {tooltip.candle.volume}</span> : null}
     </div> : null}
     {isInitialLoad ? <div className="market-chart-status">Loading market candles…</div> : null}
-    {!isInitialLoad && error ? <div className="market-chart-inline-message market-chart-error"><span>{error}</span><button type="button" className="chart-retry-btn" onClick={refreshCandles}>Retry</button></div> : null}
+    {!isInitialLoad && error ? <div className="market-chart-inline-message market-chart-error"><span>{error || 'Unable to refresh market data.'}</span><button type="button" className="chart-retry-btn" onClick={refreshCandles}>Retry</button></div> : null}
     {!isInitialLoad && refreshing && !error ? <div className="market-chart-inline-message"><span>Refreshing candles…</span></div> : null}
   </div>;
 }

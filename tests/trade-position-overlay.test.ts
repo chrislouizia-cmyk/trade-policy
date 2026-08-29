@@ -2,9 +2,41 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
+import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
 import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry } from '../lib/position-geometry.ts';
+
+const normalizeMarketCandlesError = (value: unknown, fallback: string): string => {
+  const payload = value && typeof value === 'object' && 'error' in value ? value.error ?? value : value;
+  const message = (() => {
+    if (!payload || typeof payload !== 'object') return fallback;
+    if (typeof payload === 'string') return payload;
+    const candidate = payload as { error?: unknown; message?: unknown };
+    const error = ('error' in payload ? (payload as { error?: unknown }).error ?? payload : payload) as unknown;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') return (error as { message: string }).message;
+    if (typeof candidate.message === 'string') return candidate.message;
+    return fallback;
+  })();
+  return typeof message === 'string' && message.trim() ? message : fallback;
+};
+
+const resolveCandlesFetchOutcome = (previousCandles: Candle[], payload: unknown, manualRefresh: boolean) => {
+  const fallback = manualRefresh ? 'Unable to refresh market data.' : 'Unable to load market data.';
+  if (payload && typeof payload === 'object' && Array.isArray((payload as { candles?: Candle[] }).candles)) {
+    return {
+      candles: [...((payload as { candles: Candle[] }).candles)],
+      provider: (payload as { provider?: string | null }).provider ?? null,
+      error: '',
+    };
+  }
+  return {
+    candles: manualRefresh ? [...previousCandles] : [],
+    provider: null,
+    error: normalizeMarketCandlesError(payload, fallback),
+  };
+};
 
 const candidate = { id: 'candidate-1', direction: 'BUY' as const, entryLow: 100, entryHigh: 100, stopLoss: 98, takeProfit: 104, rr: 2, status: 'READY' as const, rationale: 'fixture' };
 
@@ -93,6 +125,38 @@ test('manual refresh is limited to candles and preserves overlay state and retry
   assert.match(hook, /\/api\/market\/candles\?/);
   assert.doesNotMatch(hook, /\/api\/market\/analyze/);
   assert.match(hook, /inFlightRef|manualRefresh/);
+});
+
+test('manual refresh failures keep prior candles, successful retries replace them, and structured payloads stay readable', () => {
+  const previous = [{ datetime: '2025-01-01T00:00:00.000Z', open: 1, high: 2, low: 0.5, close: 1.5, volume: 42 }];
+  const failed = resolveCandlesFetchOutcome(previous, { error: { message: 'Market feed timed out.' } }, true);
+  assert.deepEqual(failed.candles, previous);
+  assert.equal(failed.error, 'Market feed timed out.');
+  assert.doesNotMatch(failed.error, /\[object Object\]/);
+
+  const replacement = [{ datetime: '2025-01-02T00:00:00.000Z', open: 2, high: 3, low: 1.5, close: 2.5, volume: 90 }];
+  const succeeded = resolveCandlesFetchOutcome(previous, { candles: replacement, provider: 'Twelve Data' }, true);
+  assert.deepEqual(succeeded.candles, replacement);
+  assert.equal(succeeded.error, '');
+  assert.equal(succeeded.provider, 'Twelve Data');
+
+  const structured = normalizeMarketCandlesError({ error: { message: 'Quote service unavailable.' } }, 'Unable to refresh market data.');
+  assert.equal(structured, 'Quote service unavailable.');
+  assert.doesNotMatch(structured, /\[object Object\]/);
+  assert.doesNotMatch(structured, /error: \{ message:/);
+  assert.equal(normalizeMarketCandlesError({ message: 'API failed.' }, 'fallback'), 'API failed.');
+});
+
+test('successful retry clears chart error state and remains candle-only', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
+  assert.match(chart, /Unable to refresh market data\./);
+  assert.match(chart, /Retry/);
+  assert.match(hook, /setError\(''\)/);
+  assert.match(hook, /readApiResponse\(response\)/);
+  assert.match(hook, /apiErrorMessage\(payload, fallback\)/);
+  assert.doesNotMatch(chart, /\[object Object\]/);
+  assert.doesNotMatch(hook, /\/api\/market\/analyze/);
 });
 
 test('controlled chart owns candles, coordinates, overlays, clicks, and switching inputs', () => {

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Candle } from '@/lib/market-analysis';
+import { apiErrorMessage, readApiResponse } from '../lib/api-error.ts';
+import type { Candle } from '../lib/market-analysis.ts';
 
 export type MarketSummary = {
   latest: Candle | null;
@@ -65,6 +66,30 @@ export function deriveMarketSummary(candles: readonly Candle[], instrument: stri
   };
 }
 
+export function normalizeMarketCandlesError(value: unknown, fallback: string): string {
+  const payload = value && typeof value === 'object' && 'error' in value ? (value as { error?: unknown }).error ?? value : value;
+  const message = apiErrorMessage(payload, fallback);
+  if (typeof message === 'string' && message.trim()) return message;
+  return fallback;
+}
+
+export function resolveCandlesFetchOutcome(previousCandles: readonly Candle[], payload: unknown, manualRefresh: boolean) {
+  const fallback = manualRefresh ? 'Unable to refresh market data.' : 'Unable to load market data.';
+  if (payload && typeof payload === 'object' && Array.isArray((payload as { candles?: unknown }).candles)) {
+    const nextCandles = (payload as { candles: Candle[] }).candles;
+    return {
+      candles: [...nextCandles],
+      provider: (payload as { provider?: string | null }).provider ?? null,
+      error: '',
+    };
+  }
+  return {
+    candles: manualRefresh ? [...previousCandles] : [],
+    provider: null,
+    error: normalizeMarketCandlesError(payload, fallback),
+  };
+}
+
 export function useMarketCandles(instrument: string, timeframe: string) {
   const range = useMemo(() => candleRangeForTimeframe(timeframe), [instrument, timeframe]);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -91,14 +116,31 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     const params = new URLSearchParams({ instrument, timeframe, from: range.from, to: range.to });
     try {
       const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal });
-      const payload = await response.json() as { candles?: Candle[]; provider?: string; error?: string };
-      if (!response.ok || !Array.isArray(payload.candles)) throw new Error(payload.error || 'Market candles are unavailable.');
-      setProvider(payload.provider ?? provider ?? null);
+      const payload = await readApiResponse(response) as { candles?: Candle[]; provider?: string; error?: unknown; message?: string } | null;
+      if (!response.ok || !Array.isArray(payload?.candles)) {
+        const outcome = resolveCandlesFetchOutcome(candles, payload, manualRefresh);
+        if (manualRefresh) {
+          setError(outcome.error);
+        } else {
+          setCandles([]);
+          setProvider(null);
+          setError(outcome.error);
+        }
+        return;
+      }
+      setProvider(payload.provider ?? null);
       setCandles(payload.candles);
       setError('');
     } catch (value) {
       if (!(value instanceof DOMException && value.name === 'AbortError')) {
-        setError(value instanceof Error ? value.message : 'Market candles are unavailable.');
+        const outcome = resolveCandlesFetchOutcome(candles, value, manualRefresh);
+        if (manualRefresh) {
+          setError(outcome.error);
+        } else {
+          setCandles([]);
+          setProvider(null);
+          setError(outcome.error);
+        }
       }
     } finally {
       inFlightRef.current = false;
@@ -107,11 +149,12 @@ export function useMarketCandles(instrument: string, timeframe: string) {
         setRefreshing(false);
       }
     }
-  }, [instrument, provider, range.from, range.to, timeframe]);
+  }, [instrument, range.from, range.to, timeframe]);
 
   const refetch = useCallback(async () => {
+    if (inFlightRef.current || loading || refreshing) return;
     await fetchCandles(true);
-  }, [fetchCandles]);
+  }, [fetchCandles, loading, refreshing]);
 
   useEffect(() => {
     void fetchCandles(false);
