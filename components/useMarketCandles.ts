@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle } from '@/lib/market-analysis';
 
 export type MarketSummary = {
@@ -70,23 +70,52 @@ export function useMarketCandles(instrument: string, timeframe: string) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const inFlightRef = useRef(false);
+
+  const fetchCandles = useCallback(async (manualRefresh = false) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    if (manualRefresh) {
+      setRefreshing(true);
+      setError('');
+    } else {
+      setLoading(true);
+      setError('');
+      setCandles([]);
+      setProvider(null);
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ instrument, timeframe, from: range.from, to: range.to });
+    try {
+      const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal });
+      const payload = await response.json() as { candles?: Candle[]; provider?: string; error?: string };
+      if (!response.ok || !Array.isArray(payload.candles)) throw new Error(payload.error || 'Market candles are unavailable.');
+      setProvider(payload.provider ?? provider ?? null);
+      setCandles(payload.candles);
+      setError('');
+    } catch (value) {
+      if (!(value instanceof DOMException && value.name === 'AbortError')) {
+        setError(value instanceof Error ? value.message : 'Market candles are unavailable.');
+      }
+    } finally {
+      inFlightRef.current = false;
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [instrument, provider, range.from, range.to, timeframe]);
+
+  const refetch = useCallback(async () => {
+    await fetchCandles(true);
+  }, [fetchCandles]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setError(''); setCandles([]); setProvider(null);
-    const params = new URLSearchParams({ instrument, timeframe, from: range.from, to: range.to });
-    void fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json() as { candles?: Candle[]; provider?: string; error?: string };
-        if (!response.ok || !Array.isArray(payload.candles)) throw new Error(payload.error || 'Market candles are unavailable.');
-        setProvider(payload.provider ?? null);
-        setCandles(payload.candles);
-      })
-      .catch((value) => { if (!(value instanceof DOMException && value.name === 'AbortError')) setError(value instanceof Error ? value.message : 'Market candles are unavailable.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [instrument, timeframe, range.from, range.to]);
+    void fetchCandles(false);
+  }, [fetchCandles]);
 
-  return { candles, provider, loading, error, range, summary: deriveMarketSummary(candles, instrument, provider) };
+  return { candles, provider, loading, refreshing, error, range, refetch, summary: deriveMarketSummary(candles, instrument, provider) };
 }

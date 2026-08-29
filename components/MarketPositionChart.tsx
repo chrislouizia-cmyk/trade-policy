@@ -44,11 +44,17 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const overlayRef = useRef(overlay);
   const clickRef = useRef(onOverlayClick);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const { candles, loading, error, provider } = useMarketCandles(instrument, timeframe);
+  const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument, timeframe);
   const instrumentMeta = getSupportedInstrument(instrument);
   const priceScaleConfig = useMemo(() => getInstrumentPriceScaleConfig(instrument), [instrument]);
+  const isInitialLoad = loading && candles.length === 0;
 
   const header = useMemo(() => deriveMarketSummary(candles, instrument, provider), [candles, instrument, provider]);
+
+  const refreshCandles = async () => {
+    if (refreshing || loading) return;
+    await refetch();
+  };
 
   const zoomChart = (direction: 'in' | 'out') => {
     const chart = chartRef.current;
@@ -82,10 +88,10 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       height: container.clientHeight,
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: '#0a0d13' }, textColor: '#c8d0df', attributionLogo: false },
-      grid: { vertLines: { color: 'rgba(148, 163, 184, 0.13)' }, horzLines: { color: 'rgba(148, 163, 184, 0.13)' } },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.22)', scaleMargins: { top: 0.10, bottom: 0.12 }, autoScale: true },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.22)', timeVisible: true, secondsVisible: false, rightOffset: 10, barSpacing: 12, minBarSpacing: 5 },
-      crosshair: { vertLine: { color: 'rgba(148,163,184,0.7)', width: 1, style: 2 }, horzLine: { color: 'rgba(148,163,184,0.6)', width: 1, style: 1 } },
+      grid: { vertLines: { color: 'rgba(148, 163, 184, 0.08)' }, horzLines: { color: 'rgba(148, 163, 184, 0.08)' } },
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.2)', scaleMargins: { top: 0.10, bottom: 0.12 }, autoScale: true },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.2)', timeVisible: true, secondsVisible: false, rightOffset: 10, barSpacing: 12, minBarSpacing: 5 },
+      crosshair: { vertLine: { color: 'rgba(148,163,184,0.65)', width: 1, style: 2 }, horzLine: { color: 'rgba(148,163,184,0.55)', width: 1, style: 1 } },
       localization: { priceFormatter: (value: number) => formatPrice(value, instrument) },
     });
     const series = chart.addSeries(CandlestickSeries, { upColor: '#20b486', downColor: '#ef5b5b', borderUpColor: '#20b486', borderDownColor: '#ef5b5b', wickUpColor: '#20b486', wickDownColor: '#ef5b5b' });
@@ -226,9 +232,10 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
         <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('out')}>−</button>
         <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('in')}>+</button>
         <button type="button" className="chart-fit-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={fitLoadedRange}>Fit</button>
+        <button type="button" className="chart-refresh-btn" aria-label="Refresh market candles" disabled={refreshing || loading} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={refreshCandles}>↻</button>
       </div>
       <div className="market-timeframe-rail" aria-label="Chart instrument state">
-        <span className="chart-status-pill">{timeframe}</span>
+        {refreshing ? <span className="chart-status-pill subtle">Refreshing</span> : <span className="chart-status-pill">{timeframe}</span>}
       </div>
     </div>
     <div ref={containerRef} className="market-position-chart" role="img" aria-label={`${instrument} ${timeframe} candlestick chart`} />
@@ -241,7 +248,8 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       <span>{hoveredChange == null || hoveredPreviousClose == null ? 'Change —' : `${hoveredChange >= 0 ? '+' : ''}${formatPrice(hoveredChange, instrument)} (${hoveredChangePercent != null && hoveredChangePercent >= 0 ? '+' : ''}${hoveredChangePercent == null ? '—' : hoveredChangePercent.toFixed(2)}%)`}</span>
       {Number.isFinite(tooltip.candle.volume) ? <span>Vol {tooltip.candle.volume}</span> : null}
     </div> : null}
-    {loading ? <div className="market-chart-status">Loading Twelve Data candles…</div> : null}
-    {error ? <div className="market-chart-status market-chart-error">{error}</div> : null}
+    {isInitialLoad ? <div className="market-chart-status">Loading market candles…</div> : null}
+    {!isInitialLoad && error ? <div className="market-chart-inline-message market-chart-error"><span>{error}</span><button type="button" className="chart-retry-btn" onClick={refreshCandles}>Retry</button></div> : null}
+    {!isInitialLoad && refreshing && !error ? <div className="market-chart-inline-message"><span>Refreshing candles…</span></div> : null}
   </div>;
 }

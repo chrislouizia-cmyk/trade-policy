@@ -81,6 +81,20 @@ test('zoom controls and current line retain chart ownership and previous-candle 
   assert.doesNotMatch(chart, /priceLines\(\)\s*;\s*for \(const line of lines\)\s*series\.removePriceLine/);
 });
 
+test('manual refresh is limited to candles and preserves overlay state and retry behavior', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
+  assert.match(chart, /refetch\(|refreshCandles/);
+  assert.match(chart, /if \(refreshing \|\| loading\) return;/);
+  assert.match(chart, /overlayRef\.current|entryPriceLineRef|currentPriceLineRef/);
+  assert.match(chart, /market-chart-inline-message|chart-retry-btn|Retry/);
+  assert.match(chart, /initialVisibleRangeRef/);
+  assert.match(chart, /Number\.isFinite\(tooltip\.candle\.volume\)/);
+  assert.match(hook, /\/api\/market\/candles\?/);
+  assert.doesNotMatch(hook, /\/api\/market\/analyze/);
+  assert.match(hook, /inFlightRef|manualRefresh/);
+});
+
 test('controlled chart owns candles, coordinates, overlays, clicks, and switching inputs', () => {
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   const panel = fs.readFileSync('components/LiveMarketPanel.tsx', 'utf8');
