@@ -86,7 +86,7 @@ test('explicit strategy timeframe contract renders configured values and Not con
   assert.match(marketAnalyzeRoute, /strategy_revision_id:strategyRevisionId\(strategy\)/);
   assert.doesNotMatch(marketAnalyzeRoute, /body\.strategyRevisionId/);
   assert.doesNotMatch(marketAnalyzeRoute, /fixed.*timeframe|default.*timeframes|D1.*H4.*H1.*M20.*M5/);
-  assert.match(tradeValidator, /<LiveMarketPanel strategy=\{strategy\} strategyRevisionId=\{activeStrategyRevisionId\}/);
+  assert.match(tradeValidator, /<LiveMarketPanel\b[^>]*strategy=\{strategy\}[^>]*strategyRevisionId=\{activeStrategyRevisionId\}/);
   assert.match(tradeValidator, /const \[activeStrategyRevisionId,setActiveStrategyRevisionId\]=useState<string\|null>\(null\);/);
   assert.match(tradeValidator, /setActiveStrategyRevisionId\(null\);/);
   assert.match(tradeValidator, /setActiveStrategyRevisionId\(nextRevision\);/);

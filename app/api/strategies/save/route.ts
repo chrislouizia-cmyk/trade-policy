@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { deriveRequiredEvidence, ZeroRequiredRulesError } from '@/lib/strategy-policy';
 import { validateStrategyName } from '@/lib/strategy-name';
 import type { StrategyRule } from '@/types/trade';
+import { strategyRulePersistenceRows } from '@/lib/strategy-rule-persistence';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,6 +123,7 @@ export async function POST(request: Request) {
     }
 
     const payload = parsed.data;
+    const persistenceRules = strategyRulePersistenceRows(payload.rules);
     const requiredEvidence = deriveRequiredEvidence(payload.rules, payload.profile.evidence_weights ?? {});
     if (!requiredEvidence.length && payload.activate) {
       return apiError(
@@ -200,7 +202,7 @@ export async function POST(request: Request) {
         },
         p_instruments: payload.instruments,
         p_sessions: payload.sessions,
-        p_rules: payload.rules,
+        p_rules: persistenceRules,
         p_stop_limits: payload.stopLimits,
         p_activate: payload.activate,
       },

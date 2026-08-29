@@ -13,6 +13,7 @@ export type FinalReviewSummary={
   instrumentLabel:string;
   sessionLabel:string;
   readiness:string;
+  persistable:boolean;
 };
 
 function list(values:string[]){return new Intl.ListFormat('en',{style:'long',type:'conjunction'}).format(values)}
@@ -33,10 +34,11 @@ export function buildFinalReviewSummary(profile:StrategyProfile,rules:StrategyRu
     `You risk ${profile.maximumRiskPercent}% of your capital per trade.`,
     `I will only approve trades that satisfy the required rules from your Trading DNA and reach your ${profile.authorizationScore}% minimum approval score.`,
   ];
+  const persistable=learned.every(rule=>typeof rule.ruleKey==='string'&&Boolean(rule.ruleKey.trim())&&Boolean(rule.label.trim()))&&new Set(learned.map(rule=>rule.ruleKey.trim())).size===learned.length;
   return {
     narrative,totalRules:learned.length,automaticRules,manualRules,externalRules,tradingStyle,
     instrumentLabel:`${profile.instruments.length} ${profile.instruments.length===1?'Instrument':'Instruments'}`,
     sessionLabel:`${sessions.length} Trading ${sessions.length===1?'Session':'Sessions'}`,
-    readiness:profile.id?'Ready for live analysis':'Ready for simulated validation',
+    readiness:persistable?(profile.id?'Ready for live analysis':'Ready for simulated validation'):'Rules need review before saving',persistable,
   };
 }

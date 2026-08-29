@@ -1,5 +1,6 @@
 import type { PersonalTradingRule, StopLimit, StrategyMethodology, StrategyProfile, StrategyRule, StrategySession } from '../types/trade.ts';
 import { createPersistedV2RuleTree, normalizePersistedV2RuleTree, type PersistedV2RuleTree, type RuleSelection } from './strategy-builder-v2.ts';
+import { normalizePersistableStrategyRules } from './strategy-rule-persistence.ts';
 
 export type StrategyBuilderV2Direction = 'LONG' | 'SHORT' | 'BOTH';
 export type StrategyBuilderV2StopLogic = string | { kind: string; limits?: StopLimit[]; [key: string]: unknown };
@@ -37,12 +38,14 @@ function legacySelections(profile:StrategyProfile,rules:StrategyRule[]):RuleSele
 
 /** Pure mapping from V2 semantic state to the existing profile, rule, and session contracts. */
 export function v2StateToPersistedStrategy(baseProfile:StrategyProfile,state:StrategyBuilderV2State):V2Persisted {
- const ruleTree=state.ruleTree?normalizePersistedV2RuleTree(state.ruleTree):state.ruleSelections.length?createPersistedV2RuleTree(state.ruleSelections):undefined;
- const metadata:V2PersistedMetadata={kind:'TRADE_POLICE_V2_METADATA',version:1,methodologyIds:[...state.methodologyIds],ruleSelections:clone(state.ruleSelections),...(ruleTree?{ruleTree}:{}),...(state.contextTimeframe!==undefined?{contextTimeframe:state.contextTimeframe}:{}),...(state.executionTimeframe!==undefined?{executionTimeframe:state.executionTimeframe}:{}),...(state.stopLogic!==undefined?{stopLogic:clone(state.stopLogic)}:{}),...(state.targetLogic!==undefined?{targetLogic:clone(state.targetLogic)}:{}),...(state.direction!==undefined?{direction:state.direction}:{})};
+ const normalizedRules=normalizePersistableStrategyRules(state.ruleSelections.map(storedRule)).rules;
+ const normalizedSelections=state.ruleSelections.map((rule,index)=>({...rule,key:normalizedRules[index].ruleKey}));
+ const ruleTree=state.ruleTree?normalizePersistedV2RuleTree(state.ruleTree):normalizedSelections.length?createPersistedV2RuleTree(normalizedSelections):undefined;
+ const metadata:V2PersistedMetadata={kind:'TRADE_POLICE_V2_METADATA',version:1,methodologyIds:[...state.methodologyIds],ruleSelections:clone(normalizedSelections),...(ruleTree?{ruleTree}:{}),...(state.contextTimeframe!==undefined?{contextTimeframe:state.contextTimeframe}:{}),...(state.executionTimeframe!==undefined?{executionTimeframe:state.executionTimeframe}:{}),...(state.stopLogic!==undefined?{stopLogic:clone(state.stopLogic)}:{}),...(state.targetLogic!==undefined?{targetLogic:clone(state.targetLogic)}:{}),...(state.direction!==undefined?{direction:state.direction}:{})};
  const stopLimitSettings=limits(state.stopLogic), stopLimits=stopLimitSettings?Object.fromEntries(stopLimitSettings.map(item=>[item.instrument,item.maximumValue])):clone(baseProfile.stopLimits), targetExit=exit(state.targetLogic);
  const personalRules:PersonalTradingRule[]=[...(baseProfile.personalRules??[]).filter(rule=>rule.key!==V2_METADATA_PERSONAL_RULE_KEY).map(clone),{key:V2_METADATA_PERSONAL_RULE_KEY,enabled:true,value:stableJson(metadata)}];
- const profile:StrategyProfile={...clone(baseProfile),name:state.name.trim(),instruments:[...state.instruments],allowedSessions:[...state.sessions],macroTimeframe:state.contextTimeframe,entryTimeframe:state.executionTimeframe??baseProfile.entryTimeframe,maximumRiskPercent:state.riskPercent,minimumRR:state.minimumRR,strategyMethodologies:state.methodologyIds.map((category):StrategyMethodology=>({category,rules:state.ruleSelections.map(rule=>rule.key)})),...(stopLimitSettings?{stopLimitSettings,stopLimits}:{}),...(targetExit?{exitConfig:{...clone(baseProfile.exitConfig??{}),...targetExit}}:{}),personalRules};
- return {profile,rules:state.ruleSelections.map(storedRule),sessions:state.sessions.map(v2SessionToPersistedSession),metadata:clone(metadata)};
+ const profile:StrategyProfile={...clone(baseProfile),name:state.name.trim(),instruments:[...state.instruments],allowedSessions:[...state.sessions],macroTimeframe:state.contextTimeframe,entryTimeframe:state.executionTimeframe??baseProfile.entryTimeframe,maximumRiskPercent:state.riskPercent,minimumRR:state.minimumRR,strategyMethodologies:state.methodologyIds.map((category):StrategyMethodology=>({category,rules:normalizedSelections.map(rule=>rule.key)})),...(stopLimitSettings?{stopLimitSettings,stopLimits}:{}),...(targetExit?{exitConfig:{...clone(baseProfile.exitConfig??{}),...targetExit}}:{}),personalRules};
+ return {profile,rules:normalizedRules,sessions:state.sessions.map(v2SessionToPersistedSession),metadata:clone(metadata)};
 }
 
 /** Pure hydration. Legacy profiles receive only data they already persisted; no default is invented. */
