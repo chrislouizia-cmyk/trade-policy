@@ -13,7 +13,22 @@ type Props = { instrument: string; timeframe: string; overlay: PositionOverlayMo
 type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
 type TooltipState = { x: number; y: number; candle: Candle; candleIndex: number };
 
+type PriceScaleConfig = { precision: number; minMove: number };
+
 const chartTime = (datetime: string) => Math.floor(Date.parse(datetime) / 1000) as UTCTimestamp;
+
+export function getInstrumentPriceScaleConfig(instrument: string): PriceScaleConfig {
+  const value = instrument.toUpperCase();
+  if (/(JPY)/.test(value)) return { precision: 3, minMove: 0.001 };
+  if (/(XAU|XAG)/.test(value)) return { precision: 2, minMove: 0.01 };
+  if (/(EUR|GBP|USD|AUD|NZD|CAD|CHF)/.test(value)) return { precision: 5, minMove: 0.00001 };
+  return { precision: 4, minMove: 0.0001 };
+}
+
+export function getInitialVisibleRange(candleCount: number, preferred = 100): number {
+  if (!Number.isFinite(candleCount) || candleCount <= 0) return 0;
+  return Math.max(0, candleCount - Math.min(candleCount, preferred));
+}
 
 export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -25,13 +40,36 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const stopLossPriceLineRef = useRef<PriceLine | null>(null);
   const takeProfitPriceLineRef = useRef<PriceLine | null>(null);
   const currentPriceLineRef = useRef<PriceLine | null>(null);
+  const initialVisibleRangeRef = useRef(false);
   const overlayRef = useRef(overlay);
   const clickRef = useRef(onOverlayClick);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const { candles, loading, error, provider } = useMarketCandles(instrument, timeframe);
   const instrumentMeta = getSupportedInstrument(instrument);
+  const priceScaleConfig = useMemo(() => getInstrumentPriceScaleConfig(instrument), [instrument]);
 
   const header = useMemo(() => deriveMarketSummary(candles, instrument, provider), [candles, instrument, provider]);
+
+  const zoomChart = (direction: 'in' | 'out') => {
+    const chart = chartRef.current;
+    const timeScale = chart?.timeScale();
+    if (!chart || !timeScale) return;
+    const range = timeScale.getVisibleLogicalRange();
+    const count = candlesRef.current.length;
+    if (!range || count <= 1) return;
+    const midpoint = (range.to + range.from) / 2;
+    const currentSpan = range.to - range.from;
+    const nextSpan = direction === 'in' ? Math.max(12, currentSpan * 0.72) : Math.min(count - 1, Math.max(12, currentSpan * 1.35));
+    const from = Math.max(0, Math.round(midpoint - nextSpan / 2));
+    const to = Math.min(count - 1, Math.round(midpoint + nextSpan / 2));
+    timeScale.setVisibleLogicalRange({ from, to });
+  };
+
+  const fitLoadedRange = () => {
+    const chart = chartRef.current;
+    if (!chart || !candlesRef.current.length) return;
+    chart.timeScale().fitContent();
+  };
 
   useEffect(() => { overlayRef.current = overlay; clickRef.current = onOverlayClick; }, [overlay, onOverlayClick]);
   useEffect(() => { candlesRef.current = candles; }, [candles]);
@@ -40,15 +78,18 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const container = containerRef.current;
     if (!container) return;
     const chart = createChart(container, {
+      width: container.clientWidth,
+      height: container.clientHeight,
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#0b0e14' }, textColor: '#aeb7c7', attributionLogo: false },
-      grid: { vertLines: { color: '#181e29' }, horzLines: { color: '#181e29' } },
-      rightPriceScale: { borderColor: '#2a3342', scaleMargins: { top: 0.12, bottom: 0.16 } },
-      timeScale: { borderColor: '#2a3342', timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 10 },
-      crosshair: { vertLine: { color: '#6b7280', width: 1, style: 2 }, horzLine: { color: '#6b7280', width: 1, style: 1 } },
+      layout: { background: { type: ColorType.Solid, color: '#0a0d13' }, textColor: '#c8d0df', attributionLogo: false },
+      grid: { vertLines: { color: 'rgba(148, 163, 184, 0.13)' }, horzLines: { color: 'rgba(148, 163, 184, 0.13)' } },
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.22)', scaleMargins: { top: 0.10, bottom: 0.12 }, autoScale: true },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.22)', timeVisible: true, secondsVisible: false, rightOffset: 10, barSpacing: 12, minBarSpacing: 5 },
+      crosshair: { vertLine: { color: 'rgba(148,163,184,0.7)', width: 1, style: 2 }, horzLine: { color: 'rgba(148,163,184,0.6)', width: 1, style: 1 } },
       localization: { priceFormatter: (value: number) => formatPrice(value, instrument) },
     });
     const series = chart.addSeries(CandlestickSeries, { upColor: '#20b486', downColor: '#ef5b5b', borderUpColor: '#20b486', borderDownColor: '#ef5b5b', wickUpColor: '#20b486', wickDownColor: '#ef5b5b' });
+    series.applyOptions({ priceFormat: { type: 'price', precision: priceScaleConfig.precision, minMove: priceScaleConfig.minMove } });
     chart.subscribeClick((param) => {
       const current = overlayRef.current;
       if (!current || !param.point) return;
@@ -66,15 +107,22 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       setTooltip({ x: param.point.x + 18, y: param.point.y + 18, candle, candleIndex: index });
     });
     chartRef.current = chart; candleSeriesRef.current = series;
-    return () => { chart.remove(); chartRef.current = null; candleSeriesRef.current = null; overlaySeriesRef.current = []; setTooltip(null); };
-  }, [instrument]);
+    return () => { chart.remove(); chartRef.current = null; candleSeriesRef.current = null; overlaySeriesRef.current = []; setTooltip(null); initialVisibleRangeRef.current = false; };
+  }, [instrument, priceScaleConfig.precision, priceScaleConfig.minMove]);
 
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (!series || !candles.length) return;
     const data = candles.map((candle) => ({ time: chartTime(candle.datetime), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume }));
     series.setData(data as Array<{ time: Time; open: number; high: number; low: number; close: number }>);
-    chartRef.current?.timeScale().fitContent();
+    if (!initialVisibleRangeRef.current) {
+      const start = getInitialVisibleRange(candles.length, 100);
+      const timeScale = chartRef.current?.timeScale();
+      if (timeScale) {
+        timeScale.setVisibleLogicalRange({ from: start, to: candles.length - 1 });
+      }
+      initialVisibleRangeRef.current = true;
+    }
     setTooltip(null);
   }, [candles]);
 
@@ -173,8 +221,18 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
         <span className={`market-position-change ${changeTone}`}>{change == null ? '—' : `${change >= 0 ? '+' : ''}${formatPrice(change, instrument)}`} {changePercent == null ? '' : `(${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%)`}</span>
       </div> : null}
     </div>
+    <div className="market-chart-toolbar" aria-label="Market chart actions">
+      <div className="market-timeframe-rail" aria-label="Market timeframe selector">
+        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('out')}>−</button>
+        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('in')}>+</button>
+        <button type="button" className="chart-fit-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={fitLoadedRange}>Fit</button>
+      </div>
+      <div className="market-timeframe-rail" aria-label="Chart instrument state">
+        <span className="chart-status-pill">{timeframe}</span>
+      </div>
+    </div>
     <div ref={containerRef} className="market-position-chart" role="img" aria-label={`${instrument} ${timeframe} candlestick chart`} />
-    {tooltip && latest ? <div className="market-chart-tooltip" style={{ left: `${Math.min(Math.max(tooltip.x, 12), 500)}px`, top: `${Math.min(Math.max(tooltip.y, 12), 220)}px` }}>
+    {tooltip && latest ? <div className="market-chart-tooltip" style={{ left: `${Math.min(Math.max(tooltip.x, 18), 420)}px`, top: `${Math.min(Math.max(tooltip.y, 18), 220)}px` }}>
       <strong>{new Date(tooltip.candle.datetime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
       <span>O {formatPrice(tooltip.candle.open, instrument)}</span>
       <span>H {formatPrice(tooltip.candle.high, instrument)}</span>

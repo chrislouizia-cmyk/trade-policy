@@ -62,6 +62,25 @@ test('proposal provenance preserves original and accepted geometry', () => {
   assert.deepEqual(provenance.editedFields, ['entry', 'takeProfit']);
 });
 
+test('instrument precision and initial visible range obey the chart contract', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /getInstrumentPriceScaleConfig\(instrument: string\)/);
+  assert.match(chart, /if \(\/\(JPY\)\/\.test\(value\)\) return \{ precision: 3, minMove: 0\.001 \};/);
+  assert.match(chart, /if \(\/\(EUR\|GBP\|USD\|AUD\|NZD\|CAD\|CHF\)\/\.test\(value\)\) return \{ precision: 5, minMove: 0\.00001 \};/);
+  assert.match(chart, /getInitialVisibleRange\(candleCount: number, preferred = 100\)/);
+  assert.match(chart, /Math\.max\(0, candleCount - Math\.min\(candleCount, preferred\)\)/);
+  assert.match(chart, /setVisibleLogicalRange\(\{ from: start, to: candles.length - 1 \}\)/);
+});
+
+test('zoom controls and current line retain chart ownership and previous-candle deltas', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /setVisibleLogicalRange\(|fitContent\(|createPriceLine\(/);
+  assert.match(chart, /currentPriceLineRef/);
+  assert.match(chart, /entryPriceLineRef/); assert.match(chart, /stopLossPriceLineRef/); assert.match(chart, /takeProfitPriceLineRef/);
+  assert.match(chart, /hoveredPreviousClose|hoveredChangePercent/);
+  assert.doesNotMatch(chart, /priceLines\(\)\s*;\s*for \(const line of lines\)\s*series\.removePriceLine/);
+});
+
 test('controlled chart owns candles, coordinates, overlays, clicks, and switching inputs', () => {
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   const panel = fs.readFileSync('components/LiveMarketPanel.tsx', 'utf8');
