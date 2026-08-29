@@ -1,4 +1,5 @@
-import type {StrategyProfile,TimeframeLayer,TimeframeRole} from '@/types/trade';
+import type {StrategyProfile,TimeframeLayer,TimeframeRole} from '../types/trade';
+import { isMarketDataTimeframe } from './market-data.ts';
 
 const definitions:Array<[TimeframeRole,keyof StrategyProfile]>=[['MACRO','macroTimeframe'],['TREND','trendTimeframe'],['CONFIRMATION','confirmationTimeframe'],['ENTRY','entryTimeframe'],['TRIGGER','triggerTimeframe']];
 
@@ -25,4 +26,8 @@ export function strategyTimeframes(strategy:StrategyProfile):string[]{
   return [...new Set(strategyTimeframeLayers(strategy)
     .map((layer) => layer.timeframe)
     .filter((timeframe) => timeframe !== 'Not configured'))];
+}
+
+export function supportedMarketTimeframesForStrategy(strategy: StrategyProfile): string[] {
+  return [...new Set(strategyTimeframes(strategy).filter((timeframe) => isMarketDataTimeframe(timeframe)))];
 }

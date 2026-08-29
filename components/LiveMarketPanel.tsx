@@ -5,7 +5,7 @@ import TradingViewChart from './TradingViewChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 import type { PositionOverlayModel } from '@/lib/position-geometry';
 
-import {strategyTimeframeContext, strategyTimeframes} from '@/lib/strategy-timeframes';
+import {strategyTimeframeContext, supportedMarketTimeframesForStrategy} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 
 const scanStages = [
@@ -41,7 +41,7 @@ export default function LiveMarketPanel({
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
-  const availableTimeframes = strategyTimeframes(strategy);
+  const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
   const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
   const analysisContextRef = useRef('');
 
@@ -170,8 +170,14 @@ export default function LiveMarketPanel({
       )}
 
       <div className="market-chart-toolbar">
+        <div className="market-timeframe-rail" aria-label="Market timeframe selector">
+          {availableTimeframes.map((timeframe) => (
+            <button key={timeframe} type="button" className={chartTimeframe === timeframe ? 'selected' : ''} onClick={() => setChartTimeframe(timeframe)}>
+              {timeframe}
+            </button>
+          ))}
+        </div>
         <strong>{selectedInstrument}</strong>
-        <label>Timeframe<select value={chartTimeframe} onChange={(event) => setChartTimeframe(event.target.value)}>{availableTimeframes.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>
       </div>
       <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
       {analysis ? decisionContent : null}
