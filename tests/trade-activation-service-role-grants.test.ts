@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const migration = readFileSync(new URL('../supabase/migrations/070_service_role_trade_validation_reads.sql', import.meta.url), 'utf8');
 const rpcMigration = readFileSync(new URL('../supabase/migrations/069_trade_activation_atomic_rpc.sql', import.meta.url), 'utf8');
+const activationWriteMigration = readFileSync(new URL('../supabase/migrations/071_service_role_trade_activation_privileges.sql', import.meta.url), 'utf8');
+const returningGrantMigration = readFileSync(new URL('../supabase/migrations/086_grant_trade_activation_returning_id.sql', import.meta.url), 'utf8');
 
 const validationTables = [
   'trading_accounts',
@@ -36,4 +38,12 @@ test('validation tables remain protected by row-level security and do not become
     const tableName = `public.${table}`;
     assert.doesNotMatch(migration, new RegExp(`grant (insert|update|delete|all) on ${tableName.replace('.', '\\.') } to service_role;`, 'i'));
   }
+});
+
+test('atomic trade activation can return the inserted trade record id with column-scoped read access', () => {
+  assert.match(rpcMigration, /insert into public\.trade_records[\s\S]*returning id into v_trade_record_id/i);
+  assert.match(activationWriteMigration, /grant insert on public\.trade_records to service_role;/i);
+  assert.match(returningGrantMigration, /grant select \(id\) on public\.trade_records to service_role;/i);
+  assert.doesNotMatch(returningGrantMigration, /grant select on public\.trade_records/i);
+  assert.doesNotMatch(returningGrantMigration, /to (authenticated|anon|public)/i);
 });
