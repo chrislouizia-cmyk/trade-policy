@@ -25,9 +25,26 @@ export function getInstrumentPriceScaleConfig(instrument: string): PriceScaleCon
   return { precision: 4, minMove: 0.0001 };
 }
 
+export function getPreferredVisibleBarCount(timeframe: string): number {
+  switch ((timeframe ?? '').toUpperCase()) {
+    case 'M5': return 220;
+    case 'M30': return 180;
+    case 'H1': return 120;
+    case 'H4': return 90;
+    case 'D1': return 60;
+    default: return 100;
+  }
+}
+
 export function getInitialVisibleRange(candleCount: number, preferred = 100): number {
   if (!Number.isFinite(candleCount) || candleCount <= 0) return 0;
   return Math.max(0, candleCount - Math.min(candleCount, preferred));
+}
+
+export function getInitialVisibleLogicalRange(candleCount: number, timeframe: string) {
+  const preferred = getPreferredVisibleBarCount(timeframe);
+  const from = getInitialVisibleRange(candleCount, preferred);
+  return { from, to: candleCount > 0 ? candleCount - 1 : 0 };
 }
 
 export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick }: Props) {
@@ -77,8 +94,8 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const chart = chartRef.current;
     const candles = candlesRef.current;
     if (!chart || !candles.length) return;
-    const preferred = Math.min(100, Math.max(25, candles.length));
-    const from = Math.max(0, candles.length - preferred);
+    const preferred = getPreferredVisibleBarCount(timeframe);
+    const from = getInitialVisibleRange(candles.length, preferred);
     chart.timeScale().setVisibleLogicalRange({ from, to: candles.length - 1 });
   };
 
@@ -100,6 +117,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
 
   useEffect(() => { overlayRef.current = overlay; clickRef.current = onOverlayClick; }, [overlay, onOverlayClick]);
   useEffect(() => { candlesRef.current = candles; }, [candles]);
+  useEffect(() => { initialVisibleRangeRef.current = false; }, [instrument, timeframe]);
   useEffect(() => {
     const update = () => setIsFullscreen(Boolean(document.fullscreenElement));
     update();
@@ -116,7 +134,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: '#0a0d13' }, textColor: '#c8d0df', attributionLogo: false },
       grid: { vertLines: { color: 'rgba(148, 163, 184, 0.08)' }, horzLines: { color: 'rgba(148, 163, 184, 0.08)' } },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.2)', scaleMargins: { top: 0.10, bottom: 0.12 }, autoScale: true },
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.2)', scaleMargins: { top: 0.12, bottom: 0.18 }, autoScale: true },
       timeScale: { borderColor: 'rgba(148, 163, 184, 0.2)', timeVisible: true, secondsVisible: false, rightOffset: 0, barSpacing: 10, minBarSpacing: 5 },
       crosshair: { vertLine: { color: 'rgba(148,163,184,0.65)', width: 1, style: 2 }, horzLine: { color: 'rgba(148,163,184,0.55)', width: 1, style: 1 } },
       localization: { priceFormatter: (value: number) => formatPrice(value, instrument) },
@@ -148,16 +166,17 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     if (!series || !candles.length) return;
     const data = candles.map((candle) => ({ time: chartTime(candle.datetime), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume }));
     series.setData(data as Array<{ time: Time; open: number; high: number; low: number; close: number }>);
+    series.priceScale().applyOptions({ autoScale: true, scaleMargins: { top: 0.12, bottom: 0.18 } });
     if (!initialVisibleRangeRef.current) {
-      const start = getInitialVisibleRange(candles.length, 80);
+      const range = getInitialVisibleLogicalRange(candles.length, timeframe);
       const timeScale = chartRef.current?.timeScale();
       if (timeScale) {
-        timeScale.setVisibleLogicalRange({ from: start, to: candles.length - 1 });
+        timeScale.setVisibleLogicalRange({ from: range.from, to: range.to });
       }
       initialVisibleRangeRef.current = true;
     }
     setTooltip(null);
-  }, [candles]);
+  }, [candles, timeframe]);
 
   useEffect(() => {
     const chart = chartRef.current;

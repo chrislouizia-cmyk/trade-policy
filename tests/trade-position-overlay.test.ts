@@ -99,9 +99,32 @@ test('instrument precision and initial visible range obey the chart contract', (
   assert.match(chart, /getInstrumentPriceScaleConfig\(instrument: string\)/);
   assert.match(chart, /if \(\/\(JPY\)\/\.test\(value\)\) return \{ precision: 3, minMove: 0\.001 \};/);
   assert.match(chart, /if \(\/\(EUR\|GBP\|USD\|AUD\|NZD\|CAD\|CHF\)\/\.test\(value\)\) return \{ precision: 5, minMove: 0\.00001 \};/);
-  assert.match(chart, /getInitialVisibleRange\(candleCount: number, preferred = 100\)/);
+  assert.match(chart, /getPreferredVisibleBarCount\(timeframe: string\)/);
+  assert.match(chart, /getInitialVisibleLogicalRange\(candleCount: number, timeframe: string\)/);
   assert.match(chart, /Math\.max\(0, candleCount - Math\.min\(candleCount, preferred\)\)/);
-  assert.match(chart, /setVisibleLogicalRange\(\{ from: start, to: candles.length - 1 \}\)/);
+  assert.match(chart, /setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\)/);
+  assert.match(chart, /scaleMargins: \{ top: 0\.12, bottom: 0\.18 \}/);
+});
+
+test('initial logical-index viewport is based on actual candle counts without a wall-clock future gap', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /getInitialVisibleRange\(candleCount, preferred\)/);
+  assert.match(chart, /Math\.max\(0, candleCount - Math\.min\(candleCount, preferred\)\)/);
+  assert.doesNotMatch(chart, /Date\.now\(|new Date\(\)|Math\.max\(0, .*now|Date\.parse\(.*candle/);
+  assert.match(chart, /getPreferredVisibleBarCount\(timeframe\)/);
+  assert.match(chart, /case 'M5': return 220|case 'M30': return 180|case 'H1': return 120|case 'H4': return 90|case 'D1': return 60/);
+});
+
+test('timeframe selection resets viewport density and keeps bars readable', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /initialVisibleRangeRef\.current = false;\s*}, \[instrument, timeframe\]\)/);
+  assert.match(chart, /getPreferredVisibleBarCount\(timeframe\)/);
+  assert.match(chart, /case 'M5': return 220/);
+  assert.match(chart, /case 'M30': return 180/);
+  assert.match(chart, /case 'H1': return 120/);
+  assert.match(chart, /case 'H4': return 90/);
+  assert.match(chart, /case 'D1': return 60/);
+  assert.match(chart, /scaleMargins: \{ top: 0\.12, bottom: 0\.18 \}/);
 });
 
 test('zoom controls and current line retain chart ownership and previous-candle deltas', () => {
@@ -171,8 +194,9 @@ test('controlled chart owns candles, coordinates, overlays, clicks, and switchin
 test('right-edge anchoring, future-candle filtering, and chart controls stay in the validate chart layer', () => {
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
-  assert.match(chart, /Math\.max\(0, candles\.length - preferred\)/);
-  assert.match(chart, /setVisibleLogicalRange\(\{ from: start, to: candles\.length - 1 \}\)/);
+  assert.match(chart, /getInitialVisibleLogicalRange\(candleCount: number, timeframe: string\)/);
+  assert.match(chart, /Math\.max\(0, candleCount - Math\.min\(candleCount, preferred\)\)/);
+  assert.match(chart, /setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\)/);
   assert.match(chart, /requestFullscreen|exitFullscreen|fullscreenchange/);
   assert.match(chart, /Zoom In|Zoom Out|Fit|Refresh|Full chart/);
   assert.match(chart, /BUY|SELL|Entry|Stop Loss|Take Profit/);
