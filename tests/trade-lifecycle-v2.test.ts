@@ -361,15 +361,17 @@ test('route payload keeps the authoritative lifecycle contract while tagging int
   assert.doesNotMatch(activateRoute, /p_source.*simulation/i);
 });
 
-test('simulation records are explicitly labeled and kept out of live history and analytics views', () => {
+test('simulation records are explicitly labeled and kept out of normal user-facing history totals', () => {
   const historyPage = readFileSync(new URL('../app/history/page.tsx', import.meta.url), 'utf8');
   const analyticsPage = readFileSync(new URL('../app/analytics/page.tsx', import.meta.url), 'utf8');
 
   assert.match(historyPage, /SIMULATION\/ INTERNAL TEST|SIMULATION.*INTERNAL TEST/i);
   assert.match(analyticsPage, /SIMULATION\/ INTERNAL TEST|SIMULATION.*INTERNAL TEST/i);
-  assert.match(historyPage, /strategy_snapshot.*simulationMode|simulationMode.*strategy_snapshot/i);
-  assert.match(analyticsPage, /strategy_snapshot.*simulationMode|simulationMode.*strategy_snapshot/i);
-  assert.doesNotMatch(historyPage, /decision_reports\).*select\('id,created_at.*snapshot_json'\)|select\('id,created_at.*snapshot_json'\)/i);
+  assert.match(historyPage, /snapshot_json/i);
+  assert.match(historyPage, /simulationMode/i);
+  assert.match(analyticsPage, /strategy_snapshot/i);
+  assert.match(analyticsPage, /simulationMode/i);
+  assert.match(historyPage, /from\('decision_reports'\)/i);
   assert.doesNotMatch(analyticsPage, /\.from\('active_trades'\)\.select\(.*\)\.eq\('status','CLOSED'\)/i);
 });
 

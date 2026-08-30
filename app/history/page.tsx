@@ -1,16 +1,231 @@
-import {redirect} from 'next/navigation';
-import {createClient} from '@/lib/supabase/server';
-import {getUserDisplayName} from '@/lib/user-display-name';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getUserDisplayName } from '@/lib/user-display-name';
 import AppHeader from '@/components/AppHeader';
-import { getTradeLifecycleSimulationLabel, isTradeLifecycleSimulationRecord } from '@/lib/server/trade-lifecycle-v2';
 
-type Search={verdict?:string;instrument?:string;strategy?:string;from?:string;to?:string};
-const verdicts=['READY','WAIT','BLOCKED','NO_SETUP','MARKET_CLOSED','DATA_UNAVAILABLE','STRATEGY_INCOMPLETE'];
-const legacyEmptyState='You have no saved decisions yet. Earlier report fields may be Not available.';
-export default async function HistoryPage({searchParams}:{searchParams:Promise<Search>}){
-  const filters=await searchParams;const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)redirect('/client/login?next=/history');const displayName=await getUserDisplayName(s,user);
-  let query=s.from('decision_reports').select('id,created_at,instrument,timeframe,strategy_id,strategy_name,verdict,primary_reason,data_freshness').order('created_at',{ascending:false}).order('id',{ascending:false}).limit(50);
-  if(filters.verdict&&verdicts.includes(filters.verdict))query=query.eq('verdict',filters.verdict);if(filters.instrument)query=query.eq('instrument',filters.instrument);if(filters.strategy)query=query.eq('strategy_id',filters.strategy);if(filters.from)query=query.gte('created_at',`${filters.from}T00:00:00.000Z`);if(filters.to)query=query.lte('created_at',`${filters.to}T23:59:59.999Z`);
-  const [{data,error},{data:facets},{data:simulationRows}]=await Promise.all([query,s.from('decision_reports').select('instrument,strategy_id,strategy_name').order('created_at',{ascending:false}).limit(500),s.from('trade_records').select('id,created_at,instrument,status,source,verdict,result_r,realized_pnl,strategy_snapshot,simulation_mode').eq('user_id',user.id).order('created_at',{ascending:false}).limit(100)]);const rows=data??[];const instruments=[...new Set((facets??[]).map(row=>row.instrument))].sort();const strategies=[...new Map((facets??[]).map(row=>[row.strategy_id,row.strategy_name])).entries()];const simulationHistory=(simulationRows??[]).filter((row:any)=>isTradeLifecycleSimulationRecord(row)).map((row:any)=>{const strategy_snapshot=(row.strategy_snapshot as Record<string, unknown> | null) ?? {};const simulationMode=(row.simulation_mode ?? strategy_snapshot.simulationMode ?? strategy_snapshot.testSource ?? strategy_snapshot.internalTestMode ?? 'INTERNAL_LIFECYCLE_SMOKE_TEST');return {id:row.id,label:getTradeLifecycleSimulationLabel(row),createdAt:row.created_at,instrument:row.instrument??'Unknown',status:row.status??'UNKNOWN',verdict:row.verdict??'UNKNOWN',resultR:Number(row.result_r??0),pnl:Number(row.realized_pnl??0),simulationMode,strategy_snapshot};});
-  return <main className="container"><AppHeader eyebrow="TRADE POLICE / HISTORY" displayName={displayName} description="Reopen immutable Decision Reports exactly as they were saved." userId={user.id}/><section className="card" style={{marginBottom:'1.5rem'}}><div className="section-title"><div><span className="eyebrow">SIMULATION / INTERNAL TEST</span><h2>Simulation history</h2><p className="muted">Internal lifecycle smoke-test records are preserved here for verification and are excluded from live history totals.</p></div></div>{simulationHistory.length===0?<p className="muted">No simulation records have been created yet.</p>:<div className="historical-card-list">{simulationHistory.map(trade=><article className="historical-card" key={trade.id}><div><time dateTime={trade.createdAt}>{new Date(trade.createdAt).toLocaleString()}</time><strong>{trade.instrument}</strong><span>{trade.status}</span></div><div><span className="badge blocked">{trade.label}</span><p>{trade.verdict}</p></div><dl><div><dt>P&amp;L</dt><dd>{trade.pnl}</dd></div><div><dt>R</dt><dd>{trade.resultR.toFixed(2)}R</dd></div><div><dt>Mode</dt><dd>{trade.simulationMode}</dd></div></dl></article>)}</div>}</section><section className="card history-page"><header><p className="eyebrow">SAVED DECISION REPORTS</p><h1>Your decision archive</h1><p className="muted">Historical snapshots are never recalculated with later market data or changed trading rules.</p></header><form className="history-filters"><label>Verdict<select name="verdict" defaultValue={filters.verdict??''}><option value="">All verdicts</option>{verdicts.map(value=><option key={value}>{value}</option>)}</select></label><label>Instrument<select name="instrument" defaultValue={filters.instrument??''}><option value="">All instruments</option>{instruments.map(value=><option key={value}>{value}</option>)}</select></label><label>Trading rules<select name="strategy" defaultValue={filters.strategy??''}><option value="">All strategies</option>{strategies.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>From<input name="from" type="date" defaultValue={filters.from??''}/></label><label>To<input name="to" type="date" defaultValue={filters.to??''}/></label><div className="history-filter-actions"><button type="submit">Apply filters</button><a className="button-link" href="/history">Clear</a></div></form>{error?<div className="error-state"><h2>History could not be loaded</h2><p>Please try again. No saved report was changed.</p></div>:rows.length===0?<div className="empty-state"><h2>No saved Decision Reports match.</h2><p>Run a verified market check and final risk check, then save the completed report.</p><a className="button-link primary" href="/validate">Open Decision</a></div>:<div className="historical-card-list">{rows.map(row=>{const snapshot={} as {confirmedRequiredCount?:number;totalRequiredCount?:number;finalRiskCheck?:{status?:string}};return <article className="historical-card" key={row.id}><div><time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString()}</time><strong>{row.instrument} · {row.timeframe}</strong><span>{row.strategy_name}</span></div><div><span className={`badge ${String(row.verdict).toLowerCase()}`}>{String(row.verdict).replaceAll('_',' ')}</span><p>{row.primary_reason}</p></div><dl><div><dt>Required rules</dt><dd>{snapshot.confirmedRequiredCount??'—'} of {snapshot.totalRequiredCount??'—'}</dd></div><div><dt>Original data</dt><dd>{String(row.data_freshness).replaceAll('_',' ')}</dd></div><div><dt>Final risk check</dt><dd>{snapshot.finalRiskCheck?.status?.replaceAll('_',' ')??'NOT RUN'}</dd></div></dl><a className="button-link" href={`/history/${row.id}`}>Open Decision Report</a></article>})}</div>}<p className="muted history-limit-note">Showing up to 50 most recent matching saved reports.</p><details className="legacy-history-note"><summary>About earlier trade activity</summary><p>Trade activity saved before historical reports was browser-writable and does not contain a complete authoritative decision. It has not been converted into a Decision Report.</p></details></section></main>;
+type Search = { q?: string; verdict?: string; instrument?: string; strategy?: string; from?: string; to?: string };
+const verdicts = ['READY', 'WAIT', 'BLOCKED', 'NO_SETUP', 'MARKET_CLOSED', 'DATA_UNAVAILABLE', 'STRATEGY_INCOMPLETE'] as const;
+const verdictTone: Record<string, 'positive' | 'neutral' | 'warning' | 'danger'> = {
+  READY: 'positive',
+  WAIT: 'neutral',
+  BLOCKED: 'danger',
+  NO_SETUP: 'warning',
+  MARKET_CLOSED: 'warning',
+  DATA_UNAVAILABLE: 'warning',
+  STRATEGY_INCOMPLETE: 'danger',
+};
+
+function formatVerdict(value: string | null | undefined) {
+  return value ? value.replaceAll('_', ' ') : 'Not available';
+}
+
+function isSimulationDecisionReportRow(row: { snapshot_json?: Record<string, unknown> | null } | null | undefined) {
+  const snapshot = (row?.snapshot_json as Record<string, unknown> | null) ?? {};
+  const simulationMode = String(snapshot.simulationMode ?? snapshot.testSource ?? snapshot.internalTestMode ?? '').trim();
+  return simulationMode === 'INTERNAL_LIFECYCLE_SMOKE_TEST' || simulationMode === 'SIMULATION';
+}
+
+export default async function HistoryPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const filters = await searchParams;
+  const s = await createClient();
+  const { data: { user } } = await s.auth.getUser();
+
+  if (!user) redirect('/client/login?next=/history');
+
+  const displayName = await getUserDisplayName(s, user);
+
+  let query = s
+    .from('decision_reports')
+    .select('id,created_at,instrument,timeframe,strategy_id,strategy_name,verdict,primary_reason,data_freshness,market_provider,last_verified_candle_at,readiness_percent,snapshot_json')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(100);
+
+  if (filters.q?.trim()) {
+    const needle = `%${filters.q.trim()}%`;
+    query = query.or(`instrument.ilike.${needle},strategy_name.ilike.${needle}`);
+  }
+  if (filters.verdict && verdicts.includes(filters.verdict as (typeof verdicts)[number])) {
+    query = query.eq('verdict', filters.verdict);
+  }
+  if (filters.instrument) query = query.eq('instrument', filters.instrument);
+  if (filters.strategy) query = query.eq('strategy_id', filters.strategy);
+  if (filters.from) query = query.gte('created_at', `${filters.from}T00:00:00.000Z`);
+  if (filters.to) query = query.lte('created_at', `${filters.to}T23:59:59.999Z`);
+
+  const [{ data: rowsData, error }, { data: facetsData }] = await Promise.all([
+    query,
+    s.from('decision_reports').select('instrument,strategy_id,strategy_name').order('created_at', { ascending: false }).limit(500),
+  ]);
+
+  const rows = (rowsData ?? []).map((row) => ({ ...row, isSimulation: isSimulationDecisionReportRow(row) }));
+  const instruments = [...new Set((facetsData ?? []).map((row) => row.instrument).filter(Boolean))].sort();
+  const strategies = [...new Map((facetsData ?? []).map((row) => [row.strategy_id, row.strategy_name])).entries()]
+    .filter(([, name]) => Boolean(name))
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+
+  const normalRows = rows.filter((row) => !row.isSimulation);
+  const total = normalRows.length;
+  const ready = normalRows.filter((row) => row.verdict === 'READY').length;
+  const waitingOrNoSetup = normalRows.filter((row) => ['WAIT', 'NO_SETUP'].includes(String(row.verdict))).length;
+  const blockedOrUnavailable = normalRows.filter((row) => ['BLOCKED', 'DATA_UNAVAILABLE', 'STRATEGY_INCOMPLETE'].includes(String(row.verdict))).length;
+
+  return (
+    <main className="container history-page-shell">
+      <AppHeader
+        eyebrow="TRADE POLICE / HISTORY"
+        displayName={displayName}
+        description="Review past decisions and outcomes without recomputing them with later market data."
+        userId={user.id}
+      />
+
+      <section className="card history-overview-card">
+        <header className="history-header-row">
+          <div>
+            <p className="eyebrow">DECISION JOURNAL</p>
+            <h1>History</h1>
+            <p className="muted">Review the decisions you saved, the context they were made under, and the outcome information that was actually persisted.</p>
+          </div>
+          <a className="button-link secondary" href="/validate">Open decision workspace</a>
+        </header>
+
+        <div className="history-summary-grid">
+          <div className="history-summary-box">
+            <span>Total reports</span>
+            <strong>{total}</strong>
+          </div>
+          <div className="history-summary-box">
+            <span>Ready decisions</span>
+            <strong>{ready}</strong>
+          </div>
+          <div className="history-summary-box">
+            <span>Waiting / No setup</span>
+            <strong>{waitingOrNoSetup}</strong>
+          </div>
+          <div className="history-summary-box">
+            <span>Blocked / unavailable</span>
+            <strong>{blockedOrUnavailable}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="card history-list-card">
+        <header className="history-list-header">
+          <div>
+            <p className="eyebrow">SAVED REPORTS</p>
+            <h2>Decision archive</h2>
+          </div>
+          <p className="muted">Historical snapshots are never recalculated with later market data. They are saved exactly as they were produced.</p>
+        </header>
+
+        <form className="history-filter-bar" method="get">
+          <label>
+            <span>Search</span>
+            <input name="q" defaultValue={filters.q ?? ''} placeholder="Instrument or strategy" />
+          </label>
+          <label>
+            <span>Verdict</span>
+            <select name="verdict" defaultValue={filters.verdict ?? ''}>
+              <option value="">All verdicts</option>
+              {verdicts.map((value) => <option key={value} value={value}>{formatVerdict(value)}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Instrument</span>
+            <select name="instrument" defaultValue={filters.instrument ?? ''}>
+              <option value="">All instruments</option>
+              {instruments.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Strategy</span>
+            <select name="strategy" defaultValue={filters.strategy ?? ''}>
+              <option value="">All strategies</option>
+              {strategies.map(([id, name]) => <option key={id} value={id}>{String(name)}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>From</span>
+            <input type="date" name="from" defaultValue={filters.from ?? ''} />
+          </label>
+          <label>
+            <span>To</span>
+            <input type="date" name="to" defaultValue={filters.to ?? ''} />
+          </label>
+          <div className="history-filter-actions">
+            <button type="submit" className="primary">Apply</button>
+            <a className="button-link secondary" href="/history">Clear</a>
+          </div>
+        </form>
+
+        {error ? (
+          <div className="history-empty-state error-state">
+            <h3>History could not be loaded</h3>
+            <p>The saved report list is temporarily unavailable. Please try again in a moment.</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="history-empty-state empty-state">
+            <h3>No saved decisions yet</h3>
+            <p>Once you save a decision report, it will appear here for quick review and reference.</p>
+            <a className="button-link primary" href="/validate">Review a live decision</a>
+          </div>
+        ) : (
+          <div className="history-row-list">
+            {rows.map((row) => {
+              const verdict = String(row.verdict ?? 'UNKNOWN');
+              const tone = verdictTone[verdict] ?? 'neutral';
+              const verdictLabel = formatVerdict(verdict);
+              const strategyName = row.strategy_name || 'Strategy not saved';
+              const freshness = row.data_freshness ? row.data_freshness.replaceAll('_', ' ') : 'Not available';
+              const primaryReason = row.primary_reason || 'No primary reason was recorded for this decision.';
+              const isSimulation = row.isSimulation;
+
+              return (
+                <article key={row.id} className="history-row">
+                  <div className="history-row-main">
+                    <div className="history-row-head">
+                      <div>
+                        <span className="history-instrument-tag">{row.instrument}</span>
+                        <span className="history-timeframe-tag">{row.timeframe}</span>
+                      </div>
+                      <span className={`history-badge tone-${isSimulation ? 'warning' : tone}`}>{isSimulation ? 'SIMULATION / INTERNAL TEST' : verdictLabel}</span>
+                    </div>
+                    <time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>
+                    <p>{isSimulation ? 'Visible for verification only; excluded from normal user-facing decision totals.' : primaryReason}</p>
+                  </div>
+
+                  <div className="history-row-meta">
+                    <div>
+                      <span>Strategy</span>
+                      <strong>{strategyName}</strong>
+                    </div>
+                    <div>
+                      <span>Freshness</span>
+                      <strong>{freshness}</strong>
+                    </div>
+                    {row.market_provider ? (
+                      <div>
+                        <span>Provider</span>
+                        <strong>{row.market_provider}</strong>
+                      </div>
+                    ) : null}
+                    {isSimulation ? (
+                      <div>
+                        <span>Record type</span>
+                        <strong>SIMULATION / INTERNAL TEST</strong>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="history-row-action">
+                    <a href={`/history/${row.id}`} className="button-link secondary">Open report</a>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
+  );
 }
