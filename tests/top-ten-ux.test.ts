@@ -9,8 +9,10 @@ test('first-run dashboard and analytics never invent zero-value evidence',()=>{
   const analytics=read('components/AnalyticsDashboard.tsx');
   assert.match(dashboard,/No closed trades/);
   assert.match(dashboard,/closedTradesToday>0/);
-  assert.match(analytics,/Analytics begin after your first closed trade/);
-  assert.match(analytics,/will not turn an empty history into percentages/);
+  assert.match(analytics,/No closed trades yet/);
+  assert.match(analytics,/Analytics becomes meaningful after a trade closes with a real outcome/);
+  assert.match(analytics,/Metrics only count canonical closed trades/);
+  assert.doesNotMatch(analytics,/0%|0R|percentages|empty history/i);
 });
 
 test('pricing states the real Pro price and exact plan limits',()=>{
