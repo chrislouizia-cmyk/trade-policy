@@ -4,6 +4,13 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
+function signupErrorMessage(error: unknown) {
+  const candidate = error as { message?: unknown; code?: unknown; status?: unknown } | null;
+  const raw = typeof candidate?.message === 'string' ? candidate.message.trim() : '';
+  if (raw && raw !== '{}' && raw !== '[object Object]') return raw;
+  return 'We could not create the account. Please try again. If the problem continues, contact Trade Police support.';
+}
+
 export default function ClientLoginForm({ next, initialMode='login' }: { next: string; initialMode?:'login'|'signup' }) {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [message, setMessage] = useState('');
@@ -20,16 +27,30 @@ export default function ClientLoginForm({ next, initialMode='login' }: { next: s
     const supabase = createClient();
 
     if (mode === 'signup') {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
-          data: { account_type: 'customer' },
-        },
-      });
-      setMessage(error?.message || 'Customer account created. Check your email if confirmation is enabled.');
-      setLoading(false);
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+            data: { account_type: 'customer' },
+          },
+        });
+        if (error) {
+          console.error('[CUSTOMER_SIGNUP_FAILED]', { code: error.code, status: error.status, message: error.message });
+          setMessage(signupErrorMessage(error));
+        } else if (data.session) {
+          window.location.assign('/onboarding');
+          return;
+        } else {
+          setMessage('Customer account created. Check your email to confirm your account.');
+        }
+      } catch (error) {
+        console.error('[CUSTOMER_SIGNUP_FAILED]', error);
+        setMessage(signupErrorMessage(error));
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
