@@ -13,7 +13,7 @@ test('customer signup never exposes an empty JSON error and redirects an immedia
 });
 
 test('customer signup trigger is repaired idempotently', () => {
-  const migration = read('supabase/migrations/081_repair_customer_signup.sql');
+  const migration = read('supabase/migrations/085_repair_customer_signup.sql');
   assert.match(migration, /create or replace function public\.handle_new_user/);
   assert.match(migration, /on conflict \(id\) do update/);
   assert.match(migration, /drop trigger if exists on_auth_user_created/);
