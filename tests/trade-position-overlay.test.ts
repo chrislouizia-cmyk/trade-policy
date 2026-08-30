@@ -168,6 +168,26 @@ test('controlled chart owns candles, coordinates, overlays, clicks, and switchin
   assert.match(panel, /chartTimeframe/); assert.match(panel, /selectedInstrument/); assert.doesNotMatch(legacy, /iframe/);
 });
 
+test('right-edge anchoring, future-candle filtering, and chart controls stay in the validate chart layer', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
+  assert.match(chart, /Math\.max\(0, candles\.length - preferred\)/);
+  assert.match(chart, /setVisibleLogicalRange\(\{ from: start, to: candles\.length - 1 \}\)/);
+  assert.match(chart, /requestFullscreen|exitFullscreen|fullscreenchange/);
+  assert.match(chart, /Zoom In|Zoom Out|Fit|Refresh|Full chart/);
+  assert.match(chart, /BUY|SELL|Entry|Stop Loss|Take Profit/);
+  assert.match(hook, /Date\.now\(\)|Date\.parse\(candle\.datetime\) <= nowMs|filter\(\(candle\) =>/);
+  assert.doesNotMatch(hook, /setCandles\(payload\.candles\)/);
+});
+
+test('active trade markers remain visible in the overlay contract', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /currentPriceLineRef/);
+  assert.match(chart, /entryPriceLineRef/); assert.match(chart, /stopLossPriceLineRef/); assert.match(chart, /takeProfitPriceLineRef/);
+  assert.match(chart, /status === 'ACTIVE'|ACTIVE.*BUY|ACTIVE.*SELL/);
+  assert.match(chart, /Current|Entry|Stop Loss|Take Profit/);
+});
+
 test('candle endpoint is authenticated and has no analysis or billing side effects', () => {
   const route = fs.readFileSync('app/api/market/candles/route.ts', 'utf8');
   assert.match(route, /auth\.getUser/); assert.match(route, /parseMarketCandleRequest/); assert.match(route, /fetchSeriesRange/);

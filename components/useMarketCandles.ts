@@ -90,6 +90,14 @@ export function resolveCandlesFetchOutcome(previousCandles: readonly Candle[], p
   };
 }
 
+export function filterCompletedCandles(candles: readonly Candle[], referenceTimeMs = Date.now()): Candle[] {
+  return candles.filter((candle) => {
+    const timestampMs = Date.parse(candle.datetime);
+    if (!Number.isFinite(timestampMs)) return false;
+    return timestampMs <= referenceTimeMs;
+  });
+}
+
 export function useMarketCandles(instrument: string, timeframe: string) {
   const range = useMemo(() => candleRangeForTimeframe(timeframe), [instrument, timeframe]);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -128,8 +136,9 @@ export function useMarketCandles(instrument: string, timeframe: string) {
         }
         return;
       }
+      const nextCandles = filterCompletedCandles(payload.candles, Date.now());
       setProvider(payload.provider ?? null);
-      setCandles(payload.candles);
+      setCandles(nextCandles);
       setError('');
     } catch (value) {
       if (!(value instanceof DOMException && value.name === 'AbortError')) {

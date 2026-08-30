@@ -32,6 +32,7 @@ export function getInitialVisibleRange(candleCount: number, preferred = 100): nu
 
 export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<'Baseline'>[]>([]);
@@ -44,6 +45,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const overlayRef = useRef(overlay);
   const clickRef = useRef(onOverlayClick);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument, timeframe);
   const instrumentMeta = getSupportedInstrument(instrument);
   const priceScaleConfig = useMemo(() => getInstrumentPriceScaleConfig(instrument), [instrument]);
@@ -73,12 +75,37 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
 
   const fitLoadedRange = () => {
     const chart = chartRef.current;
-    if (!chart || !candlesRef.current.length) return;
-    chart.timeScale().fitContent();
+    const candles = candlesRef.current;
+    if (!chart || !candles.length) return;
+    const preferred = Math.min(100, Math.max(25, candles.length));
+    const from = Math.max(0, candles.length - preferred);
+    chart.timeScale().setVisibleLogicalRange({ from, to: candles.length - 1 });
+  };
+
+  const toggleFullscreen = async () => {
+    const target = shellRef.current;
+    if (!target) return;
+    try {
+      if (!document.fullscreenElement) {
+        if (typeof target.requestFullscreen === 'function') {
+          await target.requestFullscreen();
+        }
+      } else if (typeof document.exitFullscreen === 'function') {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Ignore fullscreen permission errors; toolbar remains usable.
+    }
   };
 
   useEffect(() => { overlayRef.current = overlay; clickRef.current = onOverlayClick; }, [overlay, onOverlayClick]);
   useEffect(() => { candlesRef.current = candles; }, [candles]);
+  useEffect(() => {
+    const update = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    update();
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -90,7 +117,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       layout: { background: { type: ColorType.Solid, color: '#0a0d13' }, textColor: '#c8d0df', attributionLogo: false },
       grid: { vertLines: { color: 'rgba(148, 163, 184, 0.08)' }, horzLines: { color: 'rgba(148, 163, 184, 0.08)' } },
       rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.2)', scaleMargins: { top: 0.10, bottom: 0.12 }, autoScale: true },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.2)', timeVisible: true, secondsVisible: false, rightOffset: 10, barSpacing: 12, minBarSpacing: 5 },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.2)', timeVisible: true, secondsVisible: false, rightOffset: 0, barSpacing: 10, minBarSpacing: 5 },
       crosshair: { vertLine: { color: 'rgba(148,163,184,0.65)', width: 1, style: 2 }, horzLine: { color: 'rgba(148,163,184,0.55)', width: 1, style: 1 } },
       localization: { priceFormatter: (value: number) => formatPrice(value, instrument) },
     });
@@ -122,7 +149,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const data = candles.map((candle) => ({ time: chartTime(candle.datetime), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume }));
     series.setData(data as Array<{ time: Time; open: number; high: number; low: number; close: number }>);
     if (!initialVisibleRangeRef.current) {
-      const start = getInitialVisibleRange(candles.length, 100);
+      const start = getInitialVisibleRange(candles.length, 80);
       const timeScale = chartRef.current?.timeScale();
       if (timeScale) {
         timeScale.setVisibleLogicalRange({ from: start, to: candles.length - 1 });
@@ -209,7 +236,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     ? (hoveredChange / hoveredPreviousClose) * 100
     : null;
 
-  return <div className="market-position-chart-shell">
+  return <div ref={shellRef} className={`market-position-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`}>
     <div className="market-position-header">
       <div className="market-position-symbol-block">
         <strong>{instrument}</strong>
@@ -228,11 +255,12 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       </div> : null}
     </div>
     <div className="market-chart-toolbar" aria-label="Market chart actions">
-      <div className="market-timeframe-rail" aria-label="Market timeframe selector">
-        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('out')}>−</button>
-        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('in')}>+</button>
-        <button type="button" className="chart-fit-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={fitLoadedRange}>Fit</button>
-        <button type="button" className="chart-refresh-btn" aria-label="Refresh market candles" disabled={refreshing || loading} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={refreshCandles}>↻</button>
+      <div className="market-timeframe-rail" aria-label="Market chart controls">
+        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('out')} aria-label="Zoom out">Zoom Out</button>
+        <button type="button" className="chart-zoom-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={() => zoomChart('in')} aria-label="Zoom in">Zoom In</button>
+        <button type="button" className="chart-fit-btn" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={fitLoadedRange} aria-label="Fit chart to visible candles">Fit</button>
+        <button type="button" className="chart-refresh-btn" aria-label="Refresh market candles" disabled={refreshing || loading} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={refreshCandles}>Refresh</button>
+        <button type="button" className="chart-fullscreen-btn" aria-label="Expand full chart" onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={toggleFullscreen}>{isFullscreen ? 'Exit Full' : 'Full chart'}</button>
       </div>
       <div className="market-timeframe-rail" aria-label="Chart instrument state">
         {refreshing ? <span className="chart-status-pill subtle">Refreshing</span> : <span className="chart-status-pill">{timeframe}</span>}
