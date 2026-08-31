@@ -23,17 +23,35 @@ test('final review dynamically summarizes methodology and Trading DNA',()=>{
   assert.equal(summary.readiness,'Ready for simulated validation');
 });
 
-test('legacy rules remain learned and existing playbooks are ready for live analysis',()=>{
+test('legacy rules remain learned but require a supported enabled rule before live validation',()=>{
   const legacy=[{...rules[0],evaluationMode:undefined,enabled:false}];
   const summary=buildFinalReviewSummary({...DEFAULT_STRATEGY_PROFILE,id:'saved'},legacy,sessions);
   assert.equal(summary.totalRules,1);
   assert.equal(summary.automaticRules,1);
-  assert.equal(summary.readiness,'Ready for live analysis');
+  assert.equal(summary.readiness,'No supported rule is enabled');
+  assert.equal(summary.canSimulate,false);
+  assert.equal(summary.canSave,false);
+  assert.equal(summary.canActivate,false);
 });
 
 test('review UI uses human labels and preserves the save action',()=>{
-  for(const label of ["Here&apos;s what Trade Police will check",'Trading rules','rules configured','checked by Trade Police','confirmed by you','cannot be verified here','Required readiness','Save strategy','Rules captured'])assert.match(builder,new RegExp(label,'i'));
+  for(const label of ["Here&apos;s what Trade Police will check",'Trading rules','rules configured','checked by Trade Police','confirmed by you','cannot be verified here','Required readiness','Save strategy','Simulated validation','Activate / live validate'])assert.match(builder,new RegExp(label,'i'));
   assert.match(builder,/onClick=\{\(\) => void save\(\)\}/);
   assert.doesNotMatch(builder,/Methodology rules/);
   assert.doesNotMatch(builder,/>Authorization</);
+});
+
+test('review UI explicitly distinguishes simulation, save, and activate eligibility',()=>{
+  const now=buildFinalReviewSummary({ ...DEFAULT_STRATEGY_PROFILE, id: undefined, instruments:['XAUUSD'], tradingStyle:'day-trading' as const }, [
+    {ruleKey:'bos',label:'Break',enabled:true,mandatory:false,weight:40,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode:'MANUAL'},
+    {ruleKey:'news',label:'News',enabled:true,mandatory:false,weight:30,minimumConfidence:60,timeframeRole:'ENTRY',evaluationMode:'EXTERNAL'},
+  ], sessions);
+  assert.equal(now.readiness, 'Eligible for simulated validation only');
+  assert.equal(now.canSimulate, true);
+  assert.equal(now.canSave, false);
+  assert.equal(now.canActivate, false);
+  assert.match(builder, /Simulated validation/);
+  assert.match(builder, /Save strategy/);
+  assert.match(builder, /Activate \/ live validate/);
+  assert.match(builder, /eligible for simulated validation only/i);
 });
