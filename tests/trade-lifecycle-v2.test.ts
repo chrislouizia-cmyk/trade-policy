@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { isCountableDailyTradeExecution } from '../lib/server/daily-trade-context.ts';
-import { assertValidInternalLifecycleSourceIds, buildInternalLifecycleDecisionSnapshot, getInternalLifecycleScenarioConfig } from '../lib/server/internal-lifecycle-lineage.ts';
-import { attachTradeLifecycleSimulationMetadata, isTradeLifecycleSimulationRequest, isTradeLifecycleSimulationRecord } from '../lib/server/trade-lifecycle-v2.ts';
+import { isCountableDailyTradeExecution } from '../lib/daily-trade-context-core.ts';
+import { assertValidInternalLifecycleSourceIds, buildInternalLifecycleDecisionSnapshot, getInternalLifecycleScenarioConfig } from '../lib/internal-lifecycle-lineage-core.ts';
+import { attachTradeLifecycleSimulationMetadata, isTradeLifecycleSimulationRequest, isTradeLifecycleSimulationRecord } from '../lib/trade-lifecycle-v2-core.ts';
 
 const activateRoute = readFileSync(new URL('../app/api/trades/activate/route.ts', import.meta.url), 'utf8');
 const closeRoute = readFileSync(new URL('../app/api/trades/[id]/close/route.ts', import.meta.url), 'utf8');

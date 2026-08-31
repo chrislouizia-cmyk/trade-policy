@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canActivateTradeFromDecision, canActivateTradeFromDecisionV2, canCloseTrade, evaluateTradeAuthorizationEligibility, finalizeTradeLifecycle, resolveTradeJournalAction } from '../lib/server/trade-lifecycle.ts';
 import { getSafeTradeActivationError } from '../lib/trade-action-errors.ts';
-import { isCountableDailyTradeExecution } from '../lib/server/daily-trade-context.ts';
+import { isCountableDailyTradeExecution } from '../lib/daily-trade-context-core.ts';
 
 test('READY decision can create ACTIVE trade', () => {
   const result = canActivateTradeFromDecision({

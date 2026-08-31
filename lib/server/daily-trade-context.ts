@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { StrategyProfile } from '../../types/trade.ts';
+import { isCountableDailyTradeExecution as isCountableDailyTradeExecutionCore } from '../daily-trade-context-core.ts';
 import { isTradeLifecycleSimulationRecord } from './trade-lifecycle-v2.ts';
 
 type SupabaseServerClient = any;
@@ -17,11 +18,9 @@ export function isCountableDailyTradeExecution(
   row: { id?: string | null; source?: string | null; status?: string | null; created_at?: string | null; strategy_snapshot?: Record<string, unknown> | null; simulation_mode?: string | null },
   successfulActivatedTradeRecordIds: Set<string>,
 ): boolean {
-  if (isTradeLifecycleSimulationRecord(row)) return false;
-  if (row.source !== 'EXECUTED') return false;
-  if (!row.id) return false;
-  if (!successfulActivatedTradeRecordIds.has(row.id)) return false;
-  return true;
+  const baseResult = isCountableDailyTradeExecutionCore(row, successfulActivatedTradeRecordIds);
+  if (!baseResult) return false;
+  return !isTradeLifecycleSimulationRecord(row);
 }
 
 function localDayKey(value: Date, timezone: string): string {
