@@ -81,13 +81,15 @@ export function buildFinalReviewSummary(profile:StrategyProfile,rules:StrategyRu
 
   if (persistable && !canSimulate) {
     readiness = 'No supported rule is enabled';
-    statusDetail = 'Add an enabled, supported rule to qualify for simulated validation.';
+    statusDetail = unsupportedEnabled.length
+      ? 'This condition is not supported yet and will not count toward activation.'
+      : 'Add an enabled, supported rule to qualify for simulated validation.';
   } else if (persistable && canSimulate && !canSave) {
     readiness = 'Eligible for simulated validation only';
     statusDetail = manualOptionalRules.length
       ? 'The current enabled rule is manual and optional, so it cannot satisfy the required-rule contract for save or live activation.'
       : unsupportedEnabled.length
-        ? 'An enabled rule is present, but it is unsupported or not valid for required evidence, so it cannot be saved or activated.'
+        ? 'This condition is not supported yet and will not count toward activation.'
         : 'Some enabled rules exist, but none are valid supported mandatory rules required for save or activation.';
   } else if (persistable && canSave) {
     readiness = profile.id ? 'Ready for live validation' : 'Ready for simulated validation';

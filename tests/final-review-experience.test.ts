@@ -55,3 +55,13 @@ test('review UI explicitly distinguishes simulation, save, and activate eligibil
   assert.match(builder, /Activate \/ live validate/);
   assert.match(builder, /eligible for simulated validation only/i);
 });
+
+test('unsupported custom rules are explicitly called out as ineligible for activation',()=>{
+  const unsupported=buildFinalReviewSummary({ ...DEFAULT_STRATEGY_PROFILE, id: undefined, instruments:['XAUUSD'], tradingStyle:'day-trading' as const }, [
+    {ruleKey:'latestCompletedCandleCloseMustBeGreaterThanZero',label:'Latest completed candle close must be greater than 0',enabled:true,mandatory:true,weight:20,minimumConfidence:60,timeframeRole:'ENTRY',evaluationMode:'AUTOMATIC'},
+  ], sessions);
+  assert.equal(unsupported.canSimulate, false);
+  assert.equal(unsupported.canSave, false);
+  assert.equal(unsupported.canActivate, false);
+  assert.equal(unsupported.statusDetail, 'This condition is not supported yet and will not count toward activation.');
+});
