@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "NODE_OPTIONS='--conditions=react-server' node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "backtest:demo": "node --experimental-strip-types scripts/research/run-backtest-demo.ts",
     "backtest:xauusd-baseline": "node --experimental-strip-types scripts/research/run-xauusd-baseline-research.ts",
     "start": "next start",
