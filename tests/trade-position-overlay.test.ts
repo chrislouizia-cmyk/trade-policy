@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
+import { getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
@@ -22,7 +23,7 @@ const normalizeMarketCandlesError = (value: unknown, fallback: string): string =
   return typeof message === 'string' && message.trim() ? message : fallback;
 };
 
-const resolveCandlesFetchOutcome = (previousCandles: Candle[], payload: unknown, manualRefresh: boolean) => {
+const resolveCandlesFetchOutcomeLocal = (previousCandles: Candle[], payload: unknown, manualRefresh: boolean) => {
   const fallback = manualRefresh ? 'Unable to refresh market data.' : 'Unable to load market data.';
   if (payload && typeof payload === 'object' && Array.isArray((payload as { candles?: Candle[] }).candles)) {
     return {
@@ -152,13 +153,13 @@ test('manual refresh is limited to candles and preserves overlay state and retry
 
 test('manual refresh failures keep prior candles, successful retries replace them, and structured payloads stay readable', () => {
   const previous = [{ datetime: '2025-01-01T00:00:00.000Z', open: 1, high: 2, low: 0.5, close: 1.5, volume: 42 }];
-  const failed = resolveCandlesFetchOutcome(previous, { error: { message: 'Market feed timed out.' } }, true);
+  const failed = resolveCandlesFetchOutcomeLocal(previous, { error: { message: 'Market feed timed out.' } }, true);
   assert.deepEqual(failed.candles, previous);
   assert.equal(failed.error, 'Market feed timed out.');
   assert.doesNotMatch(failed.error, /\[object Object\]/);
 
   const replacement = [{ datetime: '2025-01-02T00:00:00.000Z', open: 2, high: 3, low: 1.5, close: 2.5, volume: 90 }];
-  const succeeded = resolveCandlesFetchOutcome(previous, { candles: replacement, provider: 'Twelve Data' }, true);
+  const succeeded = resolveCandlesFetchOutcomeLocal(previous, { candles: replacement, provider: 'Twelve Data' }, true);
   assert.deepEqual(succeeded.candles, replacement);
   assert.equal(succeeded.error, '');
   assert.equal(succeeded.provider, 'Twelve Data');
@@ -180,6 +181,32 @@ test('successful retry clears chart error state and remains candle-only', () => 
   assert.match(hook, /apiErrorMessage\(payload, fallback\)/);
   assert.doesNotMatch(chart, /\[object Object\]/);
   assert.doesNotMatch(hook, /\/api\/market\/analyze/);
+});
+
+test('polling utilities auto-refresh on a timeframe-aware schedule and preserve last good candles on background failure', () => {
+  const previous = [
+    { datetime: '2025-01-01T00:00:00.000Z', open: 1, high: 2, low: 0.8, close: 1.7, volume: 10 },
+    { datetime: '2025-01-01T01:00:00.000Z', open: 1.7, high: 1.9, low: 1.4, close: 1.5, volume: 8 },
+  ];
+  const incoming = [
+    { datetime: '2025-01-01T02:00:00.000Z', open: 1.5, high: 1.8, low: 1.3, close: 1.6, volume: 12 },
+    { datetime: '2025-01-01T03:00:00.000Z', open: 1.6, high: 1.9, low: 1.5, close: 1.8, volume: 15 },
+  ];
+  const merged = mergeIncomingCandles(previous, incoming);
+  assert.deepEqual(merged.map((item) => item.datetime), ['2025-01-01T00:00:00.000Z', '2025-01-01T01:00:00.000Z', '2025-01-01T02:00:00.000Z', '2025-01-01T03:00:00.000Z']);
+  assert.deepEqual(resolveCandlesFetchOutcomeFromHook(previous, { error: { message: 'Market feed timed out.' } }, false, true).candles, previous);
+  assert.equal(getPollingIntervalMs('M5'), 15_000);
+  assert.equal(getPollingIntervalMs('H1'), 60_000);
+  assert.equal(getPollingIntervalMs('D1'), 300_000);
+
+  const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(hook, /if \(inFlightRef\.current\) return;/);
+  assert.match(hook, /backgroundRefresh \? mergeIncomingCandles\(previousCandles, completedCandles\) : completedCandles/);
+  assert.match(hook, /window\.setInterval\(\(\) => \{\s*void fetchCandles\(false, true\);\s*\}, getPollingIntervalMs\(timeframe\)\)/s);
+  assert.match(hook, /window\.clearInterval\(interval\)/);
+  assert.match(chart, /initialVisibleRangeRef\.current = true;/);
+  assert.match(chart, /if \(!initialVisibleRangeRef\.current\) \{\s*const range = getInitialVisibleLogicalRange\(candles\.length, timeframe\);\s*const timeScale = chartRef\.current\?\.timeScale\(\);\s*if \(timeScale\) \{\s*timeScale\.setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\);\s*\}\s*initialVisibleRangeRef\.current = true;\s*\}/s);
 });
 
 test('controlled chart owns candles, coordinates, overlays, clicks, and switching inputs', () => {

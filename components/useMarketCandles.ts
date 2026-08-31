@@ -73,7 +73,7 @@ export function normalizeMarketCandlesError(value: unknown, fallback: string): s
   return fallback;
 }
 
-export function resolveCandlesFetchOutcome(previousCandles: readonly Candle[], payload: unknown, manualRefresh: boolean) {
+export function resolveCandlesFetchOutcome(previousCandles: readonly Candle[], payload: unknown, manualRefresh: boolean, preservePrevious = false) {
   const fallback = manualRefresh ? 'Unable to refresh market data.' : 'Unable to load market data.';
   if (payload && typeof payload === 'object' && Array.isArray((payload as { candles?: unknown }).candles)) {
     const nextCandles = (payload as { candles: Candle[] }).candles;
@@ -84,7 +84,7 @@ export function resolveCandlesFetchOutcome(previousCandles: readonly Candle[], p
     };
   }
   return {
-    candles: manualRefresh ? [...previousCandles] : [],
+    candles: preservePrevious ? [...previousCandles] : manualRefresh ? [...previousCandles] : [],
     provider: null,
     error: normalizeMarketCandlesError(payload, fallback),
   };
@@ -98,22 +98,52 @@ export function filterCompletedCandles(candles: readonly Candle[], referenceTime
   });
 }
 
+export function mergeIncomingCandles(previousCandles: readonly Candle[], incomingCandles: readonly Candle[]): Candle[] {
+  if (!incomingCandles.length) return previousCandles.slice();
+  const byTime = new Map<string, Candle>();
+  for (const candle of previousCandles) {
+    if (candle && typeof candle.datetime === 'string') byTime.set(candle.datetime, candle);
+  }
+  for (const candle of incomingCandles) {
+    if (candle && typeof candle.datetime === 'string') byTime.set(candle.datetime, candle);
+  }
+  return [...byTime.values()].sort((left, right) => Date.parse(left.datetime) - Date.parse(right.datetime));
+}
+
+export function getPollingIntervalMs(timeframe: string): number {
+  switch ((timeframe ?? '').toUpperCase()) {
+    case 'M5': return 15_000;
+    case 'M30': return 30_000;
+    case 'H1': return 60_000;
+    case 'H4': return 180_000;
+    case 'D1': return 300_000;
+    default: return 60_000;
+  }
+}
+
 export function useMarketCandles(instrument: string, timeframe: string) {
   const range = useMemo(() => candleRangeForTimeframe(timeframe), [instrument, timeframe]);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const candlesRef = useRef<Candle[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const inFlightRef = useRef(false);
 
-  const fetchCandles = useCallback(async (manualRefresh = false) => {
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
+
+  const fetchCandles = useCallback(async (manualRefresh = false, backgroundRefresh = false) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
+    const previousCandles = candlesRef.current;
+
     if (manualRefresh) {
       setRefreshing(true);
       setError('');
-    } else {
+    } else if (!backgroundRefresh) {
       setLoading(true);
       setError('');
       setCandles([]);
@@ -126,48 +156,60 @@ export function useMarketCandles(instrument: string, timeframe: string) {
       const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal });
       const payload = await readApiResponse(response) as { candles?: Candle[]; provider?: string; error?: unknown; message?: string } | null;
       if (!response.ok || !Array.isArray(payload?.candles)) {
-        const outcome = resolveCandlesFetchOutcome(candles, payload, manualRefresh);
-        if (manualRefresh) {
+        const outcome = resolveCandlesFetchOutcome(previousCandles, payload, manualRefresh, backgroundRefresh);
+        if (manualRefresh || !backgroundRefresh) {
           setError(outcome.error);
-        } else {
+        }
+        if (!backgroundRefresh) {
           setCandles([]);
           setProvider(null);
-          setError(outcome.error);
         }
         return;
       }
-      const nextCandles = filterCompletedCandles(payload.candles, Date.now());
+      const completedCandles = filterCompletedCandles(payload.candles, Date.now());
+      const mergedCandles = backgroundRefresh ? mergeIncomingCandles(previousCandles, completedCandles) : completedCandles;
       setProvider(payload.provider ?? null);
-      setCandles(nextCandles);
+      setCandles(mergedCandles);
       setError('');
     } catch (value) {
       if (!(value instanceof DOMException && value.name === 'AbortError')) {
-        const outcome = resolveCandlesFetchOutcome(candles, value, manualRefresh);
-        if (manualRefresh) {
+        const outcome = resolveCandlesFetchOutcome(previousCandles, value, manualRefresh, backgroundRefresh);
+        if (manualRefresh || !backgroundRefresh) {
           setError(outcome.error);
-        } else {
+        }
+        if (!backgroundRefresh) {
           setCandles([]);
           setProvider(null);
-          setError(outcome.error);
         }
       }
     } finally {
       inFlightRef.current = false;
       if (!controller.signal.aborted) {
-        setLoading(false);
-        setRefreshing(false);
+        if (!backgroundRefresh) {
+          setLoading(false);
+        }
+        if (manualRefresh || !backgroundRefresh) {
+          setRefreshing(false);
+        }
       }
     }
   }, [instrument, range.from, range.to, timeframe]);
 
   const refetch = useCallback(async () => {
     if (inFlightRef.current || loading || refreshing) return;
-    await fetchCandles(true);
+    await fetchCandles(true, false);
   }, [fetchCandles, loading, refreshing]);
 
   useEffect(() => {
-    void fetchCandles(false);
+    void fetchCandles(false, false);
   }, [fetchCandles]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void fetchCandles(false, true);
+    }, getPollingIntervalMs(timeframe));
+    return () => window.clearInterval(interval);
+  }, [timeframe, fetchCandles]);
 
   return { candles, provider, loading, refreshing, error, range, refetch, summary: deriveMarketSummary(candles, instrument, provider) };
 }
