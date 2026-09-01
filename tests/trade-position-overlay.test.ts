@@ -6,7 +6,7 @@ import { getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome 
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
-import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry } from '../lib/position-geometry.ts';
+import { activatePositionOverlay, assessPositionGeometry, closePositionOverlay, positionOverlayProvenance, proposedPositionFromCandidate, resolveLifecycleAnchorIndex, updateProposedGeometry } from '../lib/position-geometry.ts';
 
 const normalizeMarketCandlesError = (value: unknown, fallback: string): string => {
   const payload = value && typeof value === 'object' && 'error' in value ? value.error ?? value : value;
@@ -237,6 +237,124 @@ test('active trade markers remain visible in the overlay contract', () => {
   assert.match(chart, /entryPriceLineRef/); assert.match(chart, /stopLossPriceLineRef/); assert.match(chart, /takeProfitPriceLineRef/);
   assert.match(chart, /status === 'ACTIVE'|ACTIVE.*BUY|ACTIVE.*SELL/);
   assert.match(chart, /Current|Entry|Stop Loss|Take Profit/);
+});
+
+test('active trade overlay begins at the real lifecycle anchor and extends rightward instead of covering historical candles', () => {
+  const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
+  assert.match(chart, /getTimeframeSeconds\(timeframe: string\)/);
+  assert.match(chart, /proposalCreatedAt|acceptedAt|closedAt/);
+  assert.match(chart, /leftAnchor|leftIndex|rightIndex/);
+  assert.doesNotMatch(chart, /\{ time: first, value \}, \{ time: last, value \}/);
+});
+
+test('proposal, accepted-entry, and close lifecycle anchors map deterministically to candle indices', () => {
+  const candles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T00:01:00.000Z' },
+    { datetime: '2025-01-01T00:02:00.000Z' },
+    { datetime: '2025-01-01T00:03:00.000Z' },
+    { datetime: '2025-01-01T00:04:00.000Z' },
+    { datetime: '2025-01-01T00:05:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  assert.equal(resolveLifecycleAnchorIndex(candles, '2025-01-01T00:02:00.000Z'), 2);
+  assert.equal(resolveLifecycleAnchorIndex(candles, '2025-01-01T00:01:00.000Z'), 1);
+  const proposal = { ...proposedPositionFromCandidate('GBPUSD', { ...candidate, id: 'proposal-1' })!, proposalCreatedAt: '2025-01-01T00:00:00.000Z' };
+  const active = activatePositionOverlay(proposal as typeof proposal, { activeTradeId: 'trade-1', tradeRecordId: 'record-1', acceptedAt: '2025-01-01T00:03:00.000Z' });
+  const closed = closePositionOverlay(active, '2025-01-01T00:05:00.000Z');
+  assert.equal(resolveLifecycleAnchorIndex(candles, proposal.proposalCreatedAt), 0);
+  assert.equal(resolveLifecycleAnchorIndex(candles, active.acceptedAt), 3);
+  assert.equal(resolveLifecycleAnchorIndex(candles, closed.closedAt), 5);
+  assert.notEqual(resolveLifecycleAnchorIndex(candles, active.acceptedAt), resolveLifecycleAnchorIndex(candles, candles.at(-1)!.datetime));
+});
+
+test('PROPOSED and ACTIVE lifecycles preserve the correct time-direction semantics for BUY and SELL overlays', () => {
+  const base = { ...candidate, direction: 'SELL' as const, entryLow: 103, entryHigh: 103, stopLoss: 106, takeProfit: 99, rr: 2 };
+  const proposed = { ...proposedPositionFromCandidate('GBPUSD', base)!, proposalCreatedAt: '2025-01-01T00:00:00.000Z' };
+  const active = activatePositionOverlay(proposed as typeof proposed, { activeTradeId: 'trade-2', tradeRecordId: 'record-2', acceptedAt: '2025-01-01T00:04:00.000Z' });
+  assert.equal(proposed.status, 'PROPOSED');
+  assert.equal(active.status, 'ACTIVE');
+  assert.equal(resolveLifecycleAnchorIndex([{ datetime: '2025-01-01T00:00:00.000Z' }, { datetime: '2025-01-01T00:04:00.000Z' }, { datetime: '2025-01-01T00:06:00.000Z' }], proposed.proposalCreatedAt), 0);
+  assert.equal(resolveLifecycleAnchorIndex([{ datetime: '2025-01-01T00:00:00.000Z' }, { datetime: '2025-01-01T00:04:00.000Z' }, { datetime: '2025-01-01T00:06:00.000Z' }], active.acceptedAt), 1);
+  assert.equal(active.acceptedGeometry?.direction, 'SELL');
+});
+
+test('missing lifecycle timestamps never fabricate a historical origin or close point', () => {
+  const candles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T00:02:00.000Z' },
+    { datetime: '2025-01-01T00:04:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  const proposed = proposedPositionFromCandidate('GBPUSD', candidate)!;
+  assert.equal(proposed.proposalCreatedAt, null);
+  assert.equal(resolveLifecycleAnchorIndex(candles, proposed.proposalCreatedAt), null);
+  const active = activatePositionOverlay(proposed, { activeTradeId: 'trade-3', tradeRecordId: 'record-3', acceptedAt: '2025-01-01T00:02:00.000Z' });
+  assert.equal(resolveLifecycleAnchorIndex(candles, active.acceptedAt), 1);
+  const missingAccepted = activatePositionOverlay({ ...proposed, proposalCreatedAt: null, acceptedAt: null }, { activeTradeId: 'trade-4', tradeRecordId: 'record-4', acceptedAt: '2025-01-01T00:02:00.000Z' });
+  assert.equal(resolveLifecycleAnchorIndex(candles, missingAccepted.acceptedAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(candles, null), null);
+  assert.equal(resolveLifecycleAnchorIndex(candles, undefined), null);
+  const closed = closePositionOverlay(active, '2025-01-01T00:04:00.000Z');
+  assert.equal(resolveLifecycleAnchorIndex(candles, closed.closedAt), 2);
+  assert.equal(resolveLifecycleAnchorIndex(candles, null), null);
+  assert.equal(resolveLifecycleAnchorIndex(candles, '2025-01-01T00:00:00.000Z'), 0);
+});
+
+test('new candles do not move active left boundary and BUY/SELL share identical time-direction behavior', () => {
+  const candles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T00:02:00.000Z' },
+    { datetime: '2025-01-01T00:04:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  const activeBuy = activatePositionOverlay({ ...proposedPositionFromCandidate('GBPUSD', candidate)!, proposalCreatedAt: '2025-01-01T00:00:00.000Z' }, { activeTradeId: 'buy-1', tradeRecordId: 'record-buy', acceptedAt: '2025-01-01T00:02:00.000Z' });
+  const activeSell = activatePositionOverlay({ ...proposedPositionFromCandidate('GBPUSD', { ...candidate, direction: 'SELL' as const, entryLow: 103, entryHigh: 103, stopLoss: 106, takeProfit: 99, rr: 2 })!, proposalCreatedAt: '2025-01-01T00:00:00.000Z' }, { activeTradeId: 'sell-1', tradeRecordId: 'record-sell', acceptedAt: '2025-01-01T00:02:00.000Z' });
+  const extended = [
+    ...candles,
+    { datetime: '2025-01-01T00:06:00.000Z' },
+    { datetime: '2025-01-01T00:08:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  assert.equal(resolveLifecycleAnchorIndex(candles, activeBuy.acceptedAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(extended, activeBuy.acceptedAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(candles, activeSell.acceptedAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(extended, activeSell.acceptedAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(candles, activeBuy.acceptedAt), resolveLifecycleAnchorIndex(candles, activeSell.acceptedAt));
+});
+
+test('timeframe switching remaps the same lifecycle timestamps correctly without sliding the left edge', () => {
+  const baseCandles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T01:00:00.000Z' },
+    { datetime: '2025-01-01T02:00:00.000Z' },
+    { datetime: '2025-01-01T03:00:00.000Z' },
+    { datetime: '2025-01-01T04:00:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  const premiumCandles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T03:00:00.000Z' },
+    { datetime: '2025-01-01T06:00:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  const proposalAt = '2025-01-01T01:00:00.000Z';
+  const acceptedAt = '2025-01-01T03:00:00.000Z';
+  assert.equal(resolveLifecycleAnchorIndex(baseCandles, proposalAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(premiumCandles, proposalAt), 0);
+  assert.equal(resolveLifecycleAnchorIndex(baseCandles, acceptedAt), 3);
+  assert.equal(resolveLifecycleAnchorIndex(premiumCandles, acceptedAt), 1);
+  assert.notEqual(resolveLifecycleAnchorIndex(baseCandles, proposalAt), resolveLifecycleAnchorIndex(baseCandles, acceptedAt));
+});
+
+test('timeframe switching keeps the lifecycle anchor mapping stable instead of chasing current chart position', () => {
+  const candles = [
+    { datetime: '2025-01-01T00:00:00.000Z' },
+    { datetime: '2025-01-01T01:00:00.000Z' },
+    { datetime: '2025-01-01T02:00:00.000Z' },
+    { datetime: '2025-01-01T03:00:00.000Z' },
+    { datetime: '2025-01-01T04:00:00.000Z' },
+  ] as Array<{ datetime: string }>;
+  const proposalAt = '2025-01-01T01:00:00.000Z';
+  const acceptedAt = '2025-01-01T03:00:00.000Z';
+  assert.equal(resolveLifecycleAnchorIndex(candles, proposalAt), 1);
+  assert.equal(resolveLifecycleAnchorIndex(candles, acceptedAt), 3);
+  assert.equal(resolveLifecycleAnchorIndex(candles, '2025-01-01T04:00:00.000Z'), 4);
+  assert.notEqual(resolveLifecycleAnchorIndex(candles, proposalAt), resolveLifecycleAnchorIndex(candles, '2025-01-01T04:00:00.000Z'));
 });
 
 test('candle endpoint is authenticated and has no analysis or billing side effects', () => {

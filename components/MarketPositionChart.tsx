@@ -5,7 +5,7 @@ import { BaselineSeries, CandlestickSeries, ColorType, createChart, LineStyle, t
 
 import type { Candle } from '@/lib/market-analysis';
 import { getSupportedInstrument } from '@/lib/instrument-registry';
-import { assessPositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
+import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverlayModel } from '@/lib/position-geometry';
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
 
 type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void };
@@ -45,6 +45,22 @@ export function getInitialVisibleLogicalRange(candleCount: number, timeframe: st
   const preferred = getPreferredVisibleBarCount(timeframe);
   const from = getInitialVisibleRange(candleCount, preferred);
   return { from, to: candleCount > 0 ? candleCount - 1 : 0 };
+}
+
+export function getTimeframeSeconds(timeframe: string): number {
+  switch ((timeframe ?? '').toUpperCase()) {
+    case 'M1': return 60;
+    case 'M5': return 300;
+    case 'M15': return 900;
+    case 'M30': return 1800;
+    case 'H1': return 3600;
+    case 'H2': return 7200;
+    case 'H4': return 14400;
+    case 'H6': return 21600;
+    case 'H8': return 28800;
+    case 'D1': return 86400;
+    default: return 3600;
+  }
 }
 
 export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick }: Props) {
@@ -201,10 +217,20 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const geometry = overlay.acceptedGeometry ?? overlay.currentGeometry;
     const assessment = assessPositionGeometry(geometry);
     const active = overlay.status === 'ACTIVE';
-    const first = chartTime(candles[0]!.datetime), last = chartTime(candles.at(-1)!.datetime);
+    const leftAnchor = overlay.status === 'PROPOSED' ? overlay.proposalCreatedAt ?? null : overlay.acceptedAt ?? null;
+    const rightAnchor = overlay.status === 'CLOSED' ? overlay.closedAt ?? null : candles.at(-1)?.datetime ?? null;
+    const leftIndex = leftAnchor ? resolveLifecycleAnchorIndex(candles, leftAnchor) : null;
+    const rightIndex = rightAnchor ? resolveLifecycleAnchorIndex(candles, rightAnchor) : null;
+    if (leftIndex == null || (overlay.status === 'CLOSED' && rightIndex == null)) return;
+    const leftCandle = candles[Math.max(0, Math.min(leftIndex, candles.length - 1))];
+    const rightBoundaryIndex = overlay.status === 'CLOSED' ? (rightIndex ?? candles.length - 1) : candles.length - 1;
+    const rightCandle = candles[Math.max(0, Math.min(rightBoundaryIndex, candles.length - 1))];
+    if (!leftCandle || !rightCandle) return;
+    const leftTime = chartTime(leftCandle.datetime);
+    const rightTime = chartTime(rightCandle.datetime);
     const region = (value: number, color: string) => {
       const series = chart.addSeries(BaselineSeries, { baseValue: { type: 'price', price: geometry.entry }, lineVisible: false, priceLineVisible: false, lastValueVisible: false, topFillColor1: color, topFillColor2: color, bottomFillColor1: color, bottomFillColor2: color });
-      series.setData([{ time: first, value }, { time: last, value }]);
+      series.setData([{ time: leftTime, value }, { time: rightTime, value }]);
       overlaySeriesRef.current.push(series);
     };
     region(geometry.stopLoss, 'rgba(239,91,91,0.20)');
