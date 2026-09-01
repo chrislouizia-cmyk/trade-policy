@@ -45,13 +45,43 @@ test('builder and validate route gate access to a real saved strategy before lau
   assert.ok(validatePage.includes('StrategyNotFoundError'));
 });
 
-test('final review explains why save is disabled when the strategy name is invalid', () => {
+test('final review name validation blocks persistence before API save and keeps v2 parent save lifecycle intact', () => {
+  const builder = read('components/StrategyBuilder.tsx');
+  const saveRoute = read('app/api/strategies/save/route.ts');
+  const v2 = read('components/StrategyBuilderV2.tsx');
+
+  assert.ok(builder.includes('const finalReviewNameError=validateStrategyName(profile.name);'));
+  assert.ok(builder.includes('const nameError=validateStrategyName(saveProfile.name); if (nameError) {setMessage(nameError);return false;}'));
+  assert.ok(builder.includes('if (!saveProfile.id && nameError) { setMessage(nameError); return false; }'));
+  assert.ok(saveRoute.includes("const nameError = typeof value.name === 'string' ? validateStrategyName(value.name) : 'Strategy name is required.'"));
+
+  assert.ok(v2.includes('onApply: (persisted: V2Persisted) => Promise<boolean> | boolean'));
+  assert.ok(v2.includes('await onApply(persisted);'));
+  assert.ok(builder.includes('async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
+  assert.ok(builder.includes('const ok = await save(persisted);'));
+  assert.ok(builder.includes('if (!ok) return false;'));
+});
+
+test('approve and save in strategy builder V2 goes through the parent persisted save lifecycle', () => {
+  const v2 = read('components/StrategyBuilderV2.tsx');
   const builder = read('components/StrategyBuilder.tsx');
 
-  assert.match(builder, /const saveDisabledReason = finalReviewNameError \? 'Name your strategy before saving\.' : !finalReview\.canSave \? finalReview\.statusDetail \|\| 'This strategy is not ready to save yet\.' : null;/);
-  assert.match(builder, /id="save-disabled-reason"/);
-  assert.match(builder, /aria-describedby=\{saveDisabledReason \? 'save-disabled-reason' : undefined\}/);
-  assert.match(builder, /Name your strategy before saving\./);
+  assert.ok(v2.includes('onApply: (persisted: V2Persisted) => Promise<boolean> | boolean'));
+  assert.ok(v2.includes('const persisted = v2StateToPersistedStrategy(profile, currentState());'));
+  assert.ok(v2.includes('await onApply(persisted);'));
+  assert.ok(v2.includes('disabled={!approvalConfirmed || saving}'));
+  assert.ok(v2.includes('Saving…'));
+  assert.ok(!v2.includes("fetch('/api/strategies/save'"));
+
+  assert.ok(builder.includes('async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
+  assert.ok(builder.includes('const ok = await save(persisted);'));
+  assert.ok(builder.includes('if (!ok) return false;'));
+  assert.ok(builder.includes('setV2EntryOpen(false);'));
+  assert.ok(builder.includes("setBuilderStep('review');"));
+  assert.ok(builder.includes('strategyId:saveProfile.id??null'));
+  assert.ok(builder.includes('await loadAll(result.strategyId);'));
+  assert.ok(builder.includes('const updatingExisting=Boolean(saveProfile.id);'));
+  assert.ok(builder.includes('const savedProfile:StrategyProfile={...normalized,...saveProfile,id:result.strategyId'));
 });
 
 test('backtesting run button opens the configuration flow instead of becoming a no-op', () => {

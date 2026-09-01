@@ -56,7 +56,7 @@ export default function StrategyBuilderV2({
   profile: StrategyProfile;
   initialState?: StrategyBuilderV2State;
   mode: StrategyBuilderV2Mode;
-  onApply: (persisted: V2Persisted) => void;
+  onApply: (persisted: V2Persisted) => Promise<boolean> | boolean;
   onCancel: () => void;
   onStateChange?: (state: StrategyBuilderV2State) => void;
 }) {
@@ -89,6 +89,7 @@ export default function StrategyBuilderV2({
   const [copilotApproved, setCopilotApproved] = useState(false);
   const [copilotApplyError, setCopilotApplyError] = useState('');
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [ruleMenuOpen, setRuleMenuOpen] = useState<string | null>(null);
 
   const allLibraries = METHODOLOGY_LIBRARY;
@@ -188,7 +189,16 @@ export default function StrategyBuilderV2({
     }));
   }
 
-  function buildVisualApply() { onApply(v2StateToPersistedStrategy(profile, currentState())); }
+  async function buildVisualApply() {
+    if (!approvalConfirmed || saving) return;
+    setSaving(true);
+    try {
+      const persisted = v2StateToPersistedStrategy(profile, currentState());
+      await onApply(persisted);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function buildCopilotApply() {
     const nameError = validateStrategyName(strategyName); if (nameError) { setCopilotApplyError(nameError); return; }
@@ -485,7 +495,7 @@ export default function StrategyBuilderV2({
 
               <div className="button-row">
                 <button type="button" onClick={() => setStep(4)}>Back</button>
-                <button type="button" className="primary" onClick={buildVisualApply} disabled={!approvalConfirmed}>Approve & Save</button>
+                <button type="button" className="primary" onClick={() => { void buildVisualApply(); }} disabled={!approvalConfirmed || saving}>{saving ? 'Saving…' : 'Approve & Save'}</button>
               </div>
             </div>
           )}

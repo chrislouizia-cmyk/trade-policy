@@ -363,14 +363,12 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits([]);setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
   }
 
-  function handleV2Apply(persisted: V2Persisted) {
-    setProfile(persisted.profile);
-    setRules(persisted.rules);
-    setSessions(persisted.sessions);
-    setStopLimits(persisted.profile.stopLimitSettings ?? []);
-    setV2State(persistedStrategyToV2State(persisted.profile, persisted.rules, persisted.sessions));
+  async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {
+    const ok = await save(persisted);
+    if (!ok) return false;
     setV2EntryOpen(false);
     setBuilderStep('review');
+    return true;
   }
 
   async function save(persistedOverride?:V2Persisted):Promise<boolean> {
