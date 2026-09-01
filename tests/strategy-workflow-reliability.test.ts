@@ -25,6 +25,26 @@ test('strategy detail and builder use the canonical profile workflow for back, e
   assert.match(builder, /requestOpenProfile\(item\)/);
 });
 
+test('builder and validate route gate access to a real saved strategy before launching check-a-setup', () => {
+  const builder = read('components/StrategyBuilder.tsx');
+  const validatePage = read('app/validate/page.tsx');
+  const saveRoute = read('app/api/strategies/save/route.ts');
+  const strategyName = read('lib/strategy-name.ts');
+
+  assert.ok(builder.includes('const canUsePersistedValidation = Boolean(profile.id);'));
+  assert.ok(builder.includes('href={`/validate?strategy=${encodeURIComponent(profile.id)}`}>Check a setup</a>') || builder.includes('href={`/validate?strategy=${encodeURIComponent(profile.id)}`}>Check a setup</a>'));
+  assert.ok(builder.includes('const nameError=validateStrategyName(saveProfile.name); if (nameError) {setMessage(nameError);return false;}'));
+  assert.ok(builder.includes("if(!result.strategyId||result.saved!==true||!result.strategy||result.strategy.id!==result.strategyId||typeof result.strategy.name!=='string'||!result.strategy.name.trim())throw new Error('Strategy persistence response was incomplete.');"));
+  assert.ok(builder.includes('const savedProfile:StrategyProfile={...normalized,...saveProfile,id:result.strategyId'));
+  assert.ok(saveRoute.includes("const nameError = typeof value.name === 'string' ? validateStrategyName(value.name) : 'Strategy name is required.'"));
+  assert.ok(strategyName.includes("if (!name) return 'Strategy name is required.'"));
+  assert.ok(validatePage.includes('const params = await searchParams;'));
+  assert.ok(validatePage.includes('const strategyId = params.strategy?.trim();'));
+  assert.ok(validatePage.includes('strategy = strategyId ? await loadStrategyById(supabase, user.id, strategyId) : await loadActiveStrategy(supabase, user.id);'));
+  assert.ok(validatePage.includes('Saved strategy not found'));
+  assert.ok(validatePage.includes('StrategyNotFoundError'));
+});
+
 test('strategy detail tabs keep a single full-width layout contract', () => {
   const detail = read('components/StrategyDetailPage.tsx');
   const stylesheet = read('app/trade-police.css');
