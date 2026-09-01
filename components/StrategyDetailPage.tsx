@@ -344,6 +344,11 @@ setReportLoading(false);
     }
   }
 
+  function openBacktestForm() {
+    setTab('backtests');
+    setFormOpen(true);
+  }
+
   async function handleCreateBacktest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -491,7 +496,7 @@ setReportLoading(false);
                       <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
                     </div>
                   </div>
-                  <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
+                  <button type="button" className="primary" onClick={openBacktestForm}>Run Backtest</button>
                 </div>
               </section>
             </div>
@@ -529,7 +534,7 @@ setReportLoading(false);
                     <p className="eyebrow">BACKTESTS</p>
                     <h3>{usageWindowLabel}</h3>
                   </div>
-                  <button type="button" className="primary" onClick={() => setFormOpen((current) => !current)}>Run Backtest</button>
+                  <button type="button" className="primary" onClick={openBacktestForm}>Run Backtest</button>
                 </div>
 
                 <div className="strategy-detail-backtest-summary">

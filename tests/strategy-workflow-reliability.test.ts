@@ -45,6 +45,25 @@ test('builder and validate route gate access to a real saved strategy before lau
   assert.ok(validatePage.includes('StrategyNotFoundError'));
 });
 
+test('final review explains why save is disabled when the strategy name is invalid', () => {
+  const builder = read('components/StrategyBuilder.tsx');
+
+  assert.match(builder, /const saveDisabledReason = finalReviewNameError \? 'Name your strategy before saving\.' : !finalReview\.canSave \? finalReview\.statusDetail \|\| 'This strategy is not ready to save yet\.' : null;/);
+  assert.match(builder, /id="save-disabled-reason"/);
+  assert.match(builder, /aria-describedby=\{saveDisabledReason \? 'save-disabled-reason' : undefined\}/);
+  assert.match(builder, /Name your strategy before saving\./);
+});
+
+test('backtesting run button opens the configuration flow instead of becoming a no-op', () => {
+  const detail = read('components/StrategyDetailPage.tsx');
+
+  assert.match(detail, /function openBacktestForm\(\)\s*\{\s*setTab\('backtests'\);\s*setFormOpen\(true\);\s*\}/s);
+  assert.match(detail, /onClick=\{openBacktestForm\}/);
+  assert.match(detail, /formOpen && \(/);
+  assert.ok(detail.includes('run_id'));
+  assert.ok(detail.includes("fetch('/api/backtests',"));
+});
+
 test('strategy detail tabs keep a single full-width layout contract', () => {
   const detail = read('components/StrategyDetailPage.tsx');
   const stylesheet = read('app/trade-police.css');
