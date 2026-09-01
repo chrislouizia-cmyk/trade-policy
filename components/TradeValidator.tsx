@@ -27,7 +27,7 @@ import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation'
 import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
-import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
+import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
 import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
@@ -146,6 +146,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [strategyApplying,setStrategyApplying]=useState(false);
   const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
   const [positionOverlay,setPositionOverlay]=useState<PositionOverlayModel|null>(null);
+  const [persistedActiveOverlays,setPersistedActiveOverlays]=useState<PositionOverlayModel[]>([]);
   const [accounts,setAccounts]=useState<TradingAccount[]>([]);
   const [accountId,setAccountId]=useState('');
   const [typedMessage,setTypedMessage]=useState('');
@@ -164,16 +165,16 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 
   useEffect(()=>{ void loadStrategy(); void loadAccounts(); },[userId]);
   useEffect(()=>{
-    const refreshHistory=()=>{void loadHistory();};
-    const refreshVisibleHistory=()=>{if(document.visibilityState==='visible')refreshHistory();};
-    refreshHistory();
-    window.addEventListener('pageshow',refreshHistory);
-    window.addEventListener('focus',refreshHistory);
-    document.addEventListener('visibilitychange',refreshVisibleHistory);
+    const refreshTradeState=()=>{void loadHistory();void loadActiveTradeOverlays();};
+    const refreshVisibleTradeState=()=>{if(document.visibilityState==='visible')refreshTradeState();};
+    refreshTradeState();
+    window.addEventListener('pageshow',refreshTradeState);
+    window.addEventListener('focus',refreshTradeState);
+    document.addEventListener('visibilitychange',refreshVisibleTradeState);
     return()=>{
-      window.removeEventListener('pageshow',refreshHistory);
-      window.removeEventListener('focus',refreshHistory);
-      document.removeEventListener('visibilitychange',refreshVisibleHistory);
+      window.removeEventListener('pageshow',refreshTradeState);
+      window.removeEventListener('focus',refreshTradeState);
+      document.removeEventListener('visibilitychange',refreshVisibleTradeState);
     };
   },[userId]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
@@ -238,6 +239,12 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     const {data,error}=await createClient().from('trade_records').select('id,created_at,source,instrument,direction,setup_type,entry,stop_loss,take_profit,rr,result_r,status,outcome,score,chart_analysis,closed_at,post_analysis').eq('user_id',userId).order('created_at',{ascending:false}).limit(60);
     if(error){setError(`Database: ${error.message}`);return;}
     setHistory((data||[]).map((r:any)=>({id:r.id,createdAt:r.created_at,source:r.source,instrument:r.instrument,direction:r.direction,setupType:r.setup_type,entry:r.entry===null?null:Number(r.entry),stopLoss:r.stop_loss===null?null:Number(r.stop_loss),takeProfit:r.take_profit===null?null:Number(r.take_profit),rr:r.rr===null?null:Number(r.rr),resultR:r.result_r===null?null:Number(r.result_r),status:r.status,outcome:r.outcome,confidence:r.chart_analysis?.liveAnalysisConfidence==null?(r.score==null?null:Number(r.score)):Number(r.chart_analysis.liveAnalysisConfidence),closedAt:r.closed_at??null,postAnalysis:r.post_analysis})));
+  }
+
+  async function loadActiveTradeOverlays(){
+    const {data,error}=await createClient().from('active_trades').select('id,trade_record_id,instrument,direction,entry,stop_loss,take_profit,initial_rr,opened_at,strategy_snapshot').eq('user_id',userId).eq('status','OPEN').order('opened_at',{ascending:false});
+    if(error){setError(`Active trades: ${error.message}`);return;}
+    setPersistedActiveOverlays((data??[]).map((row:any)=>activePositionOverlayFromTrade(row)).filter((overlay):overlay is PositionOverlayModel=>overlay!==null));
   }
 
   const activeContext=useMemo(()=>`${strategy.id ?? strategy.name}-${analysis?.instrument ?? 'none'}`,[analysis?.instrument,strategy.id,strategy.name]);
@@ -438,7 +445,9 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       }
       const activation=data as {trade?:{id?:unknown};tradeRecordId?:unknown;acceptedAt?:unknown;lifecycleStatus?:unknown;activeTradeCreated?:unknown}|null;
       if(!activation||typeof activation.trade?.id!=='string'||activation.lifecycleStatus!=='ACTIVE'||activation.activeTradeCreated!==true)throw new Error('Trade Police could not confirm an active trade was created. The override was not completed; please try again.');
-      setPositionOverlay(current=>current?activatePositionOverlay(current,{activeTradeId:activation.trade!.id as string,tradeRecordId:typeof activation.tradeRecordId==='string'?activation.tradeRecordId:null,acceptedAt:typeof activation.acceptedAt==='string'?activation.acceptedAt:acceptedAt}):current);
+      const activatedOverlay=activatePositionOverlay(positionOverlay,{activeTradeId:activation.trade.id as string,tradeRecordId:typeof activation.tradeRecordId==='string'?activation.tradeRecordId:null,acceptedAt:typeof activation.acceptedAt==='string'?activation.acceptedAt:acceptedAt});
+      setPositionOverlay(activatedOverlay);
+      setPersistedActiveOverlays(current=>[activatedOverlay,...current.filter(overlay=>overlay.activeTradeId!==activatedOverlay.activeTradeId)]);
       await loadHistory();
       setActivationSuccess('Trade added to Manage Trades.');
       closeTradeActionModal();
@@ -539,6 +548,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const isAuthorizationEligible = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
   const canTakeAnyway = hasExecutableSetup && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' && ['WAIT','BLOCKED'].includes(authorizationEligibility.state) && result?.overrideEligible === true;
   const geometryAssessment = useMemo(() => positionOverlay ? assessPositionGeometry(positionOverlay.currentGeometry) : { valid: false, rr: null, reason: null }, [positionOverlay]);
+  const persistedActiveOverlay=useMemo(()=>persistedActiveOverlays.find(overlay=>overlay.currentGeometry.instrument===selectedInstrument)??null,[persistedActiveOverlays,selectedInstrument]);
+  const chartPositionOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:persistedActiveOverlay??positionOverlay;
   const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY' && geometryAssessment.valid && positionOverlay?.status === 'PROPOSED';
   const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
   const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
@@ -582,7 +593,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={positionOverlay}/>
+    <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
     <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}

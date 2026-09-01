@@ -6,7 +6,7 @@ import { getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome 
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
-import { activatePositionOverlay, assessPositionGeometry, closePositionOverlay, positionOverlayProvenance, proposedPositionFromCandidate, resolveLifecycleAnchorIndex, updateProposedGeometry } from '../lib/position-geometry.ts';
+import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, closePositionOverlay, positionOverlayProvenance, proposedPositionFromCandidate, resolveLifecycleAnchorIndex, updateProposedGeometry } from '../lib/position-geometry.ts';
 
 const normalizeMarketCandlesError = (value: unknown, fallback: string): string => {
   const payload = value && typeof value === 'object' && 'error' in value ? value.error ?? value : value;
@@ -240,6 +240,33 @@ test('active trade markers remain visible in the overlay contract', () => {
   assert.match(chart, /Current|Entry|Stop Loss|Take Profit/);
 });
 
+test('persisted active trade reconstructs the immutable chart overlay after refresh',()=>{
+  const overlay=activePositionOverlayFromTrade({
+    id:'active-1',trade_record_id:'record-1',instrument:'XAUUSD',direction:'SELL',entry:'4327.81',stop_loss:'4340',take_profit:'4300',initial_rr:'2.2814',opened_at:'2026-09-01T22:42:00.000Z',
+    strategy_snapshot:{tradeContext:{positionOverlay:{selectedCandidateId:'candidate-1',originalProposedGeometry:{instrument:'XAUUSD',direction:'SELL',entry:4328,stopLoss:4340,takeProfit:4300},originalPlannedRR:2.3333,geometryEdited:true,editedFields:['entry'],proposalCreatedAt:'2026-09-01T22:40:00.000Z',acceptedAt:'2026-09-01T22:42:00.000Z'}}},
+  });
+  assert.ok(overlay);
+  assert.equal(overlay.status,'ACTIVE');
+  assert.equal(overlay.activeTradeId,'active-1');
+  assert.equal(overlay.tradeRecordId,'record-1');
+  assert.equal(overlay.currentGeometry.instrument,'XAUUSD');
+  assert.equal(overlay.currentGeometry.entry,4327.81);
+  assert.equal(overlay.acceptedAt,'2026-09-01T22:42:00.000Z');
+  assert.equal(overlay.proposalCreatedAt,'2026-09-01T22:40:00.000Z');
+  assert.deepEqual(overlay.editedFields,['entry']);
+});
+
+test('malformed persisted trade geometry never produces a chart overlay',()=>{
+  assert.equal(activePositionOverlayFromTrade({id:'active-2',instrument:'XAUUSD',direction:'BUY',entry:100,stop_loss:101,take_profit:103,opened_at:'2026-09-01T22:42:00.000Z'}),null);
+});
+
+test('legacy active trade falls back to geometry R:R instead of fabricating zero',()=>{
+  const overlay=activePositionOverlayFromTrade({id:'active-3',instrument:'XAUUSD',direction:'BUY',entry:100,stop_loss:95,take_profit:110,opened_at:'2026-09-01T22:42:00.000Z'});
+  assert.ok(overlay);
+  assert.equal(overlay.originalPlannedRR,2);
+  assert.equal(overlay.acceptedPlannedRR,2);
+});
+
 test('active trade overlay begins at the real lifecycle anchor and extends rightward instead of covering historical candles', () => {
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   assert.match(chart, /getTimeframeSeconds\(timeframe: string\)/);
@@ -370,6 +397,9 @@ test('acceptance preserves authoritative take path and never inserts active trad
   assert.match(validator, /fetch\('\/api\/trades\/take'/);
   assert.doesNotMatch(validator, /from\('active_trades'\)\.insert/);
   assert.match(validator, /activatePositionOverlay/);
+  assert.match(validator, /from\('active_trades'\)\.select\('id,trade_record_id,instrument,direction,entry,stop_loss,take_profit,initial_rr,opened_at,strategy_snapshot'\)/);
+  assert.match(validator, /activePositionOverlayFromTrade/);
+  assert.match(validator, /positionOverlay=\{chartPositionOverlay\}/);
   assert.match(validator, /strategyRevisionId:activeStrategyRevisionId/);
 });
 

@@ -28,6 +28,19 @@ export type PositionOverlayModel = Readonly<{
 
 export type GeometryAssessment = Readonly<{ valid: boolean; rr: number | null; reason: string | null }>;
 
+export type PersistedActiveTradeOverlay = Readonly<{
+  id: string;
+  trade_record_id?: string | null;
+  instrument: string;
+  direction: 'BUY' | 'SELL';
+  entry: number | string;
+  stop_loss: number | string;
+  take_profit: number | string;
+  initial_rr?: number | string | null;
+  opened_at: string;
+  strategy_snapshot?: unknown;
+}>;
+
 export function assessPositionGeometry(geometry: PositionGeometry): GeometryAssessment {
   const values = [geometry.entry, geometry.stopLoss, geometry.takeProfit];
   if (!values.every(Number.isFinite)) return { valid: false, rr: null, reason: 'Entry, stop loss, and take profit must be valid prices.' };
@@ -63,6 +76,54 @@ export function activatePositionOverlay(model: PositionOverlayModel, identity: {
   const assessment = assessPositionGeometry(model.currentGeometry);
   if (!assessment.valid || assessment.rr == null) throw new Error(assessment.reason ?? 'Position geometry is invalid.');
   return Object.freeze({ ...model, status: 'ACTIVE', acceptedGeometry: Object.freeze({ ...model.currentGeometry }), acceptedPlannedRR: assessment.rr, proposalCreatedAt: model.proposalCreatedAt ?? null, acceptedAt: identity.acceptedAt, closedAt: null, activeTradeId: identity.activeTradeId, tradeRecordId: identity.tradeRecordId });
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function timestamp(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function geometryFrom(value: unknown, fallbackInstrument?: string, fallbackDirection?: 'BUY' | 'SELL'): PositionGeometry | null {
+  const source = record(value);
+  if (!source) return null;
+  const instrument = typeof source.instrument === 'string' ? source.instrument : fallbackInstrument;
+  const direction = source.direction === 'BUY' || source.direction === 'SELL' ? source.direction : fallbackDirection;
+  const geometry = instrument && direction ? { instrument, direction, entry: Number(source.entry), stopLoss: Number(source.stopLoss), takeProfit: Number(source.takeProfit) } : null;
+  return geometry && assessPositionGeometry(geometry).valid ? Object.freeze(geometry) : null;
+}
+
+export function activePositionOverlayFromTrade(trade: PersistedActiveTradeOverlay): PositionOverlayModel | null {
+  const acceptedGeometry = geometryFrom({ instrument: trade.instrument, direction: trade.direction, entry: trade.entry, stopLoss: trade.stop_loss, takeProfit: trade.take_profit });
+  if (!acceptedGeometry) return null;
+  const snapshot = record(trade.strategy_snapshot);
+  const tradeContext = record(snapshot?.tradeContext);
+  const provenance = record(tradeContext?.positionOverlay);
+  const originalGeometry = geometryFrom(provenance?.originalProposedGeometry, trade.instrument, trade.direction) ?? acceptedGeometry;
+  const acceptedAssessment = assessPositionGeometry(acceptedGeometry);
+  const originalAssessment = assessPositionGeometry(originalGeometry);
+  const acceptedAt = timestamp(provenance?.acceptedAt) ?? timestamp(trade.opened_at);
+  if (!acceptedAt || acceptedAssessment.rr == null || originalAssessment.rr == null) return null;
+  const editedFields = Array.isArray(provenance?.editedFields)
+    ? provenance.editedFields.filter((field): field is PositionGeometryField => ['instrument','direction','entry','stopLoss','takeProfit'].includes(String(field)))
+    : [];
+  const selectedCandidateId = typeof provenance?.selectedCandidateId === 'string' ? provenance.selectedCandidateId : null;
+  const originalPlannedRR = finiteNumber(provenance?.originalPlannedRR) ?? originalAssessment.rr;
+  const acceptedPlannedRR = finiteNumber(trade.initial_rr) ?? acceptedAssessment.rr;
+  return Object.freeze({
+    status: 'ACTIVE', selectedCandidateId, originalGeometry, currentGeometry: acceptedGeometry, originalPlannedRR,
+    acceptedGeometry, acceptedPlannedRR, geometryEdited: provenance?.geometryEdited === true || editedFields.length > 0,
+    editedFields: Object.freeze(editedFields), proposalCreatedAt: timestamp(provenance?.proposalCreatedAt), acceptedAt,
+    closedAt: null, activeTradeId: trade.id, tradeRecordId: trade.trade_record_id ?? null,
+  });
 }
 
 export function closePositionOverlay(model: PositionOverlayModel, closedAt: string): PositionOverlayModel {
