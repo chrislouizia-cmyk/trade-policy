@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const migration = readFileSync(new URL('../supabase/migrations/072_trade_activation_stage_diagnostics.sql', import.meta.url), 'utf8');
 const rpcMigration = readFileSync(new URL('../supabase/migrations/069_trade_activation_atomic_rpc.sql', import.meta.url), 'utf8');
+const schemaAlignmentMigration = readFileSync(new URL('../supabase/migrations/087_align_atomic_activation_trade_records_schema.sql', import.meta.url), 'utf8');
 
 const stages = [
   'STAGE_01_ACCOUNT_VALIDATION',
@@ -48,4 +49,37 @@ test('072 keeps the function signature and service-role grant contract aligned w
   assert.match(migration, /to service_role/i);
   assert.doesNotMatch(migration, /grant all on function public\.activate_trade_atomically_v1/i);
   assert.doesNotMatch(migration, /security definer/i);
+});
+
+test('087 aligns the atomic RPC trade_records insert with the production schema', () => {
+  const tradeRecordsInsert = schemaAlignmentMigration.match(/insert into public\.trade_records\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
+  const tradeRecordsValues = schemaAlignmentMigration.match(/values\s*\(([\s\S]*?)\)\s*returning id into v_trade_record_id;/i)?.[1] ?? '';
+  const lifecycleOnlyColumns = [
+    'strategy_snapshot',
+    'original_verdict',
+    'original_verdict_reason',
+    'taken_against_verdict',
+    'override_reason',
+    'override_conditions',
+    'activation_mode',
+    'strategy_revision_id',
+    'source_decision_id',
+    'source_report_id',
+  ];
+
+  assert.match(tradeRecordsInsert, /\brule_snapshot\b/i);
+  assert.match(tradeRecordsValues, /\bp_strategy_snapshot\b/i);
+  assert.equal((tradeRecordsValues.match(/\bp_strategy_snapshot\b/g) ?? []).length, 1);
+  for (const column of lifecycleOnlyColumns) {
+    assert.doesNotMatch(tradeRecordsInsert, new RegExp(`\\b${column}\\b`, 'i'));
+  }
+
+  assert.match(schemaAlignmentMigration, /insert into public\.active_trades[\s\S]*strategy_snapshot[\s\S]*p_strategy_snapshot/i);
+  assert.match(schemaAlignmentMigration, /insert into public\.active_trades[\s\S]*override_reason[\s\S]*p_override_reason/i);
+  const activeTradesInsert = schemaAlignmentMigration.match(/insert into public\.active_trades\s*\(([\s\S]*?)\)\s*values\s*\(/i)?.[1] ?? '';
+  const activeTradesValues = schemaAlignmentMigration.match(/insert into public\.active_trades\s*\([\s\S]*?\)\s*values\s*\(([\s\S]*?)\)\s*returning id into v_trade_id;/i)?.[1] ?? '';
+  assert.doesNotMatch(activeTradesInsert, /\bstrategy_version\b/i);
+  assert.doesNotMatch(activeTradesValues, /\bp_strategy_version\b/i);
+  assert.match(schemaAlignmentMigration, /ACTIVATION_STAGE=STAGE_08_TRADE_RECORD_INSERT/i);
+  assert.match(schemaAlignmentMigration, /ACTIVATION_STAGE=STAGE_09_ACTIVE_TRADE_INSERT/i);
 });
