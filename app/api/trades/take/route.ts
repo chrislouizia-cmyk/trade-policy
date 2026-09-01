@@ -29,9 +29,17 @@ export async function POST(request: Request) {
     }
     const entry = Number(body.entry), stopLoss = Number(body.stopLoss), takeProfit = Number(body.takeProfit);
     const riskPercent = Number(body.riskPercent ?? 0.5), initialRR = Number(body.initialRR);
+    const session = typeof body.session === 'string' ? body.session.trim() : '';
     if (!body.instrument || !['BUY','SELL'].includes(body.direction) || typeof body.highImpactNews !== 'boolean' || ![entry,stopLoss,takeProfit,riskPercent,initialRR].every(Number.isFinite)) {
       return NextResponse.json({ error: 'Missing or invalid trade information.' }, { status: 400 });
     }
+    if (!session) return NextResponse.json({ error: 'The original trade session is required.' }, { status: 400 });
+    if (typeof body.strategyProfileId !== 'string' || !body.strategyProfileId.trim()) return NextResponse.json({ error: 'The active strategy is required.' }, { status: 400 });
+    const {data:strategyContext,error:strategyContextError}=await supabase.from('strategy_profiles').select('allowed_sessions').eq('id',body.strategyProfileId).eq('user_id',user.id).maybeSingle();
+    if(strategyContextError)throw strategyContextError;
+    if(!strategyContext)return NextResponse.json({ error: 'The active strategy could not be verified.' }, { status: 409 });
+    const allowedSessions=Array.isArray(strategyContext.allowed_sessions)?strategyContext.allowed_sessions:[];
+    if (!allowedSessions.includes(session)) return NextResponse.json({ error: 'The selected session is not enabled in the active strategy.' }, { status: 400 });
     if (typeof body.strategyRevisionId !== 'string' || !body.strategyRevisionId.trim()) {
       return NextResponse.json({ error: 'The active strategy revision is required.' }, { status: 400 });
     }
@@ -168,6 +176,7 @@ export async function POST(request: Request) {
       p_take_profit: takeProfit,
       p_risk_percent: riskPercent,
       p_initial_rr: initialRR,
+      p_session: session,
       p_setup_type: body.setupType ?? null,
       p_initial_score: body.initialScore ?? null,
       p_initial_analysis: body.initialAnalysis ?? null,
@@ -178,7 +187,7 @@ export async function POST(request: Request) {
       p_override_conditions: Array.isArray(body.overrideConditions) ? body.overrideConditions : [],
       p_activation_mode: body.activationMode === 'OVERRIDE' ? 'OVERRIDE' : 'READY',
       p_high_impact_news: Boolean(body.highImpactNews),
-      p_strategy_snapshot: { ...(body.strategySnapshot ?? {}), tradeContext: { ...(body.strategySnapshot?.tradeContext ?? {}), highImpactNews: Boolean(body.highImpactNews), positionOverlay: positionOverlaySnapshot } },
+      p_strategy_snapshot: { ...(body.strategySnapshot ?? {}), tradeContext: { ...(body.strategySnapshot?.tradeContext ?? {}), session, highImpactNews: Boolean(body.highImpactNews), positionOverlay: positionOverlaySnapshot } },
     });
 
     if (response.error) throw response.error;

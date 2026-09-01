@@ -10,7 +10,7 @@ import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
 
 export const runtime='nodejs';export const maxDuration=60;
-const requestSchema=z.object({tradeId:z.string().uuid()});
+const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
 type GuidanceStatus='HOLD'|'PROTECT'|'EXIT'|'INVALIDATED';
 
 function failure(error:string,code:string,status:number,details?:Record<string,unknown>){return NextResponse.json({error,code,details},{status});}
@@ -40,9 +40,12 @@ export async function POST(request:Request){
     let currentPrice:number;try{currentPrice=await fetchPrice(trade.instrument);}catch(error){return failure(error instanceof Error?error.message:'Current price is unavailable.','CURRENT_PRICE_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument});}
     const analysis=buildLiveAnalysis(trade.instrument,strategy,Object.fromEntries(timeframes.map((timeframe,index)=>[timeframe,values[index]])),'Twelve Data');
     const {data:record}=trade.trade_record_id?await supabase.from('trade_records').select('session,rule_snapshot').eq('id',trade.trade_record_id).eq('user_id',user.id).maybeSingle():{data:null};
-    const session=record?.session;const newsValue=snapshot.tradeContext?.highImpactNews??record?.rule_snapshot?.highImpactNews;
+    const snapshotSession=typeof snapshot.tradeContext?.session==='string'?snapshot.tradeContext.session:null;
+    const requestedSession=parsed.data.session??null;
+    const session=record?.session??snapshotSession??requestedSession;const newsValue=snapshot.tradeContext?.highImpactNews??record?.rule_snapshot?.highImpactNews;
     const newsUnknown=typeof newsValue!=='boolean';
-    if(!session)return failure('The original trade session is missing.','MISSING_TRADE_SESSION',422);
+    if(!session)return failure('Select the original trade session to repair this legacy trade.','MISSING_TRADE_SESSION',422,{allowedSessions:policy.allowedSessions});
+    if(!policy.allowedSessions.includes(session))return failure('The original trade session is not enabled in the stored strategy.','INVALID_TRADE_SESSION',422,{session,allowedSessions:policy.allowedSessions});
     const evidence=Object.fromEntries((Object.entries(analysis.evidence) as [EvidenceKey,{value:boolean}][]).map(([key,value])=>[key,value.value]));
     const validationInput={instrument:trade.instrument,direction:trade.direction,entry:entry!,stopLoss:stopLoss!,takeProfit:takeProfit!,accountBalance:finite(trade.balance_at_entry)??1,riskPercent:riskPercent!,tradesToday:0,session,highImpactNews:Boolean(newsValue),...evidence,setupType:analysis.setupType,setupConfidence:analysis.liveAnalysisConfidence} as TradeInput;
     const dailyContext=await loadDailyTradeContext({supabase,userId:user.id,strategy,instrument:trade.instrument,accountId:trade.account_id,timezone:'UTC'});
@@ -59,7 +62,9 @@ export async function POST(request:Request){
     if(!reasons.length)reasons.push('The current market structure remains compatible with the stored trade strategy.');
     const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict};
     const {error:eventError}=await supabase.from('active_trade_events').insert({user_id:user.id,trade_id:trade.id,event_type:'REANALYSIS',verdict:status,current_price:currentPrice,current_r:currentR,analysis:guidance});if(eventError)throw eventError;
-    const {error:updateError}=await supabase.from('active_trades').update({current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
+    if(!record?.session&&trade.trade_record_id){const {error:sessionRepairError}=await supabase.from('trade_records').update({session,updated_at:guidance.generatedAt}).eq('id',trade.trade_record_id).eq('user_id',user.id);if(sessionRepairError)throw sessionRepairError;}
+    const repairedSnapshot=snapshotSession?snapshot:{...snapshot,tradeContext:{...(snapshot.tradeContext??{}),session}};
+    const {error:updateError}=await supabase.from('active_trades').update({strategy_snapshot:repairedSnapshot,current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
     return NextResponse.json({guidance},{headers:{'Cache-Control':'no-store'}});
   }catch(error){
     if(error instanceof StrategyConfigurationError)return failure(error.message,'STRATEGY_CONFIGURATION_ERROR',409,{missingFields:error.missingFields});
