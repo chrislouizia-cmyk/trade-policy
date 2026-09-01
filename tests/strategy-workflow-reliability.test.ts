@@ -56,10 +56,13 @@ test('final review name validation blocks persistence before API save and keeps 
   assert.ok(saveRoute.includes("const nameError = typeof value.name === 'string' ? validateStrategyName(value.name) : 'Strategy name is required.'"));
 
   assert.ok(v2.includes('onApply: (persisted: V2Persisted) => Promise<boolean> | boolean'));
+  assert.ok(v2.includes('const persisted = v2StateToPersistedStrategy(profile, currentState());'));
   assert.ok(v2.includes('await onApply(persisted);'));
-  assert.ok(builder.includes('async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
-  assert.ok(builder.includes('const ok = await save(persisted);'));
-  assert.ok(builder.includes('if (!ok) return false;'));
+  assert.ok(builder.includes('function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
+  assert.ok(builder.includes('setProfile(persisted.profile);'));
+  assert.ok(builder.includes('setRules(persisted.rules);'));
+  assert.ok(builder.includes('setSessions(persisted.sessions);'));
+  assert.ok(builder.includes("setBuilderStep('review');"));
 });
 
 test('approve and save in strategy builder V2 goes through the parent persisted save lifecycle', () => {
@@ -73,14 +76,13 @@ test('approve and save in strategy builder V2 goes through the parent persisted 
   assert.ok(v2.includes('Saving…'));
   assert.ok(!v2.includes("fetch('/api/strategies/save'"));
 
-  assert.ok(builder.includes('async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
-  assert.ok(builder.includes('const ok = await save(persisted);'));
-  assert.ok(builder.includes('if (!ok) return false;'));
+  assert.ok(builder.includes('function handleV2Apply(persisted: V2Persisted): Promise<boolean> {'));
+  assert.ok(builder.includes('setProfile(persisted.profile);'));
+  assert.ok(builder.includes('setRules(persisted.rules);'));
+  assert.ok(builder.includes('setSessions(persisted.sessions);'));
   assert.ok(builder.includes('setV2EntryOpen(false);'));
   assert.ok(builder.includes("setBuilderStep('review');"));
-  assert.ok(builder.includes('strategyId:saveProfile.id??null'));
-  assert.ok(builder.includes('await loadAll(result.strategyId);'));
-  assert.ok(builder.includes('const updatingExisting=Boolean(saveProfile.id);'));
+  assert.ok(builder.includes('const nameError=validateStrategyName(saveProfile.name); if (nameError) {setMessage(nameError);return false;}'));
   assert.ok(builder.includes('const savedProfile:StrategyProfile={...normalized,...saveProfile,id:result.strategyId'));
 });
 
