@@ -6,6 +6,7 @@ import {buildLiveAnalysis} from '@/lib/market-analysis';
 import {normalizeStrategyPolicy,StrategyConfigurationError} from '@/lib/strategy-policy';
 import {validateTradeWithStrategy} from '@/lib/server/decision-engine';
 import {loadDailyTradeContext} from '@/lib/server/daily-trade-context';
+import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
 
 export const runtime='nodejs';export const maxDuration=60;
@@ -32,7 +33,7 @@ export async function POST(request:Request){
     const strategy:StrategyProfile=snapshot as StrategyProfile;
     const policy=normalizeStrategyPolicy(strategy);
     if(!policy.instruments.includes(trade.instrument))return failure(`${trade.instrument} is not enabled in the active strategy.`,'UNSUPPORTED_INSTRUMENT',400,{instrument:trade.instrument});
-    const timeframes=[policy.timeframes.trend,policy.timeframes.confirmation,policy.timeframes.entry];
+    const timeframes=strategyTimeframes(strategy);
     let values;
     try{values=await Promise.all(timeframes.map(timeframe=>fetchSeries(trade.instrument,timeframe)));}catch(error){return failure(error instanceof Error?error.message:'Twelve Data could not return configured candles.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
     if(values.some(candles=>candles.length<25))return failure('Twelve Data returned insufficient candles for deterministic analysis.','INSUFFICIENT_MARKET_DATA',422,{instrument:trade.instrument,timeframes});

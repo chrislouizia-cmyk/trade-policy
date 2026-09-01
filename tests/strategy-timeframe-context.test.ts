@@ -48,6 +48,7 @@ const minimalStrategy = {
 };
 
 const marketAnalyzeRoute = readFileSync(new URL('../app/api/market/analyze/route.ts', import.meta.url), 'utf8');
+const activeTradeReanalysisRoute = readFileSync(new URL('../app/api/trades/reanalyze/route.ts', import.meta.url), 'utf8');
 const tradeValidator = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
 const liveMarketPanel = readFileSync(new URL('../components/LiveMarketPanel.tsx', import.meta.url), 'utf8');
 
@@ -83,6 +84,9 @@ test('explicit strategy timeframe contract renders configured values and Not con
   assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadActiveStrategy\(supabase,user\.id\);/);
   assert.doesNotMatch(marketAnalyzeRoute, /loadStrategyById\s*\(/);
   assert.match(marketAnalyzeRoute, /const timeframes = strategyTimeframes\(strategy\);/);
+  assert.match(activeTradeReanalysisRoute, /import \{strategyTimeframes\} from '@\/lib\/strategy-timeframes';/);
+  assert.match(activeTradeReanalysisRoute, /const timeframes=strategyTimeframes\(strategy\);/);
+  assert.doesNotMatch(activeTradeReanalysisRoute, /policy\.timeframes\.trend,policy\.timeframes\.confirmation,policy\.timeframes\.entry/);
   assert.match(marketAnalyzeRoute, /strategy_revision_id:strategyRevisionId\(strategy\)/);
   assert.doesNotMatch(marketAnalyzeRoute, /body\.strategyRevisionId/);
   assert.doesNotMatch(marketAnalyzeRoute, /fixed.*timeframe|default.*timeframes|D1.*H4.*H1.*M20.*M5/);
