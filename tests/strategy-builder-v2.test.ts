@@ -7,6 +7,7 @@ import {
   createDefaultRuleSelection,
   detectStrategyConflicts,
   parseCopilotPrompt,
+  reconcileRuleSelectionsWithMethodologies,
   safeDescriptiveState,
   toPersistedExecutionMode,
 } from '../lib/strategy-builder-v2.ts';
@@ -507,6 +508,36 @@ test('health summary counts rules and unresolved conflicts', () => {
   assert.equal(summary.descriptive, 1);
   assert.equal(summary.required, 1);
   assert.equal(summary.optional, 1);
+});
+
+test('methodology defaults do not resurrect removed SMC rules after rerender or navigation', () => {
+  const initial = createDefaultRuleSelection();
+  const afterDelete = initial.filter((rule) => !['choch', 'bos', 'order-block', 'fair-value-gap'].includes(rule.key));
+
+  const canonical = reconcileRuleSelectionsWithMethodologies({
+    methodologyIds: ['smc'],
+    ruleSelections: afterDelete,
+  });
+
+  assert.deepEqual(canonical.map((rule) => rule.key), ['liquidity-sweep']);
+  assert.ok(!canonical.some((rule) => rule.key === 'choch'));
+  assert.ok(!canonical.some((rule) => rule.key === 'bos'));
+  assert.ok(!canonical.some((rule) => rule.key === 'order-block'));
+  assert.ok(!canonical.some((rule) => rule.key === 'fair-value-gap'));
+  assert.ok(canonical.some((rule) => rule.key === 'liquidity-sweep'));
+
+  const afterNavigation = reconcileRuleSelectionsWithMethodologies({
+    methodologyIds: ['smc'],
+    ruleSelections: canonical,
+  });
+
+  assert.deepEqual(afterNavigation.map((rule) => rule.key), ['liquidity-sweep']);
+  const summary = buildHealthSummary({ selectedRules: afterNavigation, conflicts: detectStrategyConflicts({ selectedRules: afterNavigation, riskPercent: 0.5, minimumRR: 3 }) });
+  assert.equal(summary.totalRules, 1);
+  assert.equal(summary.automatic, 1);
+  assert.equal(summary.required, 1);
+  assert.equal(summary.optional, 0);
+  assert.equal(summary.unresolvedConflicts, 0);
 });
 
 test('copilot merge preserves previous draft and updates a single rule within the same session', () => {

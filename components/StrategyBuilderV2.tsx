@@ -11,6 +11,7 @@ import {
   detectStrategyConflicts,
   formatRuleSummary,
   parseCopilotPrompt,
+  reconcileRuleSelectionsWithMethodologies,
   type Capability,
   type RuleGroupType,
   type RuleSelection,
@@ -67,7 +68,7 @@ export default function StrategyBuilderV2({
   const [sessions, setSessions] = useState<string[]>(initialState?.sessions ?? []);
   const [contextTimeframe, setContextTimeframe] = useState<string>(initialState?.contextTimeframe ?? '');
   const [executionTimeframe, setExecutionTimeframe] = useState<string>(initialState?.executionTimeframe ?? '');
-  const [selectedRuleSelections, setSelectedRuleSelections] = useState<RuleSelection[]>(() => initialState?.ruleSelections ?? []);
+  const [selectedRuleSelections, setSelectedRuleSelections] = useState<RuleSelection[]>(() => reconcileRuleSelectionsWithMethodologies({ methodologyIds: initialState?.methodologyIds ?? [], ruleSelections: initialState?.ruleSelections ?? [] }));
   const [riskPercent, setRiskPercent] = useState<number>(initialState?.riskPercent ?? 0);
   const [minimumRR, setMinimumRR] = useState<number>(initialState?.minimumRR ?? 0);
   const [strategyName, setStrategyName] = useState<string>(initialState?.name ?? profile.name ?? '');
@@ -96,14 +97,18 @@ export default function StrategyBuilderV2({
     [allLibraries, selectedMethodologyIds],
   );
 
-  const selectedRuleKeys = selectedRuleSelections.map((rule) => rule.key);
+  const canonicalRuleSelections = useMemo(
+    () => reconcileRuleSelectionsWithMethodologies({ methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections }),
+    [selectedMethodologyIds, selectedRuleSelections],
+  );
+  const selectedRuleKeys = canonicalRuleSelections.map((rule) => rule.key);
   const conflicts = useMemo(
-    () => detectStrategyConflicts({ selectedRules: selectedRuleSelections, riskPercent, minimumRR }),
-    [selectedRuleSelections, riskPercent, minimumRR],
+    () => detectStrategyConflicts({ selectedRules: canonicalRuleSelections, riskPercent, minimumRR }),
+    [canonicalRuleSelections, riskPercent, minimumRR],
   );
   const health = useMemo(
-    () => buildHealthSummary({ selectedRules: selectedRuleSelections, conflicts }),
-    [selectedRuleSelections, conflicts],
+    () => buildHealthSummary({ selectedRules: canonicalRuleSelections, conflicts }),
+    [canonicalRuleSelections, conflicts],
   );
 
   const allRulesByKey = useMemo(
@@ -114,7 +119,7 @@ export default function StrategyBuilderV2({
     [allLibraries],
   );
 
-  const selectedRulesText = formatRuleSummary(selectedRuleSelections);
+  const selectedRulesText = formatRuleSummary(canonicalRuleSelections);
 
   function initializeVisualMode() {
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
@@ -127,17 +132,14 @@ export default function StrategyBuilderV2({
   function enterMode(mode: CreationPath) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
 
   function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
-    return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: selectedRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
+    return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: canonicalRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
   }
-  useEffect(() => { onStateChange?.(currentState()); }, [strategyName, selectedInstruments, sessions, contextTimeframe, executionTimeframe, selectedMethodologyIds, selectedRuleSelections, riskPercent, minimumRR, stopLogic, targetLogic, direction]);
+  useEffect(() => { onStateChange?.(currentState()); }, [strategyName, selectedInstruments, sessions, contextTimeframe, executionTimeframe, selectedMethodologyIds, canonicalRuleSelections, riskPercent, minimumRR, stopLogic, targetLogic, direction]);
 
   function syncSelectedRulesFromMethodologies(ids: string[], nextSelections: RuleSelection[]) {
-    const allowedKeys = new Set(
-      allLibraries
-        .filter((library) => ids.includes(library.id))
-        .flatMap((library) => library.rules.map((rule) => rule.key)),
+    setSelectedRuleSelections(
+      reconcileRuleSelectionsWithMethodologies({ methodologyIds: ids, ruleSelections: nextSelections }),
     );
-    setSelectedRuleSelections(nextSelections.filter((rule) => allowedKeys.has(rule.key)));
   }
 
   function toggleMethodology(id: string) {
@@ -155,26 +157,35 @@ export default function StrategyBuilderV2({
 
     const existing = selectedRuleSelections.find((rule) => rule.key === ruleKey);
     if (existing) {
-      setSelectedRuleSelections((current) => current.filter((rule) => rule.key !== ruleKey));
+      setSelectedRuleSelections((current) => reconcileRuleSelectionsWithMethodologies({
+      methodologyIds: selectedMethodologyIds,
+      ruleSelections: current.filter((rule) => rule.key !== ruleKey),
+    }));
       return;
     }
 
-    setSelectedRuleSelections((current) => [
-      ...current,
-      {
-        key: definition.key,
-        label: definition.label,
-        capability: definition.capability,
-        requirement: definition.capability === 'DESCRIPTIVE' ? 'OPTIONAL' : 'REQUIRED',
-        timeframe: executionTimeframe,
-        group: 'ALL',
-        description: definition.description,
-      },
-    ]);
+    setSelectedRuleSelections((current) => reconcileRuleSelectionsWithMethodologies({
+      methodologyIds: selectedMethodologyIds,
+      ruleSelections: [
+        ...current,
+        {
+          key: definition.key,
+          label: definition.label,
+          capability: definition.capability,
+          requirement: definition.capability === 'DESCRIPTIVE' ? 'OPTIONAL' : 'REQUIRED',
+          timeframe: executionTimeframe,
+          group: 'ALL',
+          description: definition.description,
+        },
+      ],
+    }));
   }
 
   function updateRuleSelection(ruleKey: string, patch: Partial<RuleSelection>) {
-    setSelectedRuleSelections((current) => current.map((rule) => rule.key === ruleKey ? { ...rule, ...patch } : rule));
+    setSelectedRuleSelections((current) => reconcileRuleSelectionsWithMethodologies({
+      methodologyIds: selectedMethodologyIds,
+      ruleSelections: current.map((rule) => rule.key === ruleKey ? { ...rule, ...patch } : rule),
+    }));
   }
 
   function buildVisualApply() { onApply(v2StateToPersistedStrategy(profile, currentState())); }
@@ -192,7 +203,10 @@ export default function StrategyBuilderV2({
 
     setSelectedInstruments([draftInstrument]);
     setSessions(draftSessions.map((session) => session));
-    setSelectedRuleSelections(draftRules);
+    setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
+      methodologyIds: selectedMethodologyIds,
+      ruleSelections: draftRules,
+    }));
     setRiskPercent(draftRisk);
     setMinimumRR(draftMinimumRR);
 
@@ -222,7 +236,10 @@ export default function StrategyBuilderV2({
           description: definition.description,
         };
       });
-      setSelectedRuleSelections(nextRules);
+      setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
+        methodologyIds: selectedMethodologyIds,
+        ruleSelections: nextRules,
+      }));
     }
   }
 
@@ -358,8 +375,8 @@ export default function StrategyBuilderV2({
                     <strong>{library.label}</strong>
                     <div className="rule-list">
                       {library.rules.map((rule) => {
-                        const selected = selectedRuleSelections.some((item) => item.key === rule.key);
-                        const currentSelection = selectedRuleSelections.find((item) => item.key === rule.key);
+                        const selected = canonicalRuleSelections.some((item) => item.key === rule.key);
+                        const currentSelection = canonicalRuleSelections.find((item) => item.key === rule.key);
                         return (
                           <div key={rule.key} className={`rule-row ${selected ? 'selected' : ''}`}>
                             <div className="rule-main">
@@ -385,7 +402,10 @@ export default function StrategyBuilderV2({
                                     <div className="menu-panel">
                                       <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'REQUIRED' })}>Set as required</button>
                                       <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'OPTIONAL' })}>Set as optional</button>
-                                      <button type="button" onClick={() => setSelectedRuleSelections((current) => current.filter((item) => item.key !== rule.key))}>Remove rule</button>
+                                      <button type="button" onClick={() => setSelectedRuleSelections((current) => reconcileRuleSelectionsWithMethodologies({
+                                        methodologyIds: selectedMethodologyIds,
+                                        ruleSelections: current.filter((item) => item.key !== rule.key),
+                                      }))}>Remove rule</button>
                                     </div>
                                   )}
                                 </div>
@@ -436,7 +456,7 @@ export default function StrategyBuilderV2({
                 <h4>{health.totalRules} rules configured</h4>
                 <div className="grid grid-2">
                   {(['AUTOMATIC', 'MANUAL', 'EXTERNAL', 'DESCRIPTIVE'] as Capability[]).map((capability) => {
-                    const count = selectedRuleSelections.filter((rule) => {
+                    const count = canonicalRuleSelections.filter((rule) => {
                       const definition = allRulesByKey[rule.key];
                       return definition?.capability === capability;
                     }).length;
@@ -502,7 +522,10 @@ export default function StrategyBuilderV2({
                 setCopilotDraft(nextDraft);
                 setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
                 setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
-                setSelectedRuleSelections(nextDraft.rules.length ? nextDraft.rules : selectedRuleSelections);
+                setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
+                  methodologyIds: selectedMethodologyIds,
+                  ruleSelections: nextDraft.rules.length ? nextDraft.rules : canonicalRuleSelections,
+                }));
                 setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
                 setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
                 setCopilotConversation((current) => [
@@ -559,7 +582,10 @@ export default function StrategyBuilderV2({
                     setCopilotDraft(nextDraft);
                     setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
                     setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
-                    setSelectedRuleSelections(nextDraft.rules.length ? nextDraft.rules : selectedRuleSelections);
+                    setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
+                      methodologyIds: selectedMethodologyIds,
+                      ruleSelections: nextDraft.rules.length ? nextDraft.rules : canonicalRuleSelections,
+                    }));
                     setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
                     setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
                     setCopilotConversation((current) => [

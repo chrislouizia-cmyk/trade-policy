@@ -159,6 +159,17 @@ export function createDefaultRuleSelection(): RuleSelection[] {
   ];
 }
 
+export function reconcileRuleSelectionsWithMethodologies({ methodologyIds, ruleSelections }: { methodologyIds: string[]; ruleSelections: RuleSelection[] }): RuleSelection[] {
+  const selectedLibraries = METHODOLOGY_LIBRARY.filter((library) => methodologyIds.includes(library.id));
+  if (!selectedLibraries.length) return ruleSelections;
+
+  const allowedKeys = new Set(
+    selectedLibraries.flatMap((library) => library.rules.map((rule) => rule.key)),
+  );
+
+  return ruleSelections.filter((rule) => allowedKeys.has(rule.key));
+}
+
 export function buildDraftFromSelection(methodologyIds: string[], selectedRuleKeys: string[], ruleSelections: RuleSelection[] = []): {
   methodologies: Array<{ category: string; rules: string[] }>; rules: RuleSelection[];
 } {
