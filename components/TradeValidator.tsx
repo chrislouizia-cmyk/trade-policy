@@ -28,6 +28,7 @@ import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
 import { activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
+import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -161,7 +162,20 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const reportSaveStatusRef=useRef<HTMLDivElement>(null);
   const reportIdempotencyRef=useRef<string>('');
 
-  useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
+  useEffect(()=>{ void loadStrategy(); void loadAccounts(); },[userId]);
+  useEffect(()=>{
+    const refreshHistory=()=>{void loadHistory();};
+    const refreshVisibleHistory=()=>{if(document.visibilityState==='visible')refreshHistory();};
+    refreshHistory();
+    window.addEventListener('pageshow',refreshHistory);
+    window.addEventListener('focus',refreshHistory);
+    document.addEventListener('visibilitychange',refreshVisibleHistory);
+    return()=>{
+      window.removeEventListener('pageshow',refreshHistory);
+      window.removeEventListener('focus',refreshHistory);
+      document.removeEventListener('visibilitychange',refreshVisibleHistory);
+    };
+  },[userId]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
     const handler=(event: Event)=>{
@@ -221,7 +235,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const selectedAccount=useMemo(()=>accounts.find(account=>account.id===accountId)||null,[accounts,accountId]);
 
   async function loadHistory(){
-    const {data,error}=await createClient().from('trade_records').select('*').order('created_at',{ascending:false}).limit(60);
+    const {data,error}=await createClient().from('trade_records').select('id,created_at,source,instrument,direction,setup_type,entry,stop_loss,take_profit,rr,result_r,status,outcome,score,chart_analysis,closed_at,post_analysis').eq('user_id',userId).order('created_at',{ascending:false}).limit(60);
     if(error){setError(`Database: ${error.message}`);return;}
     setHistory((data||[]).map((r:any)=>({id:r.id,createdAt:r.created_at,source:r.source,instrument:r.instrument,direction:r.direction,setupType:r.setup_type,entry:r.entry===null?null:Number(r.entry),stopLoss:r.stop_loss===null?null:Number(r.stop_loss),takeProfit:r.take_profit===null?null:Number(r.take_profit),rr:r.rr===null?null:Number(r.rr),resultR:r.result_r===null?null:Number(r.result_r),status:r.status,outcome:r.outcome,confidence:r.chart_analysis?.liveAnalysisConfidence==null?(r.score==null?null:Number(r.score)):Number(r.chart_analysis.liveAnalysisConfidence),closedAt:r.closed_at??null,postAnalysis:r.post_analysis})));
   }
@@ -463,8 +477,8 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     finally { setSavingTrade(false); closeTradeActionModal(); }
   }
 
-  const suggested=useMemo(()=>history.filter(h=>h.source==='SUGGESTED').slice(0,3),[history]);
-  const executed=useMemo(()=>history.filter(h=>h.source==='EXECUTED').slice(0,3),[history]);
+  const suggested=useMemo(()=>latestTradeActivity(history,'SUGGESTED'),[history]);
+  const executed=useMemo(()=>latestTradeActivity(history,'EXECUTED'),[history]);
   const hasActiveTrade=useMemo(()=>history.some(h=>h.source==='EXECUTED'&&h.status==='OPEN'),[history]);
   const threshold=strategy.aiBehavior?.confidenceThreshold ?? strategy.waitScore;
   const aiStatus=useMemo(()=>getAiDockStatus({analyzing,analysis,result,threshold}),[analysis,analyzing,result,threshold]);
@@ -656,5 +670,5 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
 }
 
 function History({title,emptyMessage,rows}:{title:string;emptyMessage:string;rows:SavedSetup[]}){
-  return <section className="trade-history-column"><h4>{title}</h4><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map((row,index)=><div className="trade-history-row" key={`${title}-${index}-${row.id ?? row.createdAt}`}><strong>{index+1}. {row.instrument} {row.direction}</strong><small>Entry {new Date(row.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}{row.closedAt?` · Exit ${new Date(row.closedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</small></div>)}</div></section>;
+  return <section className="trade-history-column"><h4>{title}</h4><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map((row,index)=><div className="trade-history-row" key={`${title}-${row.id}`}><strong>{index+1}. {row.instrument} {row.direction}</strong><small>Entry <time dateTime={row.createdAt}>{formatTradeActivityDateTime(row.createdAt)}</time>{row.closedAt?<> · Exit <time dateTime={row.closedAt}>{formatTradeActivityDateTime(row.closedAt)}</time></>:null}</small></div>)}</div></section>;
 }
