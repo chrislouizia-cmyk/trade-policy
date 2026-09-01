@@ -27,6 +27,7 @@ import { validateStrategyName } from '@/lib/strategy-name';
 import { isStrategyDirty } from '@/lib/strategy-dirty-state';
 import { strategyCatalogInstruments } from '@/lib/instrument-registry';
 import { normalizePersistableStrategyRules, strategyRulePersistenceRows } from '@/lib/strategy-rule-persistence';
+import { resolveStrategyBuilderBootstrapRenderState, runStrategyBuilderBootstrap, summarizeStrategyBuilderBootstrapFailure } from '@/lib/strategy-builder-bootstrap';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -121,6 +122,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const [stopLimits, setStopLimits] = useState<StopLimit[]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [userTimezone, setUserTimezone] = useState('America/Monterrey');
   const [builderStep, setBuilderStep] = useState<BuilderStep>('identity');
@@ -235,35 +237,54 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
   async function loadAll(selectId?: string) {
     const supabase = createClient();
-    const [{ data: profileRows, error: profileError }, { data: catalogRows }] = await Promise.all([
-      supabase.from('strategy_profiles').select('*').order('is_archived', { ascending: true }).order('created_at', { ascending: true }),
-      supabase.from('instrument_catalog').select('symbol,display_name,market_type,category').eq('is_active', true).order('symbol'),
-    ]);
+    setBootstrapError(null);
+    setMessage('');
 
-    if (profileError) {
-      setMessage(`${profileError.message}. Run 004_strategy_builder.sql in Supabase.`);
-      setLoading(false);
-      return;
-    }
+    await runStrategyBuilderBootstrap(
+      async () => {
+        const [{ data: profileRows, error: profileError }, { data: catalogRows, error: catalogError }] = await Promise.all([
+          supabase.from('strategy_profiles').select('*').order('is_archived', { ascending: true }).order('created_at', { ascending: true }),
+          supabase.from('instrument_catalog').select('symbol,display_name,market_type,category').eq('is_active', true).order('symbol'),
+        ]);
 
-    if (catalogRows?.length) setCatalog(catalogRows.map((row: any) => ({ symbol: row.symbol, displayName: row.display_name, marketType: row.market_type, category: row.category })));
+        if (profileError) {
+          throw new Error(`${profileError.message}. Run 004_strategy_builder.sql in Supabase.`);
+        }
 
-    const mapped = (profileRows ?? []).map(profileFromRow);
-    setProfiles(mapped);
-    const target = mapped.find((item) => item.id === selectId) ?? mapped.find((item) => item.isDefault) ?? mapped[0];
+        if (catalogError) {
+          throw new Error(`${catalogError.message}. The instrument catalog could not be loaded.`);
+        }
 
-    if (target) {
-      await openProfile(target);
-    } else {
-      setV2EntryOpen(false);
-      setBuilderStep('identity');
-      setProfile(createEmptyStrategyProfile());
-      setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
-      setRules(DEFAULT_RULES);
-      setStopLimits([]);
-      setMessage('No saved strategies yet. Create a new strategy to begin.');
-    }
-    setLoading(false);
+        return { profileRows, catalogRows };
+      },
+      async ({ profileRows, catalogRows }) => {
+        if (catalogRows?.length) {
+          setCatalog(catalogRows.map((row: any) => ({ symbol: row.symbol, displayName: row.display_name, marketType: row.market_type, category: row.category })));
+        }
+
+        const mapped = (profileRows ?? []).map(profileFromRow);
+        setProfiles(mapped);
+        const target = mapped.find((item) => item.id === selectId) ?? mapped.find((item) => item.isDefault) ?? mapped[0];
+
+        if (target) {
+          await openProfile(target);
+        } else {
+          setV2EntryOpen(false);
+          setBuilderStep('identity');
+          setProfile(createEmptyStrategyProfile());
+          setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
+          setRules(DEFAULT_RULES);
+          setStopLimits([]);
+          setMessage('No saved strategies yet. Create a new strategy to begin.');
+        }
+      },
+      (error) => {
+        const nextMessage = summarizeStrategyBuilderBootstrapFailure(error);
+        setBootstrapError(nextMessage);
+        setMessage(nextMessage);
+      },
+      setLoading,
+    );
   }
 
   async function openProfile(target: StrategyProfile) {
@@ -503,6 +524,9 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const archivedProfiles = useMemo(() => profiles.filter((item) => item.isArchived), [profiles]);
 
   if (loading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
+  if (resolveStrategyBuilderBootstrapRenderState({ loading, bootstrapError }) === 'error') {
+    return <div className="card strategy-builder-status" role="alert" aria-live="assertive"><h2>Strategy Builder could not load</h2><p>{bootstrapError}</p><button type="button" onClick={() => { setBootstrapError(null); void loadAll(selectedStrategyId ?? undefined); }}>Retry</button></div>;
+  }
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');window.location.assign('/validate')}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
   if (learningConfirmation) return <><section className="card strategy-save-success" aria-live="polite"><strong>Strategy saved — {savedStrategy?.name??learningConfirmation.profile.name}</strong><p>{savedStrategy?.isDefault?'Active strategy':'Saved strategy — not active.'}</p><button type="button" onClick={()=>{setLearningConfirmation(null);void loadAll(savedStrategy?.id)}}>View strategy</button></section><StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/></>;
   if (v2EntryOpen) {
