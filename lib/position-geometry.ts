@@ -47,7 +47,8 @@ export function proposedPositionFromCandidate(instrument: string, candidate: Ent
   const assessment = assessPositionGeometry(geometry);
   const originalPlannedRR = candidate.rr ?? assessment.rr;
   if (originalPlannedRR == null) return null;
-  return Object.freeze({ status: 'PROPOSED', selectedCandidateId: candidate.id || null, originalGeometry: geometry, currentGeometry: geometry, originalPlannedRR, acceptedGeometry: null, acceptedPlannedRR: null, geometryEdited: false, editedFields: Object.freeze([]), proposalCreatedAt: null, acceptedAt: null, closedAt: null, activeTradeId: null, tradeRecordId: null });
+  const proposalCreatedAt = typeof candidate.createdAt === 'string' && candidate.createdAt.trim() ? candidate.createdAt : null;
+  return Object.freeze({ status: 'PROPOSED', selectedCandidateId: candidate.id || null, originalGeometry: geometry, currentGeometry: geometry, originalPlannedRR, acceptedGeometry: null, acceptedPlannedRR: null, geometryEdited: false, editedFields: Object.freeze([]), proposalCreatedAt, acceptedAt: null, closedAt: null, activeTradeId: null, tradeRecordId: null });
 }
 
 export function updateProposedGeometry(model: PositionOverlayModel, patch: Partial<PositionGeometry>): PositionOverlayModel {

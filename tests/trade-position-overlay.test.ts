@@ -39,7 +39,7 @@ const resolveCandlesFetchOutcomeLocal = (previousCandles: Candle[], payload: unk
   };
 };
 
-const candidate = { id: 'candidate-1', direction: 'BUY' as const, entryLow: 100, entryHigh: 100, stopLoss: 98, takeProfit: 104, rr: 2, status: 'READY' as const, rationale: 'fixture' };
+const candidate = { id: 'candidate-1', createdAt: '2025-01-01T00:00:00.000Z', direction: 'BUY' as const, entryLow: 100, entryHigh: 100, stopLoss: 98, takeProfit: 104, rr: 2, status: 'READY' as const, rationale: 'fixture' };
 
 test('candle request validates and normalizes instrument, timeframe, and range', () => {
   const result = parseMarketCandleRequest({ instrument: 'gbpusd', timeframe: 'h1', from: '2025-01-01T00:00:00.000Z', to: '2025-01-02T00:00:00.000Z' });
@@ -54,9 +54,10 @@ test('Twelve Data candles normalize deterministically to UTC numeric OHLC', () =
   assert.throws(() => normalizeTwelveDataCandles([{ datetime: 'bad', open: 1, high: 3, low: 0.5, close: 2 }]), /malformed/);
 });
 
-test('candidate creates a proposed controlled overlay model', () => {
+test('candidate creates a proposed controlled overlay model with a stable proposal timestamp', () => {
   const model = proposedPositionFromCandidate('GBPUSD', candidate)!;
   assert.equal(model.status, 'PROPOSED');
+  assert.equal(model.proposalCreatedAt, '2025-01-01T00:00:00.000Z');
   assert.deepEqual(model.currentGeometry, { instrument: 'GBPUSD', direction: 'BUY', entry: 100, stopLoss: 98, takeProfit: 104 });
   assert.equal(model.selectedCandidateId, 'candidate-1');
 });
@@ -284,7 +285,8 @@ test('missing lifecycle timestamps never fabricate a historical origin or close 
     { datetime: '2025-01-01T00:02:00.000Z' },
     { datetime: '2025-01-01T00:04:00.000Z' },
   ] as Array<{ datetime: string }>;
-  const proposed = proposedPositionFromCandidate('GBPUSD', candidate)!;
+  const missingCreated = { ...candidate, createdAt: undefined };
+  const proposed = proposedPositionFromCandidate('GBPUSD', missingCreated)!;
   assert.equal(proposed.proposalCreatedAt, null);
   assert.equal(resolveLifecycleAnchorIndex(candles, proposed.proposalCreatedAt), null);
   const active = activatePositionOverlay(proposed, { activeTradeId: 'trade-3', tradeRecordId: 'record-3', acceptedAt: '2025-01-01T00:02:00.000Z' });

@@ -297,6 +297,7 @@ export type EvidenceAssessment = {
 };
 export type EntryCandidate = {
   id: string;
+  createdAt?: string | null;
   direction: Direction;
   entryLow: number | null;
   entryHigh: number | null;
