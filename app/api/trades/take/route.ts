@@ -51,7 +51,9 @@ export async function POST(request: Request) {
       acceptedPlannedRR: initialRR,
       geometryEdited: editedFields.length > 0,
       editedFields,
+      proposalCreatedAt: typeof body.positionOverlay?.proposalCreatedAt === 'string' ? body.positionOverlay.proposalCreatedAt : null,
       acceptedAt,
+      closedAt: typeof body.positionOverlay?.closedAt === 'string' ? body.positionOverlay.closedAt : null,
     };
     if(body.tradeRecordId&&typeof body.tradeRecordId==='string')cleanup={supabase,userId:user.id,tradeRecordId:body.tradeRecordId};
 
