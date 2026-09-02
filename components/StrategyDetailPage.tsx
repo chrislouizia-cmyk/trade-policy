@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
+import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/backtesting/instrument-selection';
 import styles from './StrategyDetailPage.module.css';
 
 type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
@@ -185,6 +186,11 @@ function getWindowForPreset(preset: string) {
 }
 
 export default function StrategyDetailPage({ strategy, rules, sessions, initialRuns, planCode }: StrategyDetailPageProps) {
+  const enabledBacktestInstruments = useMemo(
+    () => normalizeStrategyInstruments(strategy.instruments),
+    [strategy.instruments],
+  );
+  const enabledBacktestInstrumentKey = enabledBacktestInstruments.join('|');
   const [tab, setTab] = useState<TabKey>('overview');
   const [runs, setRuns] = useState(initialRuns);
   const [formOpen, setFormOpen] = useState(false);
@@ -197,7 +203,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   const [reportError, setReportError] = useState('');
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [form, setForm] = useState({
-    instrument: Array.isArray(strategy.instruments) && strategy.instruments.length > 0 ? strategy.instruments[0] : 'XAUUSD',
+    instrument: resolveBacktestInstrument(null, strategy.instruments),
     periodPreset: '3M',
     customStart: '',
     customEnd: '',
@@ -233,6 +239,13 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
     ? selectedRunMetadata.effective_period_end
     : null;
   const dataFreshnessSeconds = numberValue(selectedRunMetadata?.data_freshness_seconds);
+
+  useEffect(() => {
+    setForm((current) => {
+      const instrument = resolveBacktestInstrument(current.instrument, enabledBacktestInstruments);
+      return instrument === current.instrument ? current : { ...current, instrument };
+    });
+  }, [strategy.id, enabledBacktestInstrumentKey]);
 
   function handleBackToStrategies() {
     window.location.assign('/profile');
@@ -361,6 +374,11 @@ setReportLoading(false);
     setMessage('');
 
     try {
+      const selectedInstrument = resolveBacktestInstrument(form.instrument, enabledBacktestInstruments);
+      if (!selectedInstrument) {
+        throw new Error('Enable at least one instrument for this strategy before running a backtest.');
+      }
+
       const chosenPeriod = form.periodPreset === 'Custom' ? {
         periodStart: form.customStart ? new Date(form.customStart).toISOString() : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
         periodEnd: form.customEnd ? new Date(form.customEnd).toISOString() : new Date().toISOString(),
@@ -368,7 +386,7 @@ setReportLoading(false);
 
       const payload = {
         strategyProfileId: strategy.id,
-        instrument: form.instrument,
+        instrument: selectedInstrument,
         executionTimeframe: strategy.trigger_timeframe || strategy.entry_timeframe || 'M15',
         periodStart: chosenPeriod.periodStart,
         periodEnd: chosenPeriod.periodEnd,
@@ -398,7 +416,7 @@ setReportLoading(false);
       setFormOpen(false);
       if (result?.runId) {
         setSelectedRunId(result.runId);
-        setMessage(`Queued ${form.instrument} backtest for ${strategy.name}. Starting historical replay…`);
+        setMessage(`Queued ${selectedInstrument} backtest for ${strategy.name}. Starting historical replay…`);
         await executeQueuedRun(result.runId);
       } else {
         await refreshBacktests();
@@ -559,7 +577,8 @@ setReportLoading(false);
                       <label>
                         Instrument
                         <select value={form.instrument} onChange={(event) => setForm((current) => ({ ...current, instrument: event.target.value }))}>
-                          {(strategy.instruments ?? ['XAUUSD']).map((instrument) => (
+                          {enabledBacktestInstruments.length === 0 && <option value="">No enabled instruments</option>}
+                          {enabledBacktestInstruments.map((instrument) => (
                             <option key={instrument} value={instrument}>{instrument}</option>
                           ))}
                         </select>
@@ -603,7 +622,7 @@ setReportLoading(false);
                     )}
 
                     <div className="button-row" style={{ marginTop: 0 }}>
-                      <button type="submit" className="primary" disabled={saving}>{saving ? 'Queueing…' : 'Queue Backtest'}</button>
+                      <button type="submit" className="primary" disabled={saving || enabledBacktestInstruments.length === 0}>{saving ? 'Queueing…' : 'Queue Backtest'}</button>
                       <button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button>
                     </div>
                   </form>
