@@ -62,39 +62,42 @@ function TradeJournalRow({ item }: { item: HistoryTradeItem }) {
   const resultValue = item.status === 'CLOSED' ? item.resultR : item.currentR;
   return (
     <article className="history-row history-journal-row trade-journal-row">
-      <div className="history-row-main">
+      <div className={`history-timeline-marker ${item.status === 'OPEN' ? 'open' : 'closed'}`} aria-hidden="true"><span /></div>
+      <div className="history-row-main history-event-main">
         <div className="history-row-head">
           <div className="history-row-tags">
             <span className="history-kind-tag">TRADE</span>
-            <span className="history-instrument-tag">{item.instrument}</span>
-            <span className="history-timeframe-tag">{item.direction}</span>
+            <strong>{item.instrument}</strong>
+            <span className="history-direction-label">{item.direction}</span>
           </div>
           <div className="history-row-badges">
             {item.takenAgainstVerdict ? <span className="history-badge tone-danger">OVERRIDE</span> : null}
             <span className={`history-badge tone-${item.status === 'OPEN' ? 'positive' : item.outcome === 'LOSS' ? 'danger' : 'neutral'}`}>{item.status}</span>
           </div>
         </div>
-        <time dateTime={item.openedAt}>Opened {formatDateTime(item.openedAt)}</time>
-        {item.closedAt ? <time dateTime={item.closedAt}>Closed {formatDateTime(item.closedAt)}</time> : null}
-        <h3>{item.strategyName}</h3>
+        <div className="history-event-time"><time dateTime={item.openedAt}>Opened {formatDateTime(item.openedAt)}</time>{item.closedAt ? <time dateTime={item.closedAt}>Closed {formatDateTime(item.closedAt)}</time> : null}</div>
+        <h3>{item.strategyName}<span>{item.setupType ?? 'Setup not recorded'}</span></h3>
         <p>{item.originalVerdictReason ?? (item.status === 'OPEN' ? 'Trade is currently under active supervision.' : 'This trade has completed its lifecycle.')}</p>
-        <div className="history-trade-geometry" aria-label="Persisted trade geometry">
-          <span>Entry <strong>{formatPrice(item.entry)}</strong></span>
-          <span>Stop <strong>{formatPrice(item.stopLoss)}</strong></span>
-          <span>Target <strong>{formatPrice(item.takeProfit)}</strong></span>
-        </div>
+        <details className="history-event-details">
+          <summary>Trade details <span>Entry, risk and lifecycle context</span></summary>
+          <div className="history-event-detail-grid">
+            <div><span>Entry</span><strong>{formatPrice(item.entry)}</strong></div>
+            <div><span>Stop</span><strong>{formatPrice(item.stopLoss)}</strong></div>
+            <div><span>Target</span><strong>{formatPrice(item.takeProfit)}</strong></div>
+            <div><span>Original verdict</span><strong>{label(item.originalVerdict)}</strong></div>
+            <div><span>Initial R:R</span><strong>{item.initialRR === null ? 'Not recorded' : `${item.initialRR.toFixed(2)}R`}</strong></div>
+            <div><span>Risk</span><strong>{item.riskPercent === null ? 'Not recorded' : `${item.riskPercent.toFixed(2)}%`}</strong></div>
+          </div>
+        </details>
       </div>
 
-      <div className="history-row-meta history-trade-meta">
-        <div><span>Original verdict</span><strong>{label(item.originalVerdict)}</strong></div>
-        <div><span>{item.status === 'OPEN' ? 'Current R' : 'Realized R'}</span><strong className={resultValue !== null && resultValue < 0 ? 'metric-negative' : 'metric-positive'}>{formatR(resultValue)}</strong></div>
-        <div><span>Result</span><strong>{item.status === 'OPEN' ? 'In progress' : label(item.outcome)}</strong></div>
-        <div><span>Setup</span><strong>{item.setupType ?? 'Not recorded'}</strong></div>
-        <div><span>Initial R:R</span><strong>{item.initialRR === null ? 'Not recorded' : `${item.initialRR.toFixed(2)}R`}</strong></div>
-        <div><span>Risk</span><strong>{item.riskPercent === null ? 'Not recorded' : `${item.riskPercent.toFixed(2)}%`}</strong></div>
-      </div>
+      <aside className="history-event-outcome">
+        <span>{item.status === 'OPEN' ? 'Current R' : 'Realized R'}</span>
+        <strong className={resultValue !== null && resultValue < 0 ? 'metric-negative' : 'metric-positive'}>{formatR(resultValue)}</strong>
+        <small>{item.status === 'OPEN' ? 'In progress' : label(item.outcome)}</small>
+      </aside>
 
-      <div className="history-row-action history-journal-actions">
+      <div className="history-row-action history-journal-actions history-event-actions">
         {item.sourceReportId ? <a href={`/history/${item.sourceReportId}`} className="button-link secondary">Open decision</a> : null}
         {item.status === 'OPEN' ? <a href="/active-trade" className="button-link primary">Manage trade</a> : null}
         {item.status === 'CLOSED' && !item.sourceReportId ? <a href="/analytics" className="button-link secondary">View analytics</a> : null}
@@ -106,28 +109,26 @@ function TradeJournalRow({ item }: { item: HistoryTradeItem }) {
 function DecisionJournalRow({ item }: { item: HistoryDecisionItem }) {
   return (
     <article className="history-row history-journal-row decision-journal-row">
-      <div className="history-row-main">
+      <div className="history-timeline-marker decision" aria-hidden="true"><span /></div>
+      <div className="history-row-main history-event-main">
         <div className="history-row-head">
           <div className="history-row-tags">
             <span className="history-kind-tag">DECISION</span>
-            <span className="history-instrument-tag">{item.instrument}</span>
-            <span className="history-timeframe-tag">{item.timeframe}</span>
+            <strong>{item.instrument}</strong>
+            <span className="history-direction-label">{item.timeframe}</span>
           </div>
           <span className={`history-badge tone-${toneForVerdict(item.verdict)}`}>{label(item.verdict)}</span>
         </div>
         <time dateTime={item.occurredAt}>{formatDateTime(item.occurredAt)}</time>
-        <h3>{item.strategyName}</h3>
+        <h3>{item.strategyName}<span>Saved market decision</span></h3>
         <p>{item.primaryReason}</p>
+        <div className="history-decision-facts">
+          <span>Readiness <strong>{item.readinessPercent === null ? '—' : `${Math.round(item.readinessPercent)}%`}</strong></span>
+          <span>Freshness <strong>{label(item.freshness)}</strong></span>
+          {item.provider ? <span>Provider <strong>{item.provider}</strong></span> : null}
+        </div>
       </div>
-
-      <div className="history-row-meta">
-        <div><span>Verdict</span><strong>{label(item.verdict)}</strong></div>
-        <div><span>Readiness</span><strong>{item.readinessPercent === null ? 'Not recorded' : `${Math.round(item.readinessPercent)}%`}</strong></div>
-        <div><span>Freshness</span><strong>{label(item.freshness)}</strong></div>
-        {item.provider ? <div><span>Provider</span><strong>{item.provider}</strong></div> : null}
-      </div>
-
-      <div className="history-row-action"><a href={`/history/${item.id}`} className="button-link secondary">Open report</a></div>
+      <div className="history-row-action history-event-actions"><a href={`/history/${item.id}`} className="button-link secondary">Open report</a></div>
     </article>
   );
 }
@@ -177,23 +178,23 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     <main className="container history-page-shell">
       <AppHeader eyebrow="TRADE POLICE / HISTORY" displayName={displayName} description="Review past decisions and outcomes as one chronological journal." userId={user.id} />
 
-      <section className="card history-overview-card">
+      <section className="card history-overview-card history-journal-hero">
         <header className="history-header-row">
-          <div><p className="eyebrow">DECISION JOURNAL</p><h1>History</h1><p className="muted">Follow each decision into execution and outcome without rewriting the evidence with later market data.</p></div>
+          <div><p className="eyebrow">TRADING JOURNAL</p><h1>Your decisions, in context.</h1><p className="muted">Trace every market read from evidence to execution and outcome—without rewriting what you knew at the time.</p></div>
           <a className="button-link secondary" href="/validate">Open decision workspace</a>
         </header>
-        <div className="history-summary-grid">
+        <div className="history-summary-grid history-pulse-strip">
           <div className="history-summary-box"><span>Open trades</span><strong>{summary.openTrades}</strong></div>
           <div className="history-summary-box"><span>Closed trades</span><strong>{summary.closedTrades}</strong></div>
           <div className="history-summary-box"><span>Saved decisions</span><strong>{summary.savedDecisions}</strong></div>
-          <div className="history-summary-box"><span>Realized R</span><strong>{summary.realizedR === null ? '—' : formatR(summary.realizedR)}</strong></div>
+          <div className="history-summary-box history-realized-pulse"><span>Realized R</span><strong className={(summary.realizedR ?? 0) >= 0 ? 'metric-positive' : 'metric-negative'}>{summary.realizedR === null ? '—' : formatR(summary.realizedR)}</strong></div>
         </div>
       </section>
 
-      <section className="card history-list-card">
+      <section className="history-list-card history-journal-surface">
         <header className="history-list-header">
-          <div><p className="eyebrow">RECORDED ACTIVITY</p><h2>Journal timeline</h2></div>
-          <p className="muted">Historical snapshots are never recalculated. SIMULATION / INTERNAL TEST records are excluded, and linked decisions and trades appear as one lifecycle.</p>
+          <div><p className="eyebrow">RECORDED ACTIVITY</p><h2>Journal timeline</h2><p className="muted">{visibleItems.length} {visibleItems.length === 1 ? 'event' : 'events'} in this view</p></div>
+          <p className="history-integrity-note"><span aria-hidden="true">✓</span> Historical snapshots are never recalculated. SIMULATION / INTERNAL TEST records are excluded.</p>
         </header>
 
         <nav className="history-view-tabs" aria-label="History record type">
@@ -202,18 +203,21 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
           <a href="/history?view=decisions" aria-current={selectedView === 'decisions' ? 'page' : undefined}>Decisions <span>{journal.decisions.length}</span></a>
         </nav>
 
-        <form className="history-filter-bar history-journal-filters" method="get">
-          {selectedView !== 'all' ? <input type="hidden" name="view" value={selectedView} /> : null}
-          <label><span>Search</span><input name="q" defaultValue={filters.q ?? ''} placeholder="Instrument or strategy" /></label>
-          <label><span>Verdict</span><select name="verdict" defaultValue={filters.verdict ?? ''}><option value="">All verdicts</option>{verdicts.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
-          <label><span>Status</span><select name="status" defaultValue={filters.status ?? ''}><option value="">All statuses</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select></label>
-          <label><span>Result</span><select name="result" defaultValue={filters.result ?? ''}><option value="">All results</option><option value="WIN">Win</option><option value="LOSS">Loss</option><option value="BREAKEVEN">Breakeven</option><option value="PARTIAL">Partial</option></select></label>
-          <label><span>Instrument</span><select name="instrument" defaultValue={filters.instrument ?? ''}><option value="">All instruments</option>{instruments.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label><span>Strategy</span><select name="strategy" defaultValue={filters.strategy ?? ''}><option value="">All strategies</option>{strategies.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-          <label><span>From</span><input type="date" name="from" defaultValue={filters.from ?? ''} /></label>
-          <label><span>To</span><input type="date" name="to" defaultValue={filters.to ?? ''} /></label>
-          <div className="history-filter-actions"><button type="submit" className="primary">Apply</button><a className="button-link secondary" href={clearHref}>Clear</a></div>
-        </form>
+        <details className="history-filter-disclosure" open={hasFilters}>
+          <summary><span>Filter journal</span><small>{hasFilters ? 'Filters active' : 'Search, dates and record attributes'}</small></summary>
+          <form className="history-filter-bar history-journal-filters" method="get">
+            {selectedView !== 'all' ? <input type="hidden" name="view" value={selectedView} /> : null}
+            <label className="history-search-field"><span>Search</span><input name="q" defaultValue={filters.q ?? ''} placeholder="Instrument or strategy" /></label>
+            <label><span>Verdict</span><select name="verdict" defaultValue={filters.verdict ?? ''}><option value="">All verdicts</option>{verdicts.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+            <label><span>Status</span><select name="status" defaultValue={filters.status ?? ''}><option value="">All statuses</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select></label>
+            <label><span>Result</span><select name="result" defaultValue={filters.result ?? ''}><option value="">All results</option><option value="WIN">Win</option><option value="LOSS">Loss</option><option value="BREAKEVEN">Breakeven</option><option value="PARTIAL">Partial</option></select></label>
+            <label><span>Instrument</span><select name="instrument" defaultValue={filters.instrument ?? ''}><option value="">All instruments</option>{instruments.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label><span>Strategy</span><select name="strategy" defaultValue={filters.strategy ?? ''}><option value="">All strategies</option>{strategies.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+            <label><span>From</span><input type="date" name="from" defaultValue={filters.from ?? ''} /></label>
+            <label><span>To</span><input type="date" name="to" defaultValue={filters.to ?? ''} /></label>
+            <div className="history-filter-actions"><button type="submit" className="primary">Apply filters</button><a className="button-link secondary" href={clearHref}>Clear</a></div>
+          </form>
+        </details>
 
         {loadError ? (
           <div className="history-empty-state error-state"><h3>History could not be loaded</h3><p>The recorded journal is temporarily unavailable. Please try again.</p></div>
