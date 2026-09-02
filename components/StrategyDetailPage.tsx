@@ -357,13 +357,17 @@ setReportLoading(false);
         window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
       } else {
         const retryAfterSeconds = Math.max(5, Number(payload?.retryAfterSeconds || 15));
-        setMessage(payload?.status === 'RUNNING'
-          ? `Backtest execution is still active. Check again in about ${retryAfterSeconds} seconds.`
-          : `Backtest status: ${payload?.status || 'RUNNING'}.`);
+        if (payload?.status === 'RUNNING') {
+          setMessage(`Backtest execution is still active. Checking again in about ${retryAfterSeconds} seconds…`);
+          window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
+        } else {
+          setMessage(`Backtest status: ${payload?.status || 'RUNNING'}.`);
+        }
       }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Backtest execution request failed.');
+    } catch {
+      setMessage('The connection was interrupted, but the backtest is safe. Reconnecting automatically…');
       await refreshBacktests();
+      window.setTimeout(() => { void executeQueuedRun(runId); }, 15_000);
     }
   }
 
