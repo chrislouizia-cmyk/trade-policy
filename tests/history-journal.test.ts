@@ -115,4 +115,5 @@ test('History page reads canonical trades and decisions and exposes truthful jou
   assert.match(page, /SIMULATION \/ INTERNAL TEST records are excluded/);
   assert.match(page, /Opened \{formatDateTime\(item\.openedAt\)\}/);
   assert.match(page, /Closed \{formatDateTime\(item\.closedAt\)\}/);
+  assert.match(page, /export const dynamic = 'force-dynamic'/);
 });

@@ -32,7 +32,14 @@ type BreakdownEntry = {
 };
 
 export default function AnalyticsDashboard({ account, trades }: { account: Account; trades: Trade[] }) {
-  const metrics = useMemo(() => summarizeClosedTradeMetrics(trades as any), [trades]);
+  const metricRows = useMemo(() => trades.map((trade) => ({
+    id: trade.id,
+    status: 'CLOSED',
+    closed_at: trade.closedAt,
+    outcome: trade.outcome,
+    result_r: trade.resultR,
+  })), [trades]);
+  const metrics = useMemo(() => summarizeClosedTradeMetrics(metricRows), [metricRows]);
   const ordered = useMemo(
     () => [...trades].sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime()),
     [trades]
@@ -83,7 +90,7 @@ export default function AnalyticsDashboard({ account, trades }: { account: Accou
         </div>
         <div className="analytics-hero-meta">
           <span>{metrics.sampleSize} closed trades</span>
-          <small>Source: trade_records.status = CLOSED</small>
+          <small>Source: active_trades.status = CLOSED</small>
         </div>
       </section>
 

@@ -5,6 +5,7 @@ import {
   buildCumulativeRSeries,
   isAnalyticsSimulationRow,
 } from '../lib/analytics/closed-trade-metrics.ts';
+import fs from 'node:fs';
 
 const baseTrades = [
   { id: 't1', status: 'CLOSED', closed_at: '2024-01-01T00:00:00.000Z', outcome: 'WIN', result_r: 1, source: 'EXECUTED', strategy_snapshot: null, simulation_mode: null },
@@ -67,4 +68,19 @@ test('profit factor is unavailable when gross losses are zero or no trades exist
   ] as any);
 
   assert.equal(metrics.profitFactor, null);
+});
+
+test('Analytics reads canonical active trades and adapts UI fields to metric fields', () => {
+  const page = fs.readFileSync('app/analytics/page.tsx', 'utf8');
+  const dashboard = fs.readFileSync('components/AnalyticsDashboard.tsx', 'utf8');
+
+  assert.match(page, /from\('active_trades'\)/);
+  assert.doesNotMatch(page, /from\('trade_records'\)/);
+  assert.match(page, /eq\('status','CLOSED'\)/);
+  assert.match(page, /ANALYTICS_CLOSED_TRADES_LOAD_FAILED/);
+  assert.match(page, /export const dynamic = 'force-dynamic'/);
+  assert.match(dashboard, /status: 'CLOSED'/);
+  assert.match(dashboard, /closed_at: trade\.closedAt/);
+  assert.match(dashboard, /result_r: trade\.resultR/);
+  assert.match(dashboard, /active_trades\.status = CLOSED/);
 });

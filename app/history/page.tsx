@@ -13,6 +13,9 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type Search = {
   view?: string;
   q?: string;

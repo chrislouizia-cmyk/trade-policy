@@ -374,7 +374,8 @@ test('simulation records are explicitly labeled and kept out of normal user-faci
   assert.match(analyticsPage, /strategy_snapshot/i);
   assert.match(analyticsPage, /simulationMode/i);
   assert.match(historyPage, /from\('decision_reports'\)/i);
-  assert.doesNotMatch(analyticsPage, /\.from\('active_trades'\)\.select\(.*\)\.eq\('status','CLOSED'\)/i);
+  assert.match(analyticsPage, /\.from\('active_trades'\)\.select\(.*\)\.eq\('status','CLOSED'\)/i);
+  assert.match(analyticsPage, /!isTradeLifecycleSimulationRecord\(x\)/i);
 });
 
 test('internal lifecycle scenarios produce authoritative READY, SOFT, and HARD decision lineage snapshots', () => {

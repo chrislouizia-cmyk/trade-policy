@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { canActivateTradeFromDecision, canActivateTradeFromDecisionV2, canCloseTrade, evaluateTradeAuthorizationEligibility, finalizeTradeLifecycle, resolveTradeJournalAction } from '../lib/server/trade-lifecycle.ts';
 import { getSafeTradeActivationError } from '../lib/trade-action-errors.ts';
@@ -211,6 +212,14 @@ test('server failures surface a safe actionable reason', () => {
   });
 
   assert.equal(message, 'The originating decision could not be verified.');
+});
+
+test('legacy close route verifies the canonical closed trade before reporting success', () => {
+  const route = fs.readFileSync('app/api/trades/close/route.ts', 'utf8');
+  assert.match(route, /close_active_trade_with_ledger/);
+  assert.match(route, /status !== 'CLOSED'/);
+  assert.match(route, /TRADE_CLOSE_CANONICAL_CONFIRMED/);
+  assert.match(route, /'Cache-Control': 'no-store'/);
 });
 
 test('EXECUTED trade records without a successful active-trade link do not count toward daily limits', () => {
