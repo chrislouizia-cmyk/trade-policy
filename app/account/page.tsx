@@ -1,2 +1,26 @@
-import {redirect} from 'next/navigation';import Link from 'next/link';import {createClient} from '@/lib/supabase/server';import {getUserDisplayName} from '@/lib/user-display-name';import AppHeader from '@/components/AppHeader';import BillingActions from '@/components/BillingActions';import {getBillingState} from '@/lib/billing/entitlements';import {billingEnabled} from '@/lib/billing/config';
-export default async function AccountPage(){const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)redirect('/client/login?next=/account');const displayName=await getUserDisplayName(s,user);const state=await getBillingState(user.id);const limit=state.entitlements.monthlyAnalysisLimit;const date=state.currentPeriodEnd?new Date(state.currentPeriodEnd).toLocaleDateString():null;return <main className="container"><AppHeader eyebrow="TRADE POLICE / ACCOUNT" displayName={displayName} description="Access, plan, and billing state." userId={user.id}/><div className="grid grid-2"><section className="card"><p className="eyebrow">ACCOUNT</p><h2>{user.email}</h2><p className="muted">Authenticated customer account</p><Link className="button-link secondary" href="/reset-password">Change password</Link></section><section className="card billing-summary"><p className="eyebrow">PLAN & BILLING</p><h2>{state.plan}</h2><p>Status: <strong>{state.status.toUpperCase()}</strong></p><p>Usage this period: <strong>{state.usage}{limit===null?' · unlimited':` / ${limit} analyses`}</strong></p>{date&&<p>{state.cancelAtPeriodEnd?'Access ends':'Renews'}: <strong>{date}</strong></p>}{state.paymentFailed&&<p className="error">Your latest payment failed. Update your payment method to prevent loss of Pro access.</p>}<div className="button-row">{state.stripeCustomerId&&billingEnabled()?<BillingActions mode="portal"/>:state.plan==='FREE'&&billingEnabled()?<BillingActions mode="checkout"/>:null}<Link className="button-link secondary" href="/pricing">Compare plans</Link></div><p className="muted">Subscription access is synchronized from verified Stripe webhooks. This page cannot change entitlements.</p></section></div><section className="card risk-callout"><p>Trade Police is a decision-support and discipline tool. It does not provide financial advice or guarantee trading results.</p></section></main>}
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
+import { getUserDisplayName } from '@/lib/user-display-name';
+import AppHeader from '@/components/AppHeader';
+import BillingActions from '@/components/BillingActions';
+import LanguagePreference from '@/components/i18n/LanguagePreference';
+import { getBillingState } from '@/lib/billing/entitlements';
+import { billingEnabled } from '@/lib/billing/config';
+import { normalizeLocale, type LocalePreference } from '@/lib/i18n/config';
+import { getServerTranslator } from '@/lib/i18n/server';
+
+export default async function AccountPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/client/login?next=/account');
+  const [{ data: profile }, displayName, state, translator] = await Promise.all([
+    supabase.from('profiles').select('preferred_locale').eq('id', user.id).maybeSingle(),
+    getUserDisplayName(supabase, user), getBillingState(user.id), getServerTranslator(),
+  ]);
+  const { locale, t } = translator;
+  const preference: LocalePreference = profile?.preferred_locale === 'auto' ? 'auto' : normalizeLocale(profile?.preferred_locale) ?? 'auto';
+  const limit = state.entitlements.monthlyAnalysisLimit;
+  const date = state.currentPeriodEnd ? new Intl.DateTimeFormat(locale).format(new Date(state.currentPeriodEnd)) : null;
+  return <main className="container"><AppHeader eyebrow={t('account.eyebrow')} displayName={displayName} description={t('account.description')} userId={user.id}/><div className="grid grid-2"><section className="card"><p className="eyebrow">{t('nav.account').toUpperCase()}</p><h2>{user.email}</h2><p className="muted">{t('account.authenticated')}</p><Link className="button-link secondary" href="/reset-password">{t('account.changePassword')}</Link></section><section className="card billing-summary"><p className="eyebrow">{t('account.planBilling')}</p><h2>{state.plan}</h2><p>{t('account.status')}: <strong>{state.status.toUpperCase()}</strong></p><p>{t('account.usage')}: <strong>{state.usage}{limit === null ? ` · ${t('account.unlimited')}` : ` / ${limit} ${t('account.analyses')}`}</strong></p>{date && <p>{state.cancelAtPeriodEnd ? t('account.accessEnds') : t('account.renews')}: <strong>{date}</strong></p>}{state.paymentFailed && <p className="error">{t('account.paymentFailed')}</p>}<div className="button-row">{state.stripeCustomerId && billingEnabled() ? <BillingActions mode="portal"/> : state.plan === 'FREE' && billingEnabled() ? <BillingActions mode="checkout"/> : null}<Link className="button-link secondary" href="/pricing">{t('account.comparePlans')}</Link></div><p className="muted">{t('account.billingTrust') || 'Subscription access is synchronized from verified Stripe webhooks.'}</p></section><LanguagePreference userId={user.id} initialPreference={preference}/></div><section className="card risk-callout"><p>{t('account.disclaimer')}</p></section></main>;
+}

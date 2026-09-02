@@ -1,6 +1,9 @@
 import './trade-police.css';
 import type { Metadata } from 'next';
 import AppFooter from '@/components/AppFooter';
+import LocaleProvider from '@/components/i18n/LocaleProvider';
+import LocaleSynchronizer from '@/components/i18n/LocaleSynchronizer';
+import { getRequestLocale } from '@/lib/i18n/server';
 
 export const metadata: Metadata = {
   title: 'Trade Police',
@@ -14,6 +17,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><div className="app-document-content">{children}</div><AppFooter /></body></html>;
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getRequestLocale();
+  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><div className="app-document-content">{children}</div><AppFooter /></LocaleProvider></body></html>;
 }
