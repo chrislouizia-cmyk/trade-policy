@@ -82,9 +82,9 @@ test('Analytics reads canonical active trades and adapts UI fields to metric fie
   assert.match(dashboard, /status: 'CLOSED'/);
   assert.match(dashboard, /closed_at: trade\.closedAt/);
   assert.match(dashboard, /result_r: trade\.resultR/);
-  assert.match(dashboard, /active_trades\.status = CLOSED/);
-  assert.match(dashboard, /PERFORMANCE COCKPIT/);
+  assert.match(dashboard, /c\.source/);
+  assert.match(dashboard, /c\.cockpit/);
   assert.match(dashboard, /analytics-primary-metrics/);
   assert.match(dashboard, /viewBox="0 0 100 40"/);
-  assert.match(dashboard, /Where performance comes from/);
+  assert.match(dashboard, /c\.sourceTitle/);
 });

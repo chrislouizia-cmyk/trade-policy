@@ -7,7 +7,7 @@ const route=readFileSync(new URL('../app/api/strategies/delete/route.ts',import.
 const migration=readFileSync(new URL('../supabase/migrations/030_playbook_lifecycle.sql',import.meta.url),'utf8');
 
 test('playbook lifecycle exposes edit duplicate archive restore and delete',()=>{
-  for(const action of ['Edit','Duplicate','Archive','Restore','Delete'])assert.match(builder,new RegExp(`>${action}<`));
+  for(const action of ['Edit','Duplicate','Archive','Restore','Delete'])assert.match(builder,new RegExp(`w\\('${action}'\\)`));
   assert.match(builder,/isArchived/);
   assert.match(builder,/ARCHIVED/);
 });

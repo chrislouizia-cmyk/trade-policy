@@ -4,7 +4,8 @@ test('Strategy detail renders the canonical single-card experience for saved str
   const detail=readFileSync(new URL('../components/StrategyDetailPage.tsx',import.meta.url),'utf8');
   for(const text of ['STRATEGY DETAIL','Overview','Rules','Backtests','Forward Test','Founder access','Unlimited'])assert.match(detail,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
   assert.match(detail,/PRIVATE_BETA:\s*10/);
-  assert.match(detail,/Plan:\s*\{normalizedPlanCode\s*\|\|\s*'FREE'\}\s*·\s*\{limitValue === null \? 'Unlimited' : `\$\{remainingCredits\} of \$\{limitValue\} credits left`\}/);
+  assert.match(detail,/w\('Plan'\).*normalizedPlanCode/);
+  assert.match(detail,/limitValue === null \? w\('Unlimited'\)/);
   assert.doesNotMatch(detail,/No backtest plan access/i);
   assert.doesNotMatch(detail,/limit 0/i);
   assert.doesNotMatch(detail,/Phase 2 placeholder/i);

@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client';
 import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
 import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/backtesting/instrument-selection';
 import styles from './StrategyDetailPage.module.css';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import {workspaceText} from '@/lib/i18n/workspace-copy';
 
 type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
 
@@ -200,6 +202,7 @@ function getWindowForPreset(preset: string) {
 }
 
 export default function StrategyDetailPage({ strategy, rules, sessions, initialRuns, planCode }: StrategyDetailPageProps) {
+  const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
   const enabledBacktestInstruments = useMemo(
     () => normalizeStrategyInstruments(strategy.instruments),
     [strategy.instruments],
@@ -469,12 +472,12 @@ setReportLoading(false);
             <div className="strategy-detail-title-row">
               <h1>{strategy.name}</h1>
               <div className="button-row" style={{ marginTop: 0 }}>
-                <button type="button" className="button-link secondary strategy-detail-back-link" onClick={handleBackToStrategies}>Back to Strategies</button>
-                <button type="button" className="button-link secondary" onClick={handleEditStrategy}>Edit strategy</button>
-                <button type="button" className="button-link secondary" onClick={handleDuplicateStrategy}>Duplicate</button>
+                <button type="button" className="button-link secondary strategy-detail-back-link" onClick={handleBackToStrategies}>{w('Back to Strategies')}</button>
+                <button type="button" className="button-link secondary" onClick={handleEditStrategy}>{w('Edit strategy')}</button>
+                <button type="button" className="button-link secondary" onClick={handleDuplicateStrategy}>{w('Duplicate')}</button>
               </div>
             </div>
-            <small className="muted strategy-detail-subtitle">{strategy.description || 'No description saved.'}</small>
+            <small className="muted strategy-detail-subtitle">{strategy.description || w('No description saved.')}</small>
           </div>
         </div>
 
@@ -490,7 +493,7 @@ setReportLoading(false);
                 disabled={comingSoon}
                 title={comingSoon ? 'Forward Test is not available yet.' : undefined}
               >
-                {key === 'overview' ? 'Overview' : key === 'rules' ? 'Rules' : key === 'backtests' ? 'Backtests' : 'Forward Test - Coming soon'}
+                {w(key === 'overview' ? 'Overview' : key === 'rules' ? 'Rules' : key === 'backtests' ? 'Backtests' : 'Forward Test - Coming soon')}
               </button>
             );
           })}
@@ -503,15 +506,15 @@ setReportLoading(false);
             <div className="grid grid-3 strategy-detail-grid strategy-detail-view">
               <section className="card strategy-detail-card">
                 <p className="eyebrow">PROFILE</p>
-                <h3>Strategy summary</h3>
+                <h3>{w('Strategy summary')}</h3>
                 <div className="strategy-detail-summary-list">
-                  <div className="strategy-detail-meta-row"><span>Instruments</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
-                  <div className="strategy-detail-meta-row"><span>Timeframes</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
-                  <div className="strategy-detail-meta-row"><span>Risk</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
+                  <div className="strategy-detail-meta-row"><span>{w('Instruments')}</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>{w('Timeframes')}</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>{w('Risk')}</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
                   <div className="strategy-detail-meta-row"><span>Min RR</span><strong>{strategy.minimum_rr ?? '—'}</strong></div>
                   <div className="strategy-detail-meta-row"><span>Signal readiness</span><strong>{strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</strong></div>
                   <div className="strategy-detail-meta-row strategy-detail-meta-row-wrap">
-                    <span>Sessions</span>
+                    <span>{w('Sessions')}</span>
                     <strong className="strategy-detail-chip-list">
                       {strategySessions.length ? strategySessions.map((session) => (
                         <span key={session} className="strategy-detail-chip">{session}</span>
@@ -523,7 +526,7 @@ setReportLoading(false);
 
               <section className="card strategy-detail-card">
                 <p className="eyebrow">RULES</p>
-                <h3>{strategyRules.length} enabled</h3>
+                <h3>{strategyRules.length} {w('enabled')}</h3>
                 <div className="strategy-detail-rule-stack">
                   {strategyRules.slice(0, 5).map((rule) => (
                     <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card">
@@ -531,7 +534,7 @@ setReportLoading(false);
                       <small className="muted">{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
                     </div>
                   ))}
-                  {strategyRules.length === 0 && <p className="muted">No enabled rules saved yet.</p>}
+                  {strategyRules.length === 0 && <p className="muted">{w('No enabled rules saved yet.')}</p>}
                 </div>
               </section>
 
@@ -548,7 +551,7 @@ setReportLoading(false);
                       <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
                     </div>
                   </div>
-                  <button type="button" className="primary" onClick={openBacktestForm}>Run Backtest</button>
+                  <button type="button" className="primary" onClick={openBacktestForm}>{w('Run Backtest')}</button>
                 </div>
               </section>
             </div>
@@ -557,16 +560,16 @@ setReportLoading(false);
           {tab === 'rules' && (
             <section className="card strategy-detail-section-card strategy-detail-view">
               <p className="eyebrow">RULES</p>
-              <h3>Configured rule set</h3>
+              <h3>{w('Configured rule set')}</h3>
               <div className="strategy-detail-rule-list">
                 {strategyRules.length === 0 ? (
-                  <p className="muted">No rules have been configured for this strategy.</p>
+                  <p className="muted">{w('No rules have been configured for this strategy.')}</p>
                 ) : (
                   strategyRules.map((rule) => (
                     <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card compact">
                       <div className="strategy-detail-rule-header">
                         <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
-                        <span className="badge">{rule.enabled ? 'Enabled' : 'Disabled'}</span>
+                        <span className="badge">{w(rule.enabled ? 'Enabled' : 'Disabled')}</span>
                       </div>
                       <small className="muted">
                         {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
@@ -586,13 +589,13 @@ setReportLoading(false);
                     <p className="eyebrow">BACKTESTS</p>
                     <h3>{usageWindowLabel}</h3>
                   </div>
-                  <button type="button" className="primary" onClick={openBacktestForm}>Run Backtest</button>
+                  <button type="button" className="primary" onClick={openBacktestForm}>{w('Run Backtest')}</button>
                 </div>
 
                 <div className="strategy-detail-backtest-summary">
                   <div className="strategy-detail-usage-row">
                     <strong>{usageCount}</strong>
-                    <small className="muted">Plan: {normalizedPlanCode || 'FREE'} · {limitValue === null ? 'Unlimited' : `${remainingCredits} of ${limitValue} credits left`}</small>
+                    <small className="muted">{w('Plan')}: {normalizedPlanCode || 'FREE'} · {limitValue === null ? w('Unlimited') : `${remainingCredits}/${limitValue} ${w('credits left')}`}</small>
                   </div>
                   <div className="strategy-detail-progress-track large">
                     <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
@@ -603,9 +606,9 @@ setReportLoading(false);
                   <form onSubmit={handleCreateBacktest} style={{ marginTop: 20, display: 'grid', gap: 16, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                     <div className="grid grid-2">
                       <label>
-                        Instrument
+                        {w('Instrument')}
                         <select value={form.instrument} onChange={(event) => setForm((current) => ({ ...current, instrument: event.target.value }))}>
-                          {enabledBacktestInstruments.length === 0 && <option value="">No enabled instruments</option>}
+                          {enabledBacktestInstruments.length === 0 && <option value="">{w('No enabled instruments')}</option>}
                           {enabledBacktestInstruments.map((instrument) => (
                             <option key={instrument} value={instrument}>{instrument}</option>
                           ))}
@@ -613,7 +616,7 @@ setReportLoading(false);
                       </label>
 
                       <label>
-                        Period
+                        {w('Period')}
                         <select value={form.periodPreset} onChange={(event) => setForm((current) => ({ ...current, periodPreset: event.target.value }))}>
                           <option value="1M">1M</option>
                           <option value="3M">3M</option>
@@ -623,15 +626,15 @@ setReportLoading(false);
                       </label>
 
                       <label>
-                        Starting balance
+                        {w('Starting balance')}
                         <input type="number" min="1" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} />
                       </label>
 
                       <label>
-                        Execution model
+                        {w('Execution model')}
                         <select value={form.executionModel} onChange={(event) => setForm((current) => ({ ...current, executionModel: event.target.value }))}>
-                          <option value="STANDARD">Standard</option>
-                          <option value="CONSERVATIVE">Conservative</option>
+                          <option value="STANDARD">{w('Standard')}</option>
+                          <option value="CONSERVATIVE">{w('Conservative')}</option>
                         </select>
                       </label>
                     </div>
@@ -639,19 +642,19 @@ setReportLoading(false);
                     {form.periodPreset === 'Custom' && (
                       <div className="grid grid-2">
                         <label>
-                          Start date
+                          {w('Start date')}
                           <input type="date" value={form.customStart} onChange={(event) => setForm((current) => ({ ...current, customStart: event.target.value }))} />
                         </label>
                         <label>
-                          End date
+                          {w('End date')}
                           <input type="date" value={form.customEnd} onChange={(event) => setForm((current) => ({ ...current, customEnd: event.target.value }))} />
                         </label>
                       </div>
                     )}
 
                     <div className="button-row" style={{ marginTop: 0 }}>
-                      <button type="submit" className="primary" disabled={saving || enabledBacktestInstruments.length === 0}>{saving ? 'Queueing…' : 'Queue Backtest'}</button>
-                      <button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button>
+                      <button type="submit" className="primary" disabled={saving || enabledBacktestInstruments.length === 0}>{w(saving ? 'Queueing…' : 'Queue Backtest')}</button>
+                      <button type="button" className="secondary" onClick={() => setFormOpen(false)}>{w('Cancel')}</button>
                     </div>
                   </form>
                 )}
@@ -660,11 +663,11 @@ setReportLoading(false);
               </section>
 
               <section className="card">
-                <p className="eyebrow">RUN HISTORY</p>
-                <h3>Past runs</h3>
+                <p className="eyebrow">{w('RUN HISTORY')}</p>
+                <h3>{w('Past runs')}</h3>
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
                   {runs.length === 0 ? (
-                    <p className="muted">No backtests have been queued for this strategy yet.</p>
+                    <p className="muted">{w('No backtests have been queued for this strategy yet.')}</p>
                   ) : (
                     runs.map((run) => (
                       <div key={run.id} className="card strategy-detail-run-card" style={{ padding: 16, margin: 0 }}>
@@ -683,14 +686,14 @@ setReportLoading(false);
                             }}
                           >
                             {run.status === 'COMPLETED'
-                              ? 'View Report'
+                              ? w('View Report')
                               : run.status === 'FAILED'
-                                ? 'View Failure'
+                                ? w('View Failure')
                                 : run.status === 'QUEUED'
-                                  ? 'Run now'
+                                  ? w('Run now')
                                   : isBacktestLeaseStale(run)
-                                    ? 'Recover run'
-                                    : 'Refresh status'}
+                                    ? w('Recover run')
+                                    : w('Refresh status')}
                           </button>
                         </div>
                         {(run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'COMPLETED') && (
@@ -699,14 +702,14 @@ setReportLoading(false);
                           </div>
                         )}
                         <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
-                          <div><small className="muted">Revision</small><div>{run.strategy_revision_id || '—'}</div></div>
-                          <div><small className="muted">Period</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
-                          <div><small className="muted">Created</small><div>{formatDate(run.created_at)}</div></div>
+                          <div><small className="muted">{w('Revision')}</small><div>{run.strategy_revision_id || '—'}</div></div>
+                          <div><small className="muted">{w('Period')}</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
+                          <div><small className="muted">{w('Created')}</small><div>{formatDate(run.created_at)}</div></div>
                         </div>
                         <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
-                          <div><small className="muted">Total trades</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
-                          <div><small className="muted">Net return</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
-                          <div><small className="muted">Max drawdown</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>
+                          <div><small className="muted">{w('Total trades')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
+                          <div><small className="muted">{w('Net return')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
+                          <div><small className="muted">{w('Max drawdown')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>
                         </div>
                       </div>
                     ))

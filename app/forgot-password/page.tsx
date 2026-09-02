@@ -3,8 +3,11 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import {getAuthCopy} from '@/lib/i18n/auth-copy';
 
 export default function ForgotPasswordPage() {
+  const {locale}=useLocale(); const c=getAuthCopy(locale);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -16,7 +19,7 @@ export default function ForgotPasswordPage() {
     if (error) {
       setIsError(true);
       setMessage(error === 'invalid-link'
-        ? 'This recovery link is invalid or expired. Request a new one below.'
+        ? c.invalidLink
         : decodeURIComponent(error));
     }
   }, []);
@@ -38,7 +41,7 @@ export default function ForgotPasswordPage() {
       setIsError(true);
       setMessage(error.message);
     } else {
-      setMessage('If this email is tied to an account, a secure recovery link has been sent. Please check your email and spam folder.');
+      setMessage(c.recoverySent);
     }
     setLoading(false);
   }
@@ -47,17 +50,17 @@ export default function ForgotPasswordPage() {
     <main className="login-shell">
       <form className="card login-card" onSubmit={submit}>
         <div className="brand">TRADE POLICE</div>
-        <h1>Recover password</h1>
-        <p className="muted">Enter the email used for your Trade Police account.</p>
+        <h1>{c.recover}</h1>
+        <p className="muted">{c.recoverIntro}</p>
         <label>
-          Email
+          {c.email}
           <input name="email" type="email" autoComplete="email" required />
         </label>
         <button className="primary" disabled={loading}>
-          {loading ? 'Sending…' : 'Send recovery email'}
+          {loading ? c.sending : c.sendRecovery}
         </button>
         {message && <p className={isError ? 'warning' : 'success'}>{message}</p>}
-        <Link className="link-button" href={portal === 'hq' ? '/hq/login' : '/client/login'}>Back to sign in</Link>
+        <Link className="link-button" href={portal === 'hq' ? '/hq/login' : '/client/login'}>{c.back}</Link>
       </form>
     </main>
   );

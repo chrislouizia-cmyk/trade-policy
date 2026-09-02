@@ -9,9 +9,9 @@ test('first-run dashboard and analytics never invent zero-value evidence',()=>{
   const analytics=read('components/AnalyticsDashboard.tsx');
   assert.match(dashboard,/No closed trades/);
   assert.match(dashboard,/closedTradesToday>0/);
-  assert.match(analytics,/No closed trades yet/);
-  assert.match(analytics,/Analytics becomes meaningful after a trade closes with a real outcome/);
-  assert.match(analytics,/Metrics only count canonical closed trades/);
+  assert.match(analytics,/c\.emptyTitle|c\.emptyBody/);
+  assert.match(analytics,/c\.emptyBody/);
+  assert.match(analytics,/c\.canonicalOnly/);
   assert.doesNotMatch(analytics,/0%|0R|percentages|empty history/i);
 });
 

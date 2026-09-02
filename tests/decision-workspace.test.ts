@@ -70,7 +70,7 @@ test('Decision Report replaces Trade Reasoning in user-facing copy', () => {
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
   const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
 
-  assert.match(tradeValidator, />DECISION REPORT</);
+  assert.match(tradeValidator, /w\('DECISION REPORT'\)/);
   assert.match(tradeValidator, />View Decision Report</);
   assert.match(decisionHero, />View Decision Report</);
   assert.match(
@@ -163,8 +163,8 @@ test('decision hero maps deterministic states to primary verdicts', () => {
 
 test('Analyze page is framed around the trade decision question', () => {
   const page = readFileSync(`${root}/app/validate/page.tsx`, 'utf8');
-  assert.match(page, /TRADE POLICE \/ ANALYZE/);
-  assert.match(page, /Should I take this trade\?/);
+  assert.match(page, /c\.eyebrow/);
+  assert.match(page, /c\.description/);
   assert.doesNotMatch(page, /VALIDATION DESK/);
 });
 

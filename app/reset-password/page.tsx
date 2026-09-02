@@ -3,8 +3,11 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import {getAuthCopy} from '@/lib/i18n/auth-copy';
 
 export default function ResetPasswordPage() {
+  const {locale}=useLocale(); const c=getAuthCopy(locale);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -22,7 +25,7 @@ export default function ResetPasswordPage() {
       if (queryError) {
         if (mounted) {
           setMessage(queryError === 'invalid-link'
-            ? 'This recovery link is invalid or expired. Request a new email.'
+            ? c.invalidLink
             : decodeURIComponent(queryError));
           setReady(false);
           setChecking(false);
@@ -77,7 +80,7 @@ export default function ResetPasswordPage() {
       setReady(Boolean(data.session) && !error);
       if (error) setMessage(error.message);
       if (!data.session && !error) {
-        setMessage('This recovery link is invalid or expired. Request a new email.');
+        setMessage(c.invalidLink);
       }
       setChecking(false);
     }
@@ -109,12 +112,12 @@ export default function ResetPasswordPage() {
     const confirm = String(formData.get('confirm') ?? '');
 
     if (password.length < 8) {
-      setMessage('Password must contain at least 8 characters.');
+      setMessage(c.passwordLength);
       setLoading(false);
       return;
     }
     if (password !== confirm) {
-      setMessage('Passwords do not match.');
+      setMessage(c.passwordMismatch);
       setLoading(false);
       return;
     }
@@ -128,7 +131,7 @@ export default function ResetPasswordPage() {
     }
 
     await supabase.auth.signOut();
-    setMessage('Password updated successfully. Redirecting to sign in…');
+    setMessage(c.passwordUpdated);
     window.setTimeout(() => window.location.assign(portal === 'hq' ? '/hq/login?password=updated' : '/client/login?password=updated'), 1000);
     setLoading(false);
   }
@@ -137,32 +140,32 @@ export default function ResetPasswordPage() {
     <main className="login-shell">
       <form className="card login-card" onSubmit={submit}>
         <div className="brand">TRADE POLICE</div>
-        <h1>Create a new password</h1>
+        <h1>{c.newPasswordTitle}</h1>
 
         {checking ? (
-          <p className="muted">Verifying your secure recovery link…</p>
+          <p className="muted">{c.verifying}</p>
         ) : ready ? (
           <>
-            <p className="muted">Choose a secure password with at least 8 characters.</p>
+            <p className="muted">{c.choosePassword}</p>
             <label>
-              New password
+              {c.newPassword}
               <input name="password" type="password" minLength={8} autoComplete="new-password" required />
             </label>
             <label>
-              Confirm password
+              {c.confirmPassword}
               <input name="confirm" type="password" minLength={8} autoComplete="new-password" required />
             </label>
             <button className="primary" disabled={loading}>
-              {loading ? 'Saving…' : 'Save new password'}
+              {loading ? c.saving : c.savePassword}
             </button>
           </>
         ) : (
-          <div className="warning">This recovery link cannot be used. Request a new password email below.</div>
+          <div className="warning">{c.unusable}</div>
         )}
 
-        {message && <p className={message.startsWith('Password updated') ? 'success' : 'warning'}>{message}</p>}
-        {!ready && !checking && <Link href="/forgot-password">Request another recovery email</Link>}
-        <Link href={portal === 'hq' ? '/hq/login' : '/client/login'}>Back to sign in</Link>
+        {message && <p className={message === c.passwordUpdated ? 'success' : 'warning'}>{message}</p>}
+        {!ready && !checking && <Link href="/forgot-password">{c.requestAgain}</Link>}
+        <Link href={portal === 'hq' ? '/hq/login' : '/client/login'}>{c.back}</Link>
       </form>
     </main>
   );

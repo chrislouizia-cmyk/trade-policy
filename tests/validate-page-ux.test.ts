@@ -84,7 +84,7 @@ test('header order keeps the brand, greeting, and question in the required left-
   assert.match(header, /No trade without evidence\./);
   assert.match(header, /KeyboardShortcuts/);
   assert.match(header, /SignOutButton/);
-  assert.match(page, /description="Should I take this trade\?"/);
+  assert.match(page, /description=\{c\.description\}/);
   assert.match(page, /AppHeader/);
 });
 

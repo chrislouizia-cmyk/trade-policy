@@ -366,7 +366,7 @@ test('simulation records are explicitly labeled and kept out of normal user-faci
   const historyJournal = readFileSync(new URL('../lib/history-journal.ts', import.meta.url), 'utf8');
   const analyticsPage = readFileSync(new URL('../app/analytics/page.tsx', import.meta.url), 'utf8');
 
-  assert.match(historyPage, /SIMULATION\/ INTERNAL TEST|SIMULATION.*INTERNAL TEST/i);
+  assert.match(historyPage, /c\.integrity/i);
   assert.match(analyticsPage, /SIMULATION\/ INTERNAL TEST|SIMULATION.*INTERNAL TEST/i);
   assert.match(historyPage, /snapshot_json/i);
   assert.match(historyJournal, /simulationMode/i);

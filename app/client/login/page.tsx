@@ -9,6 +9,8 @@ import {
   isSupabaseAuthRateLimitError,
   shouldAttemptSupabaseCookieRecovery,
 } from '@/lib/supabase/auth-cookies';
+import {getRequestLocale} from '@/lib/i18n/server';
+import {getScreenCopy} from '@/lib/i18n/screen-copy';
 
 export default async function ClientLoginPage({
   searchParams,
@@ -16,6 +18,7 @@ export default async function ClientLoginPage({
   searchParams: Promise<{ next?: string; mode?: string; recovered?: string }>;
 }) {
   const params = await searchParams;
+  const locale=await getRequestLocale(); const c=getScreenCopy(locale).auth;
   const recovered = params.recovered === '1';
   const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
   const cookieStore = await cookies();
@@ -54,8 +57,8 @@ export default async function ClientLoginPage({
         <section className="auth-card portal-auth-card">
           <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
           <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
-          <h1>Trader sign in</h1>
-          <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
+          <h1>{c.signIn}</h1>
+          <p>{c.customerIntro}</p>
           <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
         </section>
       </main>
@@ -106,8 +109,8 @@ export default async function ClientLoginPage({
       <section className="auth-card portal-auth-card">
         <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
         <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
-        <h1>Trader sign in</h1>
-        <p>Access your strategies, trading accounts, validation tools, analytics and subscription.</p>
+        <h1>{c.signIn}</h1>
+        <p>{c.customerIntro}</p>
         <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
       </section>
     </main>

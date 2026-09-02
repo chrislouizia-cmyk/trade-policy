@@ -57,7 +57,7 @@ test('pending staff must set a password before atomic acceptance',()=>{
 });
 
 test('recovery request message stays generic and never reveals account existence',()=>{
- assert.match(forgotPassword,/If this email is tied to an account, a secure recovery link has been sent\./);
+ assert.match(forgotPassword,/c\.recoverySent/);
  assert.doesNotMatch(forgotPassword,/This email does not exist|account does not exist|not found/);
 });
 

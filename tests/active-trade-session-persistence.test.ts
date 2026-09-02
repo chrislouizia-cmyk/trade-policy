@@ -32,7 +32,7 @@ test('legacy active trades require an explicit original session and repair both 
   assert.match(reanalysisRoute,/MISSING_TRADE_SESSION[\s\S]*allowedSessions:policy\.allowedSessions/);
   assert.match(reanalysisRoute,/from\('trade_records'\)\.update\(\{session,updated_at:guidance\.generatedAt\}\)/);
   assert.match(reanalysisRoute,/strategy_snapshot:repairedSnapshot/);
-  assert.match(monitor,/Restore original trade session/);
+  assert.match(monitor,/c\.restore/);
   assert.match(monitor,/session:sessionRepair/);
   assert.match(monitor,/needsSessionRepair&&!sessionRepair/);
 });
