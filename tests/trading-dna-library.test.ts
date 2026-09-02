@@ -6,6 +6,7 @@ import type { TradingDnaRuleDefinition } from '../lib/trading-dna/types.ts';
 
 const catalog=readFileSync(new URL('../components/TradingDnaLibrary.tsx',import.meta.url),'utf8');
 const builder=readFileSync(new URL('../components/StrategyBuilder.tsx',import.meta.url),'utf8');
+const persistence=readFileSync(new URL('../lib/strategy-rule-persistence.ts',import.meta.url),'utf8');
 const ruleBuilder=readFileSync(new URL('../components/RuleBuilder.tsx',import.meta.url),'utf8');
 
 test('registry contains the complete Phase 1 vocabulary with unique IDs',()=>{
@@ -63,5 +64,6 @@ test('catalog UI is driven by the registry and composer consumes the same regist
 test('legacy playbook rules remain unchanged and compatible',()=>{
   assert.match(ruleBuilder,/\['h4TrendAligned','Trend alignment','TREND'\]/);
   assert.match(ruleBuilder,/\['orderBlock','Order block','CONFIRMATION'\]/);
-  assert.match(builder,/evaluation_mode:rule\.evaluationMode\?\?'AUTOMATIC'/);
+  assert.match(builder,/strategyRulePersistenceRows\(saveRules\)/);
+  assert.match(persistence,/evaluation_mode: rule\.evaluationMode \?\? 'AUTOMATIC'/);
 });
