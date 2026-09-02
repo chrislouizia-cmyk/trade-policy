@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
 import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/backtesting/instrument-selection';
@@ -88,6 +89,19 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function numberValue(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function backtestProgress(run: BacktestRunRow): number {
+  if (run.status === 'COMPLETED') return 100;
+  const metadata = asRecord(run.metadata);
+  const persisted = Number(metadata?.execution_progress_percent ?? 0);
+  return Number.isFinite(persisted) ? Math.min(99, Math.max(0, Math.round(persisted))) : 0;
+}
+
+function backtestRunStatusLabel(run: BacktestRunRow): string {
+  if (run.status === 'COMPLETED') return 'Completed · 100%';
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') return `Running historical replay · ${backtestProgress(run)}%`;
+  return run.status;
 }
 
 type StrategyDetailPageProps = {
@@ -302,6 +316,12 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       window.removeEventListener('keydown', handleReportEscape);
     };
   }, [reportModalOpen]);
+
+  function closeRunReport(event?: React.SyntheticEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setReportModalOpen(false);
+  }
 
   async function openRunReport(run: BacktestRunRow) {
     setSelectedRunId(run.id);
@@ -651,7 +671,7 @@ setReportLoading(false);
                         <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
                           <div style={{ minWidth: 0 }}>
                             <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{run.instrument || 'XAUUSD'}</strong>
-                            <small className="muted" style={{ display: 'block' }}>{run.status}</small>
+                            <small className="muted" style={{ display: 'block' }}>{backtestRunStatusLabel(run)}</small>
                           </div>
                           <button
                             type="button"
@@ -673,6 +693,11 @@ setReportLoading(false);
                                     : 'Refresh status'}
                           </button>
                         </div>
+                        {(run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'COMPLETED') && (
+                          <div className="strategy-detail-progress-track large" role="progressbar" aria-label={`${run.instrument || 'Backtest'} historical replay progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={backtestProgress(run)} style={{ marginTop: 12 }}>
+                            <div className="strategy-detail-progress-fill" style={{ width: `${backtestProgress(run)}%` }} />
+                          </div>
+                        )}
                         <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
                           <div><small className="muted">Revision</small><div>{run.strategy_revision_id || '—'}</div></div>
                           <div><small className="muted">Period</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
@@ -689,19 +714,19 @@ setReportLoading(false);
                 </div>
               </section>
 
-              {selectedRun && reportModalOpen && (
+              {selectedRun && reportModalOpen && createPortal(
         <div
           className={styles.reportModalBackdrop}
           role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setReportModalOpen(false);
+          onPointerDown={(event) => {
+            if (event.currentTarget === event.target) closeRunReport(event);
           }}
         >
-          <div className={styles.reportModalShell} role="dialog" aria-modal="true" aria-label="Backtest report">
+          <div className={styles.reportModalShell} role="dialog" aria-modal="true" aria-label="Backtest report" onPointerDown={event=>event.stopPropagation()}>
             <button
               type="button"
               className={styles.reportModalClose}
-              onClick={() => setReportModalOpen(false)}
+              onPointerDown={closeRunReport}
               aria-label="Close backtest report"
             >
               ×
@@ -804,7 +829,7 @@ setReportLoading(false);
                 </section>
           </div>
         </div>
-      )}
+      , document.body)}
             </div>
           )}
 
