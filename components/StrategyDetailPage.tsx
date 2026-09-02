@@ -347,6 +347,10 @@ setReportLoading(false);
       }
       if (payload?.status === 'COMPLETED') {
         setMessage('Backtest completed. Open View Report to review the persisted results.');
+      } else if (payload?.continuationRequired && payload?.status === 'QUEUED') {
+        const retryAfterSeconds = Math.max(1, Number(payload?.retryAfterSeconds || 1));
+        setMessage(payload?.message || `Historical replay is ${Number(payload?.progressPercent || 0).toFixed(0)}% complete. Continuing automatically…`);
+        window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
       } else if (payload?.preparingHistoricalData && payload?.status === 'QUEUED') {
         const retryAfterSeconds = Math.max(5, Number(payload?.retryAfterSeconds || 65));
         setMessage(payload?.message || 'Historical data is being prepared. Trade Police will continue shortly.');

@@ -24,9 +24,34 @@ type SimulatedTrade = {
 };
 
 export type BacktestExecutionOutput = {
+  complete: true;
   result: Record<string, unknown>;
   trades: SimulatedTrade[];
   metadata: Record<string, unknown>;
+};
+
+export type BacktestSimulationCheckpoint = {
+  version: 1;
+  runId: string;
+  nextExecutionIndex: number;
+  pointers: Record<string, number>;
+  balance: number;
+  trades: SimulatedTrade[];
+  dailyCounts: Record<string, number>;
+  diagnostics: BacktestDiagnostics;
+};
+
+export type BacktestExecutionProgress = {
+  complete: false;
+  checkpoint: BacktestSimulationCheckpoint;
+  progressPercent: number;
+  evaluatedCandles: number;
+  tradesProduced: number;
+};
+
+type BacktestSimulationOptions = {
+  checkpoint?: BacktestSimulationCheckpoint | null;
+  deadlineMs?: number;
 };
 
 type BacktestDiagnostics = {
@@ -184,7 +209,12 @@ function buildMetrics(startingBalance: number, trades: SimulatedTrade[]) {
   };
 }
 
-export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyProfile, historical: Record<string, Candle[]>): BacktestExecutionOutput {
+export function simulateBacktestFromSeries(
+  run: BacktestRun,
+  strategy: StrategyProfile,
+  historical: Record<string, Candle[]>,
+  options: BacktestSimulationOptions = {},
+): BacktestExecutionOutput | BacktestExecutionProgress {
   const rulePlan = historicalPlan(strategy);
   assertHistoricalRulePlanSupported(rulePlan);
   const periodStart = Date.parse(run.period_start);
@@ -206,12 +236,17 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
     ? Math.min(...availableFrameEnds)
     : requestedPeriodEnd;
   const effectivePeriodEnd = Math.min(requestedPeriodEnd, commonHistoricalEnd);
-  const pointers = Object.fromEntries(frames.map((frame) => [frame, 0])) as Record<string, number>;
+  const restored = options.checkpoint?.version === 1 && options.checkpoint.runId === run.id
+    ? options.checkpoint
+    : null;
+  const pointers = restored
+    ? { ...restored.pointers }
+    : Object.fromEntries(frames.map((frame) => [frame, 0])) as Record<string, number>;
   const desiredDirection = configuredDirection(strategy);
-  const trades: SimulatedTrade[] = [];
-  const dailyCounts = new Map<string, number>();
-  let balance = Number(run.starting_balance);
-  const diagnostics: BacktestDiagnostics = {
+  const trades: SimulatedTrade[] = restored ? [...restored.trades] : [];
+  const dailyCounts = new Map<string, number>(Object.entries(restored?.dailyCounts ?? {}));
+  let balance = restored?.balance ?? Number(run.starting_balance);
+  const diagnostics: BacktestDiagnostics = restored ? { ...restored.diagnostics } : {
     execution_candles_evaluated: 0,
     multi_timeframe_context_ready: 0,
     analysis_completed: 0,
@@ -231,10 +266,29 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
     rejected_invalid_risk_geometry: 0,
     rejected_historical_rules: 0,
   };
-  let i = execution.findIndex((candle) => Date.parse(candle.datetime) >= periodStart);
-  if (i < 0) i = 0;
+  let initialIndex = execution.findIndex((candle) => Date.parse(candle.datetime) >= periodStart);
+  if (initialIndex < 0) initialIndex = 0;
+  let i = Math.max(initialIndex, restored?.nextExecutionIndex ?? initialIndex);
 
   while (i < execution.length - 1) {
+    if (options.deadlineMs && Date.now() >= options.deadlineMs) {
+      return {
+        complete: false,
+        checkpoint: {
+          version: 1,
+          runId: run.id,
+          nextExecutionIndex: i,
+          pointers: { ...pointers },
+          balance,
+          trades,
+          dailyCounts: Object.fromEntries(dailyCounts),
+          diagnostics,
+        },
+        progressPercent: round(Math.min(99, Math.max(0, (i - initialIndex) / Math.max(1, execution.length - 1 - initialIndex) * 100)), 2),
+        evaluatedCandles: diagnostics.execution_candles_evaluated,
+        tradesProduced: trades.length,
+      };
+    }
     const signalCandle = execution[i]!;
     const signalOpen = Date.parse(signalCandle.datetime);
     const signalAtMs = signalOpen + executionMinutes * 60_000;
@@ -406,6 +460,7 @@ export function simulateBacktestFromSeries(run: BacktestRun, strategy: StrategyP
 
   const result = buildMetrics(Number(run.starting_balance), trades);
   return {
+    complete: true,
     result,
     trades,
     metadata: {
@@ -447,5 +502,7 @@ export async function executeBacktestRun(run: BacktestRun): Promise<BacktestExec
     const warmupStart = new Date(periodStart - minutes * 60_000 * historicalWarmupBars(rulePlan, frame)).toISOString();
     historical[frame] = await fetchHistoricalFrame(run.instrument, frame, warmupStart, new Date(periodEnd).toISOString());
   }
-  return simulateBacktestFromSeries(run, strategy, historical);
+  const output = simulateBacktestFromSeries(run, strategy, historical);
+  if (!output.complete) throw new Error('Unbounded backtest execution unexpectedly returned a checkpoint.');
+  return output;
 }

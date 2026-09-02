@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { BACKTEST_STALE_LEASE_SECONDS } from '@/lib/backtesting/run-lifecycle';
-import { simulateBacktestFromSeries, strategyFromSnapshot } from '@/lib/server/backtest-executor';
+import { simulateBacktestFromSeries, strategyFromSnapshot, type BacktestSimulationCheckpoint } from '@/lib/server/backtest-executor';
 import { prepareHistoricalBacktestData } from '@/lib/server/backtest-historical-cache';
 import { getBacktestRunForUser } from '@/lib/server/backtesting';
 import { apiError } from '@/lib/server/public-error';
@@ -12,6 +12,7 @@ import type { BacktestRun } from '@/types/backtesting';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+const SIMULATION_SLICE_MS = 20_000;
 
 function logBacktestStage(runId: string, userId: string, stage: string, startedAt: number, detail: Record<string, unknown> = {}) {
   console.info('[BACKTEST_EXECUTION_STAGE]', {
@@ -140,7 +141,38 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   try {
     const strategy = strategyFromSnapshot(run as BacktestRun);
     const simulationStartedAt = Date.now();
-    const output = simulateBacktestFromSeries(run as BacktestRun, strategy, preparation.historical);
+    const checkpoint = (run.metadata?.execution_checkpoint ?? null) as BacktestSimulationCheckpoint | null;
+    const output = simulateBacktestFromSeries(run as BacktestRun, strategy, preparation.historical, {
+      checkpoint,
+      deadlineMs: Date.now() + SIMULATION_SLICE_MS,
+    });
+    if (!output.complete) {
+      const { data: continuation, error: continuationError } = await admin.rpc('backtest_checkpoint_run_atomic', {
+        p_user_id: user.id,
+        p_run_id: id,
+        p_checkpoint: output.checkpoint,
+        p_progress_percent: output.progressPercent,
+      });
+      if (continuationError) throw new Error(`Backtest checkpoint could not be persisted. ${continuationError.message}`);
+
+      logBacktestStage(id, user.id, 'SIMULATION_CHECKPOINTED', requestStartedAt, {
+        progressPercent: output.progressPercent,
+        evaluatedCandles: output.evaluatedCandles,
+        tradesProduced: output.tradesProduced,
+      });
+
+      return NextResponse.json({
+        runId: id,
+        status: 'QUEUED',
+        continuationRequired: true,
+        retryAfterSeconds: 1,
+        progressPercent: output.progressPercent,
+        evaluatedCandles: output.evaluatedCandles,
+        tradesProduced: output.tradesProduced,
+        lifecycle: continuation,
+        message: `Historical replay is ${output.progressPercent.toFixed(0)}% complete. Continuing automatically…`,
+      }, { status: 202, headers: { 'Cache-Control': 'no-store', 'Retry-After': '1' } });
+    }
     logBacktestStage(id, user.id, 'SIMULATION_COMPLETED', requestStartedAt, {
       simulationMs: Date.now() - simulationStartedAt,
       tradesProduced: output.trades.length,
@@ -150,7 +182,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       p_run_id: id,
       p_result: output.result,
       p_trades: output.trades,
-      p_metadata: output.metadata,
+      p_metadata: { ...output.metadata, execution_checkpoint: null, execution_progress_percent: 100 },
     });
     if (completionError) throw new Error(completionError.message);
 
