@@ -438,7 +438,7 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
       if(!response.ok){
         const payload = data as { error?: unknown; rejection?: { reasonCode?: string; message?: string; state?: string } } | null;
         const message = getSafeTradeActivationError({
-          error: typeof payload?.error === 'string' ? payload.error : undefined,
+          error: apiErrorMessage(data, 'Trade authorization could not be completed. Please try again.'),
           rejection: payload?.rejection,
         });
         throw new Error(message);
