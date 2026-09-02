@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
 import styles from './StrategyDetailPage.module.css';
 
 type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
@@ -61,6 +62,7 @@ type BacktestRunRow = {
   period_start?: string | null;
   period_end?: string | null;
   created_at?: string | null;
+  started_at?: string | null;
   starting_balance?: number | null;
   metadata?: Record<string, unknown> | null;
 };
@@ -320,7 +322,8 @@ setReportLoading(false);
   }
 
   async function executeQueuedRun(runId: string) {
-    setMessage('Running historical replay…');
+    const currentRun = runs.find((run) => run.id === runId);
+    setMessage(currentRun?.status === 'RUNNING' ? 'Checking the active backtest lease…' : 'Running historical replay…');
     try {
       const response = await fetch(`/api/backtests/${runId}/execute`, { method: 'POST' });
       const payload = await response.json().catch(() => ({}));
@@ -336,7 +339,10 @@ setReportLoading(false);
         setMessage(payload?.message || 'Historical data is being prepared. Trade Police will continue shortly.');
         window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
       } else {
-        setMessage(`Backtest status: ${payload?.status || 'RUNNING'}.`);
+        const retryAfterSeconds = Math.max(5, Number(payload?.retryAfterSeconds || 15));
+        setMessage(payload?.status === 'RUNNING'
+          ? `Backtest execution is still active. Check again in about ${retryAfterSeconds} seconds.`
+          : `Backtest status: ${payload?.status || 'RUNNING'}.`);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Backtest execution request failed.');
@@ -625,7 +631,7 @@ setReportLoading(false);
                             className="secondary"
                             onClick={() => {
                               if (run.status === 'QUEUED') void executeQueuedRun(run.id);
-                              else if (run.status === 'RUNNING') void refreshBacktests();
+                              else if (run.status === 'RUNNING') void executeQueuedRun(run.id);
                               else void openRunReport(run);
                             }}
                           >
@@ -635,7 +641,9 @@ setReportLoading(false);
                                 ? 'View Failure'
                                 : run.status === 'QUEUED'
                                   ? 'Run now'
-                                  : 'Refresh status'}
+                                  : isBacktestLeaseStale(run)
+                                    ? 'Recover run'
+                                    : 'Refresh status'}
                           </button>
                         </div>
                         <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>

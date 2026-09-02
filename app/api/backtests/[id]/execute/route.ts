@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { BACKTEST_STALE_LEASE_SECONDS } from '@/lib/backtesting/run-lifecycle';
 import { simulateBacktestFromSeries, strategyFromSnapshot } from '@/lib/server/backtest-executor';
 import { prepareHistoricalBacktestData } from '@/lib/server/backtest-historical-cache';
 import { getBacktestRunForUser } from '@/lib/server/backtesting';
@@ -10,7 +11,18 @@ import type { BacktestRun } from '@/types/backtesting';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
+
+function logBacktestStage(runId: string, userId: string, stage: string, startedAt: number, detail: Record<string, unknown> = {}) {
+  console.info('[BACKTEST_EXECUTION_STAGE]', {
+    runId,
+    userId,
+    stage,
+    elapsedMs: Date.now() - startedAt,
+    deploymentCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    ...detail,
+  });
+}
 
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
@@ -18,6 +30,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   if (!user) return apiError('UNAUTHORIZED', 'Unauthorized.', 401);
 
   const { id } = await context.params;
+  const requestStartedAt = Date.now();
   let run = await getBacktestRunForUser(user.id, id);
   if (!run) return apiError('BACKTEST_NOT_FOUND', 'Backtest run not found.', 404);
 
@@ -27,13 +40,44 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   if (run.status === 'FAILED' || run.status === 'CANCELLED') {
     return apiError('BACKTEST_NOT_EXECUTABLE', `Backtest is ${run.status}.`, 409);
   }
-  if (run.status === 'RUNNING') {
-    return NextResponse.json({ runId: run.id, status: 'RUNNING', alreadyRunning: true }, { status: 202, headers: { 'Cache-Control': 'no-store' } });
-  }
-
   const admin = createAdminClient();
 
+  if (run.status === 'RUNNING') {
+    const { data: recovery, error: recoveryError } = await admin.rpc('backtest_reclaim_stale_run_atomic', {
+      p_user_id: user.id,
+      p_run_id: id,
+      p_stale_after_seconds: BACKTEST_STALE_LEASE_SECONDS,
+    });
+    if (recoveryError) {
+      console.error('[BACKTEST_STALE_RECOVERY_FAILED]', {
+        runId: id,
+        userId: user.id,
+        errorCode: recoveryError.code ?? null,
+        errorMessage: recoveryError.message,
+      });
+      return apiError('BACKTEST_RECOVERY_FAILED', 'Backtest recovery could not be completed. Please try again.', 500);
+    }
+
+    if (!(recovery as any)?.reclaimed) {
+      return NextResponse.json({
+        runId: run.id,
+        status: 'RUNNING',
+        alreadyRunning: true,
+        retryAfterSeconds: Number((recovery as any)?.retry_after_seconds ?? 15),
+      }, { status: 202, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    logBacktestStage(id, user.id, 'STALE_RUN_RECLAIMED', requestStartedAt, {
+      recoveryCount: Number((recovery as any)?.recovery_count ?? 1),
+    });
+    run = await getBacktestRunForUser(user.id, id);
+    if (!run || run.status !== 'QUEUED') {
+      return apiError('BACKTEST_RECOVERY_INCONSISTENT', 'Backtest recovery did not produce a retryable run.', 409);
+    }
+  }
+
   let preparation;
+  logBacktestStage(id, user.id, 'PREPARATION_STARTED', requestStartedAt);
   try {
     preparation = await prepareHistoricalBacktestData(run as BacktestRun, admin);
   } catch (error) {
@@ -66,6 +110,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   }
 
   if (!preparation.ready) {
+    logBacktestStage(id, user.id, 'PREPARATION_DEFERRED', requestStartedAt, {
+      requestsUsed: preparation.requestsUsed,
+      retryAfterSeconds: preparation.retryAfterSeconds,
+    });
     return NextResponse.json({
       runId: id,
       status: 'QUEUED',
@@ -87,10 +135,16 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   }
 
   run = { ...(run as BacktestRun), status: 'RUNNING' };
+  logBacktestStage(id, user.id, 'RUN_CLAIMED', requestStartedAt);
 
   try {
     const strategy = strategyFromSnapshot(run as BacktestRun);
+    const simulationStartedAt = Date.now();
     const output = simulateBacktestFromSeries(run as BacktestRun, strategy, preparation.historical);
+    logBacktestStage(id, user.id, 'SIMULATION_COMPLETED', requestStartedAt, {
+      simulationMs: Date.now() - simulationStartedAt,
+      tradesProduced: output.trades.length,
+    });
     const { data: completion, error: completionError } = await admin.rpc('backtest_complete_run_atomic', {
       p_user_id: user.id,
       p_run_id: id,
@@ -99,6 +153,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       p_metadata: output.metadata,
     });
     if (completionError) throw new Error(completionError.message);
+
+    logBacktestStage(id, user.id, 'RUN_COMPLETED', requestStartedAt, {
+      tradesWritten: output.trades.length,
+    });
 
     return NextResponse.json({
       runId: id,
