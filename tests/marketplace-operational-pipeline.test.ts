@@ -52,7 +52,8 @@ test('catalog usage is derived from actual installs and exact-revision evidence'
 });
 
 test('internal test modal keeps its publish controls visible on short viewports',()=>{
-  const css=read('app/trade-police.css');
+  const css=read('app/trade-police.css');const lab=read('components/hq/MarketplaceLab.tsx');
+  assert.match(lab,/createPortal/);assert.match(lab,/document\.body/);
   assert.match(css,/\.marketplace-create-modal\{max-height:min\(calc\(100dvh - 24px\),760px\);grid-template-rows:auto auto minmax\(0,1fr\) auto;gap:14px;overflow:hidden\}/);
   assert.match(css,/\.marketplace-create-form\{min-height:0;overflow-y:auto;overscroll-behavior:contain/);
   assert.match(css,/\.marketplace-create-footer\{position:relative;z-index:1/);

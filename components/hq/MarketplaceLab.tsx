@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { MarketplaceCandidatePreview, MarketplaceReleasePreview } from '@/lib/marketplace/contracts';
 
 type Sort = 'RANK' | 'PERFORMANCE' | 'READINESS' | 'TRENDING' | 'NEWEST';
@@ -217,7 +218,7 @@ export default function MarketplaceLab() {
         })}</div>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
       </section>
 
-      {showCreate && isFounder ? (
+      {showCreate && isFounder ? createPortal((
         <div className="marketplace-create-modal-backdrop" onClick={closeCreate} role="presentation">
           <section className="marketplace-create-modal card" role="dialog" aria-modal="true" aria-labelledby="internal-test-title" onClick={(event) => event.stopPropagation()}>
             <div className="marketplace-create-header">
@@ -316,7 +317,7 @@ export default function MarketplaceLab() {
             </div>
           </section>
         </div>
-      ) : null}
+      ), document.body) : null}
 
       {state ? <p className="muted">{state}</p> : null}
 
