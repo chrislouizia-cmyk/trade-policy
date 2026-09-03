@@ -21,3 +21,16 @@ export type MarketplaceReleasePreview=Readonly<{
 export type MarketplaceInstallResult=Readonly<{
   installId:string;releaseId:string;installedStrategyId:string;chargedCents:0;entitlementMode:'SIMULATED_INTERNAL';active:false;internalTest:true;
 }>;
+
+export type MarketplaceQualificationPolicy=Readonly<{
+  version:string;minimumObservationDays:number;minimumClosedTrades:number;minimumAdherencePercent:number;maximumCriticalViolations:number;maximumDrawdownR:number;
+}>;
+
+export type MarketplaceCandidatePreview=Readonly<{
+  candidateId:string;strategyId:string;strategyRevisionId:string;strategyName:string;ownerName:string|null;
+  instruments:readonly string[];status:'OBSERVING'|'INSUFFICIENT_DATA'|'QUALIFIED'|'OWNER_CONSENT_PENDING'|'UNDER_REVIEW'|'APPROVED'|'DECLINED'|'ARCHIVED';
+  consentStatus:'NOT_REQUESTED'|'PENDING'|'GRANTED'|'DECLINED'|'REVOKED';
+  observationDays:number;completedBacktests:number;savedDecisions:number;closedTrades:number;
+  adherencePercent:number|null;criticalViolations:number;maximumDrawdownR:number|null;
+  policy:MarketplaceQualificationPolicy;
+}>;

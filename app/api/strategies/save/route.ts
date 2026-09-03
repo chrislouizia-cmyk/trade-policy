@@ -8,6 +8,9 @@ import { deriveRequiredEvidence, ZeroRequiredRulesError } from '@/lib/strategy-p
 import { validateStrategyName } from '@/lib/strategy-name';
 import type { StrategyRule } from '@/types/trade';
 import { strategyRulePersistenceRows } from '@/lib/strategy-rule-persistence';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { loadStrategyById } from '@/lib/server/active-strategy';
+import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 
 export const dynamic = 'force-dynamic';
 
@@ -345,6 +348,18 @@ export async function POST(request: Request) {
           'Strategy could not be verified after saving.',
         500,
       );
+    }
+
+    try {
+      const admin=createAdminClient();
+      const observedStrategy=await loadStrategyById(admin,user.id,data.strategyId);
+      const {error:observationError}=await admin.rpc('evaluate_marketplace_strategy_candidate',{
+        p_source_strategy_id:data.strategyId,
+        p_source_strategy_revision_id:strategyRevisionId(observedStrategy),
+      });
+      if(observationError)console.error('[MARKETPLACE_PRIVATE_OBSERVATION_FAILED]',{strategyId:data.strategyId,code:observationError.code,message:observationError.message});
+    } catch (observationError) {
+      console.error('[MARKETPLACE_PRIVATE_OBSERVATION_FAILED]',{strategyId:data.strategyId,message:observationError instanceof Error?observationError.message:'Unknown error'});
     }
 
     return NextResponse.json(

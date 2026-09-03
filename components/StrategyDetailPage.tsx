@@ -9,6 +9,7 @@ import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/b
 import styles from './StrategyDetailPage.module.css';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
+import MarketplaceObservationCard from '@/components/MarketplaceObservationCard';
 
 type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
 
@@ -554,6 +555,8 @@ setReportLoading(false);
                   <button type="button" className="primary" onClick={openBacktestForm}>{w('Run Backtest')}</button>
                 </div>
               </section>
+
+              <MarketplaceObservationCard strategyId={strategy.id} />
             </div>
           )}
 

@@ -5,6 +5,7 @@ import { canonicalStrategyRevisionPayload } from '@/lib/historical-decisions/fin
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { loadStrategyById } from '@/lib/server/active-strategy';
 import { getHQMarketplaceContext, toMarketplacePreview } from '@/lib/server/hq-marketplace';
+import { listMarketplaceCandidates } from '@/lib/server/marketplace-observation';
 
 export const dynamic = 'force-dynamic';
 
@@ -158,7 +159,7 @@ export async function GET(request:Request) {
     const releaseIds = [...new Set((listings ?? []).map((row: any) => row.release_id).filter((value): value is string => Boolean(value)))];
     const releaseById = new Map<string, any>();
     if (releaseIds.length > 0) {
-      const { data: releases, error: releasesError } = await admin.from('marketplace_strategy_releases').select('id,release_version').in('id', releaseIds);
+      const { data: releases, error: releasesError } = await admin.from('marketplace_strategy_releases').select('id,release_version,source_strategy_id,source_strategy_revision_id').in('id', releaseIds);
       if (releasesError) {
         logSupabaseQueryFailure('releases', releasesError);
         throw releasesError;
@@ -186,12 +187,25 @@ export async function GET(request:Request) {
       }
     }
 
+    const candidates=await listMarketplaceCandidates();
+    const candidateByRevision=new Map(candidates.map(candidate=>[`${candidate.strategyId}:${candidate.strategyRevisionId}`,candidate]));
+    const installsByRelease=new Map<string,number>();
+    if(releaseIds.length>0){
+      const {data:installs,error:installsError}=await admin.from('marketplace_installs').select('release_id').in('release_id',releaseIds).limit(5000);
+      if(installsError){logSupabaseQueryFailure('installs',installsError);throw installsError;}
+      for(const install of installs??[])installsByRelease.set(install.release_id,(installsByRelease.get(install.release_id)??0)+1);
+    }
     return NextResponse.json({
-      items: (listings ?? []).map((row: any) => toMarketplacePreview({
-        ...row,
-        release_version: releaseById.get(row.release_id)?.release_version ?? 0,
-        marketplace_release_rankings: rankingByRelease.has(row.release_id) ? [rankingByRelease.get(row.release_id)] : [],
-      })),
+      items: (listings ?? []).map((row: any) => {
+        const release=releaseById.get(row.release_id);
+        const candidate=release?candidateByRevision.get(`${release.source_strategy_id}:${release.source_strategy_revision_id}`):undefined;
+        return toMarketplacePreview({
+          ...row,release_version:release?.release_version??0,
+          install_count:installsByRelease.get(row.release_id)??0,
+          decision_count:candidate?.savedDecisions??0,trade_count:candidate?.closedTrades??0,
+          marketplace_release_rankings:rankingByRelease.has(row.release_id)?[rankingByRelease.get(row.release_id)]:[],
+        });
+      }),candidates,
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     const code = safeCode(error);

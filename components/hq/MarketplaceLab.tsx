@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import type { MarketplaceReleasePreview } from '@/lib/marketplace/contracts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MarketplaceCandidatePreview, MarketplaceReleasePreview } from '@/lib/marketplace/contracts';
 
 type Sort = 'RANK' | 'PERFORMANCE' | 'READINESS' | 'TRENDING' | 'NEWEST';
 type StrategyOption = {
@@ -25,6 +25,7 @@ const score = (value: number | null) => value ?? -Infinity;
 export default function MarketplaceLab() {
   const [items, setItems] = useState<MarketplaceReleasePreview[]>([]);
   const [profiles, setProfiles] = useState<StrategyOption[]>([]);
+  const [candidates, setCandidates] = useState<MarketplaceCandidatePreview[]>([]);
   const [state, setState] = useState('Loading Marketplace Lab…');
   const [query, setQuery] = useState('');
   const [health, setHealth] = useState('');
@@ -37,6 +38,9 @@ export default function MarketplaceLab() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isFounder, setIsFounder] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<string | null>(null);
+  const autoSyncStarted=useRef(false);
 
   const closeCreate = () => {
     setShowCreate(false);
@@ -50,6 +54,7 @@ export default function MarketplaceLab() {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Marketplace Lab unavailable.');
         setItems(body.items ?? []);
+        setCandidates(body.candidates ?? []);
         setState('');
       })
       .catch((caught: unknown) => setState(caught instanceof Error ? caught.message : 'Marketplace Lab unavailable.'));
@@ -151,6 +156,32 @@ export default function MarketplaceLab() {
     }
   };
 
+  const handleSync=async()=>{
+    setSyncing(true);setError(null);setSyncSummary(null);
+    let offset=0,totalSynchronized=0,totalFailures=0;
+    try{
+      while(true){
+        const response=await fetch('/api/hq/marketplace/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offset}),cache:'no-store'});
+        const body=await response.json();if(!response.ok)throw new Error(body.error||'Strategy synchronization failed.');
+        totalSynchronized+=Number(body.synchronized??0);totalFailures+=Array.isArray(body.failures)?body.failures.length:0;
+        if(!body.hasMore)break;offset=Number(body.nextOffset??offset+25);
+      }
+      const catalog=await fetch('/api/hq/marketplace',{cache:'no-store'});const body=await catalog.json();
+      if(!catalog.ok)throw new Error(body.error||'Marketplace catalog refresh failed.');
+      setItems(body.items??[]);setCandidates(body.candidates??[]);
+      setSyncSummary(`${totalSynchronized} strategies evaluated${totalFailures?` · ${totalFailures} require attention`:''}.`);
+    }catch(caught){setError(caught instanceof Error?caught.message:'Strategy synchronization failed.');}
+    finally{setSyncing(false);}
+  };
+
+  useEffect(()=>{
+    if(!isFounder||autoSyncStarted.current)return;
+    autoSyncStarted.current=true;
+    void handleSync();
+    // This runs once after founder authorization is resolved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[isFounder]);
+
   return (
     <div className="stack marketplace-lab">
       <header className="marketplace-hero">
@@ -162,12 +193,29 @@ export default function MarketplaceLab() {
           <div><dt>Mode</dt><dd>INTERNAL TEST</dd></div>
           <div><dt>Commerce</dt><dd>Disabled</dd></div>
         </dl>
-        {isFounder ? (
-          <button type="button" className="button secondary compact-button" onClick={() => setShowCreate(true)}>
-            Add internal test strategy
-          </button>
-        ) : null}
+        {isFounder ? <div className="marketplace-hero-actions">
+          <button type="button" className="button secondary compact-button" onClick={handleSync} disabled={syncing}>{syncing?'Evaluating strategies…':'Evaluate all strategies'}</button>
+          <button type="button" className="button secondary compact-button" onClick={() => setShowCreate(true)}>Add internal test strategy</button>
+        </div> : null}
       </header>
+
+      {syncSummary?<p className="success" role="status">{syncSummary}</p>:null}
+      {error&&!showCreate?<p className="error" role="alert">{error}</p>:null}
+
+      <section className="card marketplace-observation-board">
+        <div className="section-title"><div><span className="eyebrow">PRIVATE OBSERVATION</span><h2>Strategy qualification pipeline</h2></div><strong>{candidates.length} revisions</strong></div>
+        <p className="muted">Every strategy can accumulate private evidence. Qualification never publishes it: owner consent and Compliance approval remain mandatory.</p>
+        {candidates.length?<div className="marketplace-candidate-grid">{candidates.map(candidate=>{
+          const tradeProgress=Math.min(100,Math.round(candidate.closedTrades/candidate.policy.minimumClosedTrades*100));
+          const dayProgress=Math.min(100,Math.round(candidate.observationDays/candidate.policy.minimumObservationDays*100));
+          return <article key={candidate.candidateId} className="marketplace-candidate-card">
+            <div><span className={`status-badge ${candidate.status.toLowerCase()}`}>{candidate.status.replaceAll('_',' ')}</span><h3>{candidate.strategyName}</h3><p>{candidate.ownerName??'Private owner'} · {candidate.instruments.join(', ')||'No instrument'}</p></div>
+            <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Verified trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
+            <div className="marketplace-progress" aria-label={`Observation ${dayProgress} percent`}><i style={{width:`${dayProgress}%`}}/></div>
+            <div className="marketplace-progress trades" aria-label={`Verified trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
+          </article>;
+        })}</div>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
+      </section>
 
       {showCreate && isFounder ? (
         <div className="marketplace-create-modal-backdrop" onClick={closeCreate} role="presentation">
@@ -330,7 +378,7 @@ export default function MarketplaceLab() {
                 <div><span>NEWEST</span><strong>v{item.releaseVersion}</strong></div>
               </div>
               <div className="marketplace-footer">
-                <Link href={`/hq/marketplace/${item.releaseId}`}>View strategy / Preview</Link>
+                <Link href={`/hq/marketplace/${item.listing.listingId}`}>View strategy / Preview</Link>
               </div>
             </article>
           ))}
