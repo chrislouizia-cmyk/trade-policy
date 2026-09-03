@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import StrategyDetailPage from '@/components/StrategyDetailPage';
 import AppHeader from '@/components/AppHeader';
 import { createClient } from '@/lib/supabase/server';
@@ -16,13 +16,24 @@ export default async function StrategyDetailRoute({ params }: { params: Promise<
   }
 
   const [strategyResult, rulesResult, sessionsResult, backtestsResult] = await Promise.all([
-    supabase.from('strategy_profiles').select('*').eq('id', id).eq('user_id', user.id).maybeSingle(),
+    supabase.from('strategy_profiles').select('*').eq('id', id).eq('user_id', user.id).eq('is_archived', false).maybeSingle(),
     supabase.from('strategy_rules').select('*').eq('strategy_id', id).order('sort_order', { ascending: true }),
     supabase.from('strategy_sessions').select('*').eq('strategy_id', id).order('created_at', { ascending: true }),
     supabase.from('backtest_runs').select('*').eq('user_id', user.id).eq('strategy_profile_id', id).order('created_at', { ascending: false }),
   ]);
 
   if (strategyResult.error || !strategyResult.data) {
+    const archivedCheck = await supabase
+      .from('strategy_profiles')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!archivedCheck.error && archivedCheck.data) {
+      redirect('/dashboard');
+    }
+
     return notFound();
   }
 

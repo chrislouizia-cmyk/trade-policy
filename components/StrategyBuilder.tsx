@@ -509,18 +509,22 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     if (!deleteTarget?.id || deleteConfirmation !== 'DELETE') return;
     setSaving(true);
     try {
-      const response=await fetch('/api/strategies/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategyId:deleteTarget.id,confirmation:deleteConfirmation})});
-      const result=await response.json();
-      if(!response.ok)throw new Error(apiErrorMessage(result,'Could not delete playbook.'));
-      const deletedName=deleteTarget.name;
+      const response = await fetch('/api/strategies/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategyId: deleteTarget.id, confirmation: deleteConfirmation }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Could not delete strategy.'));
+      const deletedName = deleteTarget.name;
       setDeleteTarget(null);
       setDeleteConfirmation('');
       await loadAll();
-      setMessage(`${deletedName} was deleted. Historical analyses were preserved.`);
-      void trackBetaEvent('PLAYBOOK_DELETED',deleteTarget.id);
+      setMessage(`${deletedName} was deleted. Historical trades, reports, and backtests were preserved.`);
+      void trackBetaEvent('PLAYBOOK_DELETED', deleteTarget.id);
       window.dispatchEvent(new CustomEvent('trade-police:strategy-changed'));
     } catch (error) {
-      setMessage(error instanceof Error?error.message:'Could not delete playbook.');
+      setMessage(error instanceof Error ? error.message : 'Could not delete strategy.');
     } finally {
       setSaving(false);
     }
@@ -557,7 +561,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
               </button>
             ))}</>}
           </div>
-          {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>{w('Edit')}</button><button type="button" onClick={() => void duplicate(selectedProfile)}>{w('Duplicate')}</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>{w('Restore')}</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Set active')}</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Archive')}</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>{w('Delete')}</button></div>}
+          {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>{w('Edit')}</button><button type="button" onClick={() => void duplicate(selectedProfile)}>{w('Duplicate')}</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>{w('Restore')}</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Set active')}</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Archive')}</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}} disabled={selectedProfile.isDefault}>{w('Delete strategy')}</button></div>}
         </aside>
 
         <div className="stack strategy-main" data-step={builderStep}>
@@ -647,7 +651,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
         <div className="button-row sticky-actions"><button type="button" onClick={()=>{const index=BUILDER_STEPS.findIndex(([key])=>key===builderStep);if(index>0)setBuilderStep(BUILDER_STEPS[index-1][0]);}} disabled={builderStep==='identity'}>{w('Back')}</button>{builderStep!=='review'?<button className="primary" type="button" onClick={()=>{const index=BUILDER_STEPS.findIndex(([key])=>key===builderStep);setBuilderStep(BUILDER_STEPS[Math.min(index+1,BUILDER_STEPS.length-1)][0]);}}>{w('Continue')}</button>:<button className="primary" type="button" onClick={() => void save()} disabled={saving||Boolean(finalReviewNameError)||!finalReview.canSave} aria-describedby={saveDisabledReason ? 'save-disabled-reason' : undefined} title={saveDisabledReason ?? undefined}>{w(saving ? 'Saving…' : 'Save strategy')}</button>}{profile.id ? <a className="button-link" href={`/validate?strategy=${encodeURIComponent(profile.id)}`}>{w('Check a setup')}</a> : <button type="button" className="button-link" disabled onClick={() => setMessage('Save the strategy first before checking a setup.')}>{w('Check a setup')}</button>}</div>
         {message && <p className={message==='Saved' || message.includes('active strategy') ? 'success' : 'warning'}>{message}</p>}
       </div>
-      {deleteTarget&&<div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget){setDeleteTarget(null);setDeleteConfirmation('')}}}><section className="card modal-card playbook-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-playbook-title"><div className="modal-head"><div><p className="muted">PERMANENT ACTION</p><h2 id="delete-playbook-title">Delete {deleteTarget.name}?</h2></div><button type="button" aria-label="Close delete dialog" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>×</button></div><p>This removes the playbook and its editable configuration. Historical trade analyses, strategy snapshots, and recorded strategy names will be preserved; their live playbook reference will be detached.</p><label>Type <strong>DELETE</strong> to confirm<input autoFocus value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} /></label><div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete playbook permanently'}</button></div></section></div>}
+      {deleteTarget&&<div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget){setDeleteTarget(null);setDeleteConfirmation('')}}}><section className="card modal-card playbook-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-playbook-title"><div className="modal-head"><div><p className="muted">DELETE STRATEGY</p><h2 id="delete-playbook-title">Delete strategy?</h2></div><button type="button" aria-label="Close delete dialog" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>×</button></div><p>Delete {deleteTarget.name}? This strategy will be removed from your active strategy library. Historical trades, reports, and backtests will be preserved.</p><label>Type <strong>DELETE</strong> to confirm<input autoFocus value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} /></label><div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete strategy'}</button></div></section></div>}
     </div>
   );
 }
