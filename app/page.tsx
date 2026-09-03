@@ -2,71 +2,44 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import LandingProductDemo from '@/components/LandingProductDemo';
 import { isPortalHostname } from '@/lib/hostname-routing';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getLandingCopy } from '@/lib/i18n/landing-copy';
+import styles from './trade-police-landing.module.css';
 
-const flow = [
-  ['Build Strategy', 'Design your methodology, choose the rules you actually use, and explain your process in plain language.'],
-  ['Backtest', 'Test those rules against historical market data to measure how the strategy would have behaved before risking real money.'],
-  ['Market Check', 'Trade Police validates the current market against the strategy you selected.'],
-  ['Decision', 'The workspace says READY, WAIT, BLOCKED, or NO SETUP based on your configured rules and evidence.'],
-  ['Final Risk Check', 'Before execution, confirm risk, sizing, and whether the setup still matches your rules.'],
-  ['Active Trade', 'Track the live trade with the decision context preserved and visible throughout execution.'],
-  ['History & Analytics', 'Review completed trades, saved decisions, and historical context without rewriting the record.'],
-];
-
-const featureCards = [
-  {
-    eyebrow: 'STRATEGY BUILDER',
-    title: 'Translate how you trade into rules',
-    copy: 'Choose methodologies, combine them intentionally, and keep only the concepts you actually use. Trade Police turns the structure into a deterministic draft for review before activation.',
-  },
-  {
-    eyebrow: 'DECISION ENGINE',
-    title: 'Answer the question clearly',
-    copy: 'READY, WAIT, BLOCKED, and NO SETUP are based on your strategy, evidence quality, risk controls, and account context—not a market prediction.',
-  },
-  {
-    eyebrow: 'RISK & HISTORY',
-    title: 'Preserve the process',
-    copy: 'Active trades and completed trades remain linked to the evidence that made the decision, so the review is honest and useful.',
-  },
-];
-
-const faqs = [
-  ['What is Trade Police?', 'Trade Police is a decision-support and discipline system built around your own trading rules. It helps you check whether a market setup matches your strategy before risking money.'],
-  ['Is this a signal service?', 'No. Trade Police does not tell you what to buy or sell based on a prediction model. It evaluates current evidence against the strategy you configure.'],
-  ['Can I use my own strategy?', 'Yes. The product is built around your rules, your methodologies, and your review process. AI can help structure and explain, but the final decision logic remains deterministic.'],
-  ['How does backtesting work?', 'Trade Police applies your configured strategy rules to historical market data and measures how the strategy would have behaved. You can review trades, win rate, profit and loss, drawdown, and the evidence behind the results. A backtest is historical evidence, not a prediction of future performance.'],
-  ['What if a backtest fails?', 'A backtest credit is only consumed when the run completes successfully. If a technical or provider error causes the run to fail, the reserved credit is released so you can retry.'],
-  ['What if I use unsupported concepts?', 'Unsupported or external rules are shown honestly. Some concepts may require manual confirmation, external evidence, or remain descriptive rather than automatically verifiable.'],
-  ['What does READY mean?', 'READY means the configured conditions and required evidence were satisfied for the current setup. It is not a profit guarantee or a prediction.'],
-  ['Can I override a WAIT or BLOCKED decision?', 'Only when the configuration or authorized override path explicitly allows it. Trade Police is designed to preserve the boundary between your judgment and the deterministic authorization logic.'],
-  ['Does Trade Police execute trades?', 'No. It is not a broker and does not automatically place trades unless a separate integration is explicitly added.'],
-  ['What are the plan limits?', 'FREE includes one lifetime backtest. Approved Private Beta members receive 10 backtests per month. Other plan capabilities and billing limits are enforced server-side.'],
-];
+function FlowIcon({type}:{type:'rules'|'test'|'decision'|'review'}) {
+  const paths={rules:<><path d="M8 7h8M8 12h5M8 17h7"/><path d="M5 4h14v16H5z"/></>,test:<><path d="M4 18l5-6 4 3 7-9"/><path d="M4 5v14h16"/></>,decision:<><path d="M12 3l8 3v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/><path d="M8.5 12l2.2 2.2 4.8-5"/></>,review:<><path d="M4 18V9m5 9V5m5 13v-7m5 7V3"/><path d="M3 21h18"/></>};
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[type]}</svg>;
+}
 
 export default async function LandingPage() {
-  const headerStore = await headers();
-  const host = headerStore.get('host');
-  if (isPortalHostname(host)) {
-    redirect('/dashboard');
-  }
+  const [headerStore,locale]=await Promise.all([headers(),getRequestLocale()]);
+  if(isPortalHostname(headerStore.get('host'))) redirect('/dashboard');
+  const c=getLandingCopy(locale);
+  const icons=['rules','test','decision','review'] as const;
 
-  return <main className="marketing-page">
-    <nav className="marketing-nav" aria-label="Public navigation"><Link className="marketing-brand" href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} className="brand-logo-wordmark" /></Link><div><a href="#how">How it works</a><a href="#backtesting">Backtesting</a><Link href="/about">About</Link><Link href="/faq">FAQ</Link><Link href="/pricing">Pricing</Link><Link href="/legal">Legal</Link><Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link></div></nav>
-    <section className="marketing-hero"><p className="eyebrow">RULE-BASED DECISION SUPPORT</p><h1>Trade with a system, not an impulse.</h1><p><strong>No signals. No copy trading. Your strategy. Your rules. Your decisions.</strong></p><p>Build your strategy, test it against historical market data, check every live setup against your rules, validate risk before execution, and learn from every trade without sacrificing the record.</p><div className="marketing-actions hero-actions"><Link className="button-link primary marketing-cta hero-cta" href="/client/login?mode=signup&next=/onboarding">Check your first setup free</Link><a className="button-link secondary marketing-cta hero-cta" href="#how">See the workflow</a></div><small>Decision support, not financial advice. No result guarantees an outcome.</small></section>
-    <LandingProductDemo />
-    <section className="marketing-section problem"><p className="eyebrow">THE CORE PROBLEM</p><h2>Most traders break their own plan at the exact moment they need structure most.</h2><p>Trade Police creates a deliberate pause between opportunity and risk. It compares the market with your rules, shows what is confirmed, and makes the decision legible before money is on the line.</p></section>
-    <section id="how" className="marketing-section"><p className="eyebrow">HOW TRADE POLICE WORKS</p><h2>Build Strategy → Backtest → Market Check → Decision → Final Risk Check → Active Trade → History & Analytics</h2><div className="marketing-grid">{flow.map(([title,copy])=><article className="marketing-card" key={title}><span>•</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
-    <section className="marketing-section split"><article><p className="eyebrow">STRATEGY BUILDER</p><h2>Build visually. Or describe how you trade.</h2><p>Choose methodologies, combine them intentionally, and select only the concepts you actually use. Trade Police helps structure the setup into a reviewable draft before you activate it.</p><p>It does not silently invent a hidden strategy. Every rule remains visible and any contradiction is flagged before activation.</p></article><article className="marketing-card"><p className="eyebrow">DECISION ENGINE</p><h3>READY FOR FINAL CHECK · READY · WAIT · BLOCKED</h3><p>Trade Police evaluates the strategy, evidence, confirmations, risk controls, and account context. READY means the rules were satisfied; it is not a promise of profit.</p></article></section>
-    <section id="backtesting" className="marketing-section split"><article><p className="eyebrow">BACKTESTING</p><h2>Stop guessing whether your strategy works. Test it.</h2><p>Run your configured rules against historical market data before you risk real money. Trade Police reconstructs the opportunities your strategy would have taken and turns the result into measurable evidence.</p><p>Review the number of trades, winners and losers, win rate, profit and loss, drawdown, and the trade history behind the result. The goal is not to predict the future—it is to understand how your rules have behaved.</p><div className="marketing-actions"><Link className="button-link primary marketing-cta" href="/client/login?mode=signup&next=/onboarding">Run your first backtest</Link></div></article><article className="marketing-card"><p className="eyebrow">BACKTEST ACCESS</p><h3>Your credit is used only when the backtest completes.</h3><p>If a technical or data-provider error causes a run to fail, the reserved credit is released automatically so you can retry.</p><p><strong>FREE</strong><br />1 completed backtest for life.</p><p><strong>PRIVATE BETA</strong><br />10 completed backtests per month while your beta access is active.</p><small>Historical performance does not guarantee future results.</small></article></section>
-    <section id="example" className="marketing-section decision-example"><div><p className="eyebrow">EXAMPLE DECISION</p><h2>The answer comes first. The evidence stays attached.</h2><p>This example shows the shape of a real Trade Police result. It is a transparent explanation of configured rules, not a market prediction.</p></div><article className="marketing-card example-report"><span className="badge wait">WAIT</span><h3>Two required confirmations are still missing.</h3><div><strong>Readiness</strong><span>68% · required 75%</span></div><div><strong>Confirmed</strong><span>Trend alignment · structure</span></div><div><strong>Missing</strong><span>Liquidity sweep · retest</span></div><div><strong>Next</strong><span>Wait for the required evidence or skip the setup.</span></div><small>Illustrative result · not live market data</small></article></section>
-    <section className="marketing-section marketing-grid">{featureCards.map((card)=><article className="marketing-card" key={card.eyebrow}><p className="eyebrow">{card.eyebrow}</p><h3>{card.title}</h3><p>{card.copy}</p></article>)}</section>
-    <section className="marketing-section pricing-preview"><p className="eyebrow">PRICING</p><h2>Start free. Upgrade for more capacity, not different rules.</h2><p>FREE includes one lifetime backtest. Approved Private Beta members receive 10 backtests per month.</p><div className="marketing-actions"><Link className="button-link primary marketing-cta" href="/pricing">See plan limits</Link></div></section>
-    <section className="marketing-section"><p className="eyebrow">FAQ</p><div className="faq-list">{faqs.map(([question,answer])=><details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</div></section>
-    <section className="marketing-section risk-callout"><p className="eyebrow">RISK DISCLAIMER</p><h2>Every trade can lose money.</h2><p>Trade Police is a decision-support and discipline system. It is not financial advice, it does not guarantee profits, and it does not execute trades on your behalf. Backtests use historical data and do not guarantee future performance. Market data can be delayed, incomplete, or unavailable.</p></section>
-    <section className="marketing-final"><h2>Put your rules between the idea and the risk.</h2><Link className="button-link primary marketing-cta" href="/client/login?mode=signup&next=/onboarding">Start free</Link></section>
-    <footer className="marketing-footer"><span>© 2026 Trade Police</span><Link href="/about">About</Link><Link href="/faq">FAQ</Link><Link href="/legal">Legal & risk</Link><Link href="/pricing">Pricing</Link></footer>
+  return <main className={styles.page}>
+    <nav className={styles.nav} aria-label={c.navigation}>
+      <Link className={styles.brand} href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} priority /></Link>
+      <div className={styles.navLinks}><a href="#system">{c.system}</a><a href="#workflow">{c.workflow}</a><a href="#trust">{c.trust}</a><Link href="/pricing">{c.pricing}</Link></div>
+      <div className={styles.navActions}><Link href="/client/login">{c.signIn}</Link><Link className={styles.navCta} href="/client/login?mode=signup&next=/onboarding">{c.startFree}</Link></div>
+    </nav>
+
+    <section className={styles.hero}>
+      <div className={styles.heroCopy}><p className={styles.kicker}><span/>{c.kicker}</p><h1>{c.heroTitle}<em>{c.heroAccent}</em></h1><p className={styles.heroLead}>{c.heroLead}</p><div className={styles.actions}><Link className={styles.primaryCta} href="/client/login?mode=signup&next=/onboarding">{c.checkSetup}<span>→</span></Link><a className={styles.secondaryCta} href="#system">{c.seeSystem}</a></div><p className={styles.micro}>{c.disclaimer}</p></div>
+      <div className={styles.heroVisual} aria-label={c.illustrationLabel}>
+        <div className={styles.ambientOrb}/><div className={styles.terminal}><header><span><i/>TRADE POLICE</span><small>{c.liveDecision}</small></header><div className={styles.terminalBody}><aside><small>{c.yourRules}</small><strong>XAUUSD · M15</strong><div><i className={styles.good}/>{c.trend}</div><div><i className={styles.good}/>{c.structure}</div><div><i className={styles.wait}/>{c.liquidity}</div></aside><article><span className={styles.waitBadge}>WAIT</span><small>{c.currentVerdict}</small><strong>68%</strong><div className={styles.score}><i/></div><p>{c.missingEvidence}</p></article><aside><small>{c.riskCheck}</small><dl><div><dt>{c.risk}</dt><dd>0.50%</dd></div><div><dt>{c.minimumRR}</dt><dd>1:2.0</dd></div><div><dt>{c.status}</dt><dd>{c.held}</dd></div></dl></aside></div><footer><span>{c.aiExplains}</span><strong>{c.rulesDecide}</strong></footer></div>
+        <div className={`${styles.floatCard} ${styles.floatTop}`}><span>✓</span><div><small>{c.evidence}</small><strong>{c.attached}</strong></div></div><div className={`${styles.floatCard} ${styles.floatBottom}`}><span>↗</span><div><small>{c.lifecycle}</small><strong>{c.preserved}</strong></div></div>
+      </div>
+    </section>
+
+    <section id="trust" className={styles.trustBar}>{c.trustPoints.map(([title,copy])=><article key={title}><span>✓</span><div><strong>{title}</strong><small>{copy}</small></div></article>)}</section>
+    <section id="system" className={styles.statement}><p className={styles.kicker}>{c.notAnother}</p><h2>{c.pauseTitle}</h2><p>{c.pauseCopy}</p><div className={styles.verdictRail}><span className={styles.ready}>READY</span><i/><span className={styles.waitState}>WAIT</span><i/><span className={styles.blocked}>BLOCKED</span><small>{c.oneSystem}</small></div></section>
+    <section id="workflow" className={styles.workflowSection}><header><p className={styles.kicker}>{c.workflowKicker}</p><h2>{c.workflowTitle}</h2></header><div className={styles.workflowGrid}>{c.steps.map((step,index)=><article key={step.title}><div className={styles.stepTop}><span>0{index+1}</span><FlowIcon type={icons[index]}/></div><h3>{step.title}</h3><p>{step.copy}</p><small>{step.meta}</small></article>)}</div></section>
+    <section className={styles.featureSplit}><div className={styles.journalVisual} aria-hidden="true"><div className={styles.timeline}/><article><span>09:42</span><strong>{c.decisionSaved}</strong><small>WAIT · 68%</small></article><article><span>10:06</span><strong>{c.tradeOpened}</strong><small>XAUUSD · SELL</small></article><article><span>12:18</span><strong>{c.tradeClosed}</strong><small>+1.84R</small></article><div className={styles.curve}><i/><i/><i/><i/><i/></div></div><div><p className={styles.kicker}>{c.memoryKicker}</p><h2>{c.memoryTitle}</h2><p>{c.memoryCopy}</p><ul><li>{c.memoryOne}</li><li>{c.memoryTwo}</li><li>{c.memoryThree}</li></ul></div></section>
+    <section className={styles.boundary}><div><p className={styles.kicker}>{c.clearBoundary}</p><h2>{c.controlTitle}</h2></div><div className={styles.boundaryGrid}>{c.boundaries.map(([title,copy])=><article key={title}><strong>{title}</strong><p>{copy}</p></article>)}</div></section>
+    <section className={styles.faq}><div><p className={styles.kicker}>FAQ</p><h2>{c.faqTitle}</h2></div><div>{c.faqs.map(([question,answer])=><details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div></section>
+    <section className={styles.finalCta}><div className={styles.finalMark}><Image src="/brand/trade-police-mark.png" alt="" width={96} height={96}/></div><p className={styles.kicker}>{c.finalKicker}</p><h2>{c.finalTitle}</h2><p>{c.finalCopy}</p><Link className={styles.primaryCta} href="/client/login?mode=signup&next=/onboarding">{c.startFree}<span>→</span></Link></section>
+    <footer className={styles.footer}><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={190} height={40}/><span>© 2026 Trade Police</span><nav><Link href="/about">{c.about}</Link><Link href="/faq">FAQ</Link><Link href="/legal">{c.legal}</Link><Link href="/pricing">{c.pricing}</Link></nav></footer>
   </main>;
 }

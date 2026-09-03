@@ -55,7 +55,7 @@ test('decision journey uses one clear market-check to risk-check sequence',()=>{
 });
 
 test('customer-facing acquisition surfaces use plain trading-rule language',()=>{
-  const landing=read('app/page.tsx');
+  const landing=read('lib/i18n/landing-copy.ts');
   const composer=read('components/RuleComposer.tsx');
   assert.match(landing,/STRATEGY BUILDER|Build visually|Your strategy|Trading rules/i);
   assert.match(composer,/Define your confirmation rules|Risk/i);
@@ -64,24 +64,22 @@ test('customer-facing acquisition surfaces use plain trading-rule language',()=>
 
 test('landing page shows an honest illustrative decision report',()=>{
   const landing=read('app/page.tsx');
-  assert.match(landing,/EXAMPLE DECISION/);
-  assert.match(landing,/Two required confirmations are still missing/);
-  assert.match(landing,/Illustrative result · not live market data/);
+  const copy=read('lib/i18n/landing-copy.ts');
+  assert.match(landing,/styles\.terminal/);
+  assert.match(copy,/One required confirmation is still missing/);
+  assert.match(copy,/Decision support, not financial advice/);
 });
 
 test('landing product walkthrough is lightweight, truthful, and motion-safe',()=>{
   const landing=read('app/page.tsx');
-  const demo=read('components/LandingProductDemo.tsx');
-  const styles=read('app/trade-police.css');
-  assert.match(landing,/LandingProductDemo/);
-  assert.match(demo,/Every state is illustrative—not live market data, a signal, or a performance claim/);
-  for(const state of ['READY','WAIT','BLOCKED'])assert.match(demo,new RegExp(`verdict:'${state}'`));
-  assert.match(demo,/Two required confirmations are still missing/);
-  assert.match(demo,/AI may explain this result\. It cannot change the decision/);
-  assert.doesNotMatch(demo,/<video|<img|use client|fetch\(/);
-  assert.doesNotMatch(demo,/\b(win rate|profit factor|P&L|performance percentage)\b/i);
+  const copy=read('lib/i18n/landing-copy.ts');
+  const styles=read('app/trade-police-landing.module.css');
+  for(const state of ['READY','WAIT','BLOCKED'])assert.match(landing,new RegExp(state));
+  assert.match(copy,/AI explains the result/);
+  assert.match(copy,/Your rules decide it/);
+  assert.doesNotMatch(landing,/<video|use client|fetch\(/);
+  assert.doesNotMatch(copy,/guaranteed profits|AI predicts the market/i);
   assert.match(styles,/@media\(prefers-reduced-motion:reduce\)/);
-  assert.match(styles,/\.product-demo-frame\{position:static;display:grid;opacity:1;transform:none;animation:none\}/);
 });
 
 test('decision surface makes source and freshness prominent',()=>{

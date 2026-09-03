@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies, headers } from 'next/headers';
+import Image from 'next/image';
 import ClientLoginForm from '@/components/ClientLoginForm';
 import { createClient } from '@/lib/supabase/server';
 import { getSafeClientNextPath } from '@/lib/auth/safe-next';
@@ -12,6 +13,10 @@ import {
 import {getRequestLocale} from '@/lib/i18n/server';
 import {getScreenCopy} from '@/lib/i18n/screen-copy';
 
+function LoginSurface({copy,next,mode}:{copy:ReturnType<typeof getScreenCopy>['auth'];next:string;mode:'login'|'signup'}) {
+  return <main className="auth-page client-login-page"><section className="auth-card portal-auth-card"><Image src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} priority/><span className="eyebrow">TRADE POLICE</span><h1>{copy.signIn}</h1><p>{copy.customerIntro}</p><ClientLoginForm next={next} initialMode={mode}/></section></main>;
+}
+
 export default async function ClientLoginPage({
   searchParams,
 }: {
@@ -23,6 +28,11 @@ export default async function ClientLoginPage({
   const safeNext = getSafeClientNextPath(params.next, '/client/login', '/dashboard');
   const cookieStore = await cookies();
   const authCookieNames = getSupabaseAuthCookieNames(cookieStore.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL);
+  const initialMode=params.mode==='signup'?'signup':'login';
+
+  // A new visitor has no session to verify. Rendering now avoids an unnecessary
+  // auth round trip and removes the footer-only transition between marketing and signup.
+  if(authCookieNames.length===0) return <LoginSurface copy={c} next={safeNext} mode={initialMode}/>;
 
   const supabase = await createClient();
   let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] | null = null;
@@ -52,17 +62,7 @@ export default async function ClientLoginPage({
       authStateCategory,
       hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
     });
-    return (
-      <main className="auth-page client-login-page">
-        <section className="auth-card portal-auth-card">
-          <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
-          <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
-          <h1>{c.signIn}</h1>
-          <p>{c.customerIntro}</p>
-          <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
-        </section>
-      </main>
-    );
+    return <LoginSurface copy={c} next={safeNext} mode={initialMode}/>;
   }
 
   if (user) {
@@ -104,15 +104,5 @@ export default async function ClientLoginPage({
     redirect('/auth/recover');
   }
 
-  return (
-    <main className="auth-page client-login-page">
-      <section className="auth-card portal-auth-card">
-        <img src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} />
-        <span className="eyebrow">TRADE POLICE CLIENT PORTAL</span>
-        <h1>{c.signIn}</h1>
-        <p>{c.customerIntro}</p>
-        <ClientLoginForm next={safeNext} initialMode={params.mode==='signup'?'signup':'login'} />
-      </section>
-    </main>
-  );
+  return <LoginSurface copy={c} next={safeNext} mode={initialMode}/>;
 }

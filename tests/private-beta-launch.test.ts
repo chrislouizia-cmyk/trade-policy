@@ -1,17 +1,183 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-const read=(path:string)=>fs.readFileSync(path,'utf8');
-test('landing renders the launch promise, proof, sections, CTA, pricing and risk language',()=>{const page=read('app/page.tsx');for(const text of ['Trade with a system, not an impulse.','No signals. No copy trading. Your strategy. Your rules. Your decisions.','Check your first setup free','HOW TRADE POLICE WORKS','EXAMPLE DECISION','STRATEGY BUILDER','DECISION ENGINE','FAQ','RISK DISCLAIMER','Decision support, not financial advice. No result guarantees an outcome.'])assert.match(page,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));assert.doesNotMatch(page,/guaranteed profits|AI predicts the market/i)});
-test('public routes are explicit while client and HQ remain guarded',()=>{const proxy=read('lib/supabase/proxy.ts');for(const route of ["'/'","'/pricing'","'/legal'","'/client/login'"])assert.ok(proxy.includes(route));assert.match(proxy,/if \(!user && !isPublic\)/);assert.match(proxy,/pathname\.startsWith\('\/hq'\).*'\/hq\/login'/s)});
-test('signup preserves onboarding callback and login preserves a safe client destination',()=>{assert.match(read('components/ClientLoginForm.tsx'),/auth\/callback\?next=\/onboarding/);const page=read('app/client/login/page.tsx');assert.ok(page.includes('getSafeClientNextPath'));assert.ok(page.includes("getSafeClientNextPath(params.next"));assert.ok(page.includes("'/dashboard'"));});
-test('Decision Workspace uses readiness and immutable Decision Report integrity copy',()=>{const hero=read('components/decision/DecisionHero.tsx');const workspace=read('components/TradeValidator.tsx');assert.match(hero,/SHOULD I RISK MY MONEY RIGHT NOW/);assert.match(hero,/Mandatory rules still control the final decision/);assert.match(workspace,/DECISION REPORT/);assert.match(workspace,/AI explanation cannot override the result/)});
-test('data failures never render readiness as a market conclusion',()=>{const state=read('lib/decision-hero.ts');assert.match(state,/DATA_UNAVAILABLE/);assert.match(state,/showReadiness: false/);assert.match(state,/Do not use this result to make a trading decision/)});
-test('pricing and account use server-authoritative billing state',()=>{const pricing=read('app/pricing/page.tsx');const account=read('app/account/page.tsx');assert.match(pricing,/getBillingState/);assert.match(pricing,/same deterministic decision logic/);assert.match(account,/getBillingState/);assert.match(account,/verified Stripe webhooks/)});
-test('history has truthful empty and unavailable states',()=>{const page=read('app/history/page.tsx');assert.match(page,/c\.noActivity/);assert.match(page,/c\.notAvailable|c\.notRecorded/);assert.match(page,/c\.realizedR/);assert.doesNotMatch(page,/win rate|profit factor|equity curve/i);});
-test('mobile launch styles provide full-width primary actions and collapsed history',()=>{const css=read('app/trade-police.css');assert.match(css,/@media\(max-width:768px\)/);assert.match(css,/\.marketing-actions \.button-link\{width:100%;min-height:44px/);assert.match(css,/\.history-row\{grid-template-columns:1fr/)})
-test('public trust pages and product positioning match the real Trade Police experience',()=>{const landing=read('app/page.tsx');const pricing=read('app/pricing/page.tsx');const legal=read('app/legal/page.tsx');const about=read('app/about/page.tsx');const faq=read('app/faq/page.tsx');const proxy=read('lib/supabase/proxy.ts');assert.match(landing,/No signals\. No copy trading\./i);for(const title of ['Build Strategy','Backtest','Market Check','Decision','Final Risk Check','Active Trade','History & Analytics'])assert.match(landing,new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'));assert.match(pricing,/FREE|PRO|ELITE|TEAM/i);assert.doesNotMatch(pricing,/Custom pricing|Private Beta|Founder/i);assert.match(pricing,/\$0|\$29 \/ month|\$59 \/ month|\$149 \/ month|\$279 \/ year|\$569 \/ year|\$1,429 \/ year/i);assert.match(legal,/READY is not a profit guarantee|not a broker|not financial advice/i);assert.match(about,/Why Trade Police Exists|Our Mission|Your strategy comes first/i);assert.match(faq,/What is Trade Police\?|Does Trade Police tell me what to buy or sell\?|What is Describe Your Strategy — Beta\?/i);assert.doesNotMatch(faq,/Strategy Copilot|AI Copilot|How does Strategy Copilot work/i);assert.match(proxy,/\/faq|\/about/i);});
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const read = (path: string) => fs.readFileSync(path, "utf8");
+test("landing renders a concise launch promise, product illustration and risk boundary", () => {
+  const page = read("app/page.tsx");
+  const copy = read("lib/i18n/landing-copy.ts");
+  for (const text of [
+    "Your strategy, enforced",
+    "before the risk.",
+    "Check your first setup",
+    "THE COMPLETE LOOP",
+    "No broker credentials",
+    "AI explains. Deterministic rules authorize.",
+    "Decision support, not financial advice.",
+  ])
+    assert.match(
+      copy,
+      new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+    );
+  assert.match(page, /styles\.terminal/);
+  assert.match(page, /styles\.workflowGrid/);
+  assert.doesNotMatch(copy, /guaranteed profits|AI predicts the market/i);
+});
+test("public routes are explicit while client and HQ remain guarded", () => {
+  const proxy = read("lib/supabase/proxy.ts");
+  for (const route of ["'/'", "'/pricing'", "'/legal'", "'/client/login'"])
+    assert.ok(proxy.includes(route));
+  assert.match(proxy, /if \(!user && !isPublic\)/);
+  assert.match(proxy, /pathname\.startsWith\('\/hq'\).*'\/hq\/login'/s);
+});
+test("signup preserves onboarding callback and login preserves a safe client destination", () => {
+  assert.match(
+    read("components/ClientLoginForm.tsx"),
+    /auth\/callback\?next=\/onboarding/,
+  );
+  const page = read("app/client/login/page.tsx");
+  assert.ok(page.includes("getSafeClientNextPath"));
+  assert.ok(page.includes("getSafeClientNextPath(params.next"));
+  assert.ok(page.includes("'/dashboard'"));
+});
+test("Decision Workspace uses readiness and immutable Decision Report integrity copy", () => {
+  const hero = read("components/decision/DecisionHero.tsx");
+  const workspace = read("components/TradeValidator.tsx");
+  assert.match(hero, /SHOULD I RISK MY MONEY RIGHT NOW/);
+  assert.match(hero, /Mandatory rules still control the final decision/);
+  assert.match(workspace, /DECISION REPORT/);
+  assert.match(workspace, /AI explanation cannot override the result/);
+});
+test("data failures never render readiness as a market conclusion", () => {
+  const state = read("lib/decision-hero.ts");
+  assert.match(state, /DATA_UNAVAILABLE/);
+  assert.match(state, /showReadiness: false/);
+  assert.match(state, /Do not use this result to make a trading decision/);
+});
+test("pricing and account use server-authoritative billing state", () => {
+  const pricing = read("app/pricing/page.tsx");
+  const account = read("app/account/page.tsx");
+  assert.match(pricing, /getBillingState/);
+  assert.match(pricing, /same deterministic decision logic/);
+  assert.match(account, /getBillingState/);
+  assert.match(account, /verified Stripe webhooks/);
+});
+test("history has truthful empty and unavailable states", () => {
+  const page = read("app/history/page.tsx");
+  assert.match(page, /c\.noActivity/);
+  assert.match(page, /c\.notAvailable|c\.notRecorded/);
+  assert.match(page, /c\.realizedR/);
+  assert.doesNotMatch(page, /win rate|profit factor|equity curve/i);
+});
+test("mobile launch styles provide full-width primary actions and collapsed history", () => {
+  const css = read("app/trade-police.css");
+  assert.match(css, /@media\(max-width:768px\)/);
+  assert.match(
+    css,
+    /\.marketing-actions \.button-link\{width:100%;min-height:44px/,
+  );
+  assert.match(css, /\.history-row\{grid-template-columns:1fr/);
+});
+test("public trust pages and product positioning match the real Trade Police experience", () => {
+  const landing = read("lib/i18n/landing-copy.ts");
+  const pricing = read("app/pricing/page.tsx");
+  const legal = read("app/legal/page.tsx");
+  const about = read("app/about/page.tsx");
+  const faq = read("app/faq/page.tsx");
+  const proxy = read("lib/supabase/proxy.ts");
+  assert.match(landing, /No signal selling/i);
+  for (const title of [
+    "Build your playbook",
+    "Test before risking",
+    "Check the decision",
+    "Learn from execution",
+  ])
+    assert.match(
+      landing,
+      new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+    );
+  assert.match(pricing, /FREE|PRO|ELITE|TEAM/i);
+  assert.doesNotMatch(pricing, /Custom pricing|Private Beta|Founder/i);
+  assert.match(
+    pricing,
+    /\$0|\$29 \/ month|\$59 \/ month|\$149 \/ month|\$279 \/ year|\$569 \/ year|\$1,429 \/ year/i,
+  );
+  assert.match(
+    legal,
+    /READY is not a profit guarantee|not a broker|not financial advice/i,
+  );
+  assert.match(
+    about,
+    /Why Trade Police Exists|Our Mission|Your strategy comes first/i,
+  );
+  assert.match(
+    faq,
+    /What is Trade Police\?|Does Trade Police tell me what to buy or sell\?|What is Describe Your Strategy — Beta\?/i,
+  );
+  assert.doesNotMatch(
+    faq,
+    /Strategy Copilot|AI Copilot|How does Strategy Copilot work/i,
+  );
+  assert.match(proxy, /\/faq|\/about/i);
+});
 
-test('public pricing reflects the approved finance plan set and hides internal entitlements',()=>{const pricing=read('app/pricing/page.tsx');const pricingComponent=read('components/PricingPage.tsx');const plans=read('lib/billing/plans.ts');assert.match(pricing,/PricingPage|getBillingState|billingEnabled/i);assert.match(pricingComponent,/pricing-segmented|Monthly|Annual/i);assert.match(plans,/PUBLIC_PLAN_CODES = \['FREE', 'PRO', 'ELITE', 'TEAM'\]/);assert.match(plans,/\$29 \/ month/i);assert.match(plans,/\$59 \/ month/i);assert.match(plans,/\$149 \/ month/i);assert.match(plans,/\$279 \/ year/i);assert.match(plans,/\$569 \/ year/i);assert.match(plans,/\$1,429 \/ year/i);assert.match(pricingComponent,/Save ~20% with annual billing/i);assert.doesNotMatch(pricingComponent,/Custom pricing|Private Beta|Founder/i);assert.match(plans,/PRIVATE_BETA|FOUNDER/i);assert.doesNotMatch(plans,/PUBLIC_PLAN_CODES.*PRIVATE_BETA|PUBLIC_PLAN_CODES.*FOUNDER/i);});
+test("public pricing reflects the approved finance plan set and hides internal entitlements", () => {
+  const pricing = read("app/pricing/page.tsx");
+  const pricingComponent = read("components/PricingPage.tsx");
+  const plans = read("lib/billing/plans.ts");
+  assert.match(pricing, /PricingPage|getBillingState|billingEnabled/i);
+  assert.match(pricingComponent, /pricing-segmented|Monthly|Annual/i);
+  assert.match(plans, /PUBLIC_PLAN_CODES = \['FREE', 'PRO', 'ELITE', 'TEAM'\]/);
+  assert.match(plans, /\$29 \/ month/i);
+  assert.match(plans, /\$59 \/ month/i);
+  assert.match(plans, /\$149 \/ month/i);
+  assert.match(plans, /\$279 \/ year/i);
+  assert.match(plans, /\$569 \/ year/i);
+  assert.match(plans, /\$1,429 \/ year/i);
+  assert.match(pricingComponent, /Save ~20% with annual billing/i);
+  assert.doesNotMatch(pricingComponent, /Custom pricing|Private Beta|Founder/i);
+  assert.match(plans, /PRIVATE_BETA|FOUNDER/i);
+  assert.doesNotMatch(
+    plans,
+    /PUBLIC_PLAN_CODES.*PRIVATE_BETA|PUBLIC_PLAN_CODES.*FOUNDER/i,
+  );
+});
 
-test('public copy keeps Describe Your Strategy — Beta honest and does not claim a live AI strategy copilot',()=>{const page=read('app/page.tsx');const faq=read('app/faq/page.tsx');assert.match(page,/Describe Your Strategy — Beta|plain language|structured draft/i);assert.doesNotMatch(page,/AI strategy copilot|live AI conversation|AI automatically builds your strategy/i);assert.match(faq,/Describe Your Strategy — Beta/i);assert.doesNotMatch(faq,/Strategy Copilot|AI Copilot/i);});
+test("public copy keeps Describe Your Strategy — Beta honest and does not claim a live AI strategy copilot", () => {
+  const page = read("lib/i18n/landing-copy.ts");
+  const faq = read("app/faq/page.tsx");
+  assert.match(
+    page,
+    /describe how you trade|structured draft/i,
+  );
+  assert.doesNotMatch(
+    page,
+    /AI strategy copilot|live AI conversation|AI automatically builds your strategy/i,
+  );
+  assert.match(faq, /Describe Your Strategy — Beta/i);
+  assert.doesNotMatch(faq, /Strategy Copilot|AI Copilot/i);
+});
 
-test('public pricing and trust pages use a disciplined launch layout with strong hierarchy',()=>{const pricing=read('app/pricing/page.tsx');const pricingComponent=read('components/PricingPage.tsx');const about=read('app/about/page.tsx');const faq=read('app/faq/page.tsx');const legal=read('app/legal/page.tsx');const css=read('app/trade-police.css');assert.match(pricing,/PricingPage|getBillingState|billingEnabled/i);assert.match(pricingComponent,/Simple pricing\. Powerful decisions\.|pricing-segmented|pricing-shell/i);assert.match(pricingComponent,/Monthly|Annual/i);assert.match(css,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/i);assert.match(about,/Why Trade Police Exists|Our Mission|Our Principles|How We Build|Founder/i);assert.match(faq,/Basics|Strategy & Rules|Plans & Pricing|Risk & Legal/i);assert.match(legal,/Legal and Risk Disclosures|Risk|No Profit Guarantee|AI Usage/i);});
+test("public pricing and trust pages use a disciplined launch layout with strong hierarchy", () => {
+  const pricing = read("app/pricing/page.tsx");
+  const pricingComponent = read("components/PricingPage.tsx");
+  const about = read("app/about/page.tsx");
+  const faq = read("app/faq/page.tsx");
+  const legal = read("app/legal/page.tsx");
+  const css = read("app/trade-police.css");
+  assert.match(pricing, /PricingPage|getBillingState|billingEnabled/i);
+  assert.match(
+    pricingComponent,
+    /Simple pricing\. Powerful decisions\.|pricing-segmented|pricing-shell/i,
+  );
+  assert.match(pricingComponent, /Monthly|Annual/i);
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/i);
+  assert.match(
+    about,
+    /Why Trade Police Exists|Our Mission|Our Principles|How We Build|Founder/i,
+  );
+  assert.match(faq, /Basics|Strategy & Rules|Plans & Pricing|Risk & Legal/i);
+  assert.match(
+    legal,
+    /Legal and Risk Disclosures|Risk|No Profit Guarantee|AI Usage/i,
+  );
+});
