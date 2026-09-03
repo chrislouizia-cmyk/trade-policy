@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const read=(file:string)=>readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
 const migration=read('supabase/migrations/094_marketplace_observation_and_install_pipeline.sql');
+const revisionAlignment=read('supabase/migrations/095_align_internal_marketplace_revision_validation.sql');
 
 test('qualification policy is explicit versioned and private by default',()=>{
   for(const contract of ["'MARKETPLACE_QUALIFICATION_V1',180,100,90,0,12,true",'marketplace_strategy_candidates','enable row level security','OWNER_CONSENT_PENDING','UNDER_REVIEW'])assert.match(migration,new RegExp(contract));
@@ -67,4 +68,14 @@ test('qualification cards explain thresholds and can open internal testing',()=>
   assert.match(lab,/openInternalTestForCandidate\(candidate\.strategyId\)/);
   const api=read('app/api/hq/marketplace/route.ts');
   assert.match(api,/databaseCode: creationError\.code/);
+});
+
+test('internal releases tolerate serialization differences without trusting browser strategy data',()=>{
+  assert.match(revisionAlignment,/v_normalized_strategy ->> ''id'' IS DISTINCT FROM v_current_strategy ->> ''id''/);
+  assert.match(revisionAlignment,/create_internal_marketplace_release_v1\(uuid,text,text\)/);
+  assert.match(revisionAlignment,/grant execute .* to authenticated/);
+  const source=read('supabase/migrations/065_marketplace_revision_single_canonical_source.sql');
+  assert.match(source,/v_snapshot := jsonb_build_object/);
+  assert.match(source,/v_source_profile\.id/);
+  assert.match(source,/v_expected_source_revision_id <> p_source_strategy_revision_id/);
 });
