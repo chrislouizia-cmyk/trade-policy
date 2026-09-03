@@ -21,7 +21,7 @@ export default async function LandingPage() {
   return <main className={styles.page}>
     <nav className={styles.nav} aria-label={c.navigation}>
       <Link className={styles.brand} href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} priority /></Link>
-      <div className={styles.navLinks}><a href="#system">{c.system}</a><a href="#workflow">{c.workflow}</a><a href="#trust">{c.trust}</a><Link href="/pricing">{c.pricing}</Link></div>
+      <div className={styles.navLinks}><a href="#system">{c.system}</a><a href="#workflow">{c.workflow}</a><a href="#trust">{c.trust}</a><Link href="/faq">FAQ</Link><Link href="/pricing">{c.pricing}</Link></div>
       <div className={styles.navActions}><Link href="/client/login">{c.signIn}</Link><Link className={styles.navCta} href="/client/login?mode=signup&next=/onboarding">{c.startFree}</Link></div>
     </nav>
 

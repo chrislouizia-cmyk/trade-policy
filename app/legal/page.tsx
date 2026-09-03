@@ -1,5 +1,6 @@
-import Image from 'next/image';
 import Link from 'next/link';
+import PublicSiteHeader from '@/components/PublicSiteHeader';
+import { getRequestLocale } from '@/lib/i18n/server';
 
 const legalSections = [
   ['Trading Risk', 'Trading involves substantial risk, including the possibility of losing all capital committed to a trade. Decisions may still fail even when the system reports READY or FINAL RISK CHECK passed.'],
@@ -21,22 +22,18 @@ const legalSections = [
   ['Jurisdiction & Eligibility', 'Access to the service and any associated financial or trading activity may be restricted by law or by the service provider’s operational requirements. Users are responsible for ensuring eligibility in their jurisdiction.'],
 ];
 
-export default function Legal() {
-  return <main className="marketing-page">
-    <nav className="marketing-nav">
-      <Link className="marketing-brand" href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} className="brand-logo-wordmark" /></Link>
-      <div>
-        <Link href="/about">About</Link>
-        <Link href="/faq">FAQ</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link>
-      </div>
-    </nav>
+export default async function Legal() {
+  const locale=await getRequestLocale();
+  return <main className="public-trust-page">
+    <PublicSiteHeader locale={locale}/>
 
-    <article className="legal-copy legal-doc">
+    <article className="trust-page-content legal-doc">
+      <header className="trust-page-hero legal-hero">
       <p className="eyebrow">LEGAL & RISK DISCLOSURES</p>
       <h1>Decision support, not financial advice.</h1>
       <p className="lead">Trade Police is a trading decision-support and discipline system built around the user’s own strategy and risk rules. It does not provide financial, investment, tax, or legal advice and does not guarantee trading results.</p>
+      <div className="legal-trust-badges"><span>Trading involves risk</span><span>No profit guarantee</span><span>You retain control</span></div>
+      </header>
 
       <nav className="legal-nav" aria-label="Legal section navigation">
         {legalSections.map(([title]) => (
@@ -48,10 +45,10 @@ export default function Legal() {
 
       <div className="legal-section-stack">
         {legalSections.map(([title, copy]) => (
-          <section key={title} id={title.toLowerCase().replace(/[^a-z0-9]+/g, '-')} className="info-section legal-section">
-            <h2>{title}</h2>
+          <details key={title} id={title.toLowerCase().replace(/[^a-z0-9]+/g, '-')} className="legal-section">
+            <summary><h2>{title}</h2><span>+</span></summary>
             <p>{copy}</p>
-          </section>
+          </details>
         ))}
       </div>
 

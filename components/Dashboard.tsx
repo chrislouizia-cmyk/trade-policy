@@ -2,6 +2,7 @@ import OnboardingChecklist from '@/components/OnboardingChecklist';
 import PrivateBetaCard from '@/components/PrivateBetaCard';
 import type { Locale } from '@/lib/i18n/config';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
+import DecisionStateGuide from '@/components/DecisionStateGuide';
 
 type Props = { displayName:string; account:any; strategy:any; openTrades:number; todayPnl:number; wins:number; losses:number; discipline:number|null; closedTradesToday:number; hasTrade:boolean; locale:Locale };
 
@@ -22,6 +23,7 @@ export default function Dashboard(p: Props) {
 
     {!setupComplete&&<OnboardingChecklist hasAccount={Boolean(p.account)} hasStrategy={Boolean(p.strategy)} hasTrade={p.hasTrade} locale={p.locale}/>}
     <PrivateBetaCard />
+    <DecisionStateGuide locale={p.locale}/>
 
     <div className="grid grid-4 metric-grid compact-dashboard-grid">
       <Card label={w('Active account')} value={p.account?p.account.name:w('Not configured')} sub={p.account?`${p.account.currency} ${Number(p.account.current_balance).toLocaleString(p.locale)}`:w('Create an account to calculate risk')} href="/accounts"/>

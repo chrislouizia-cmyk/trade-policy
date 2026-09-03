@@ -2,6 +2,8 @@
 
 import type {RefObject} from 'react';
 import type {DecisionExplanationSummary,DecisionNarrative} from '@/types/intelligence';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import DecisionStateGuide from '@/components/DecisionStateGuide';
 
 type Props={
   explanation:DecisionExplanationSummary|null;
@@ -50,6 +52,7 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
 }
 
 export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,setupType,decisionStatus='Preliminary market decision',finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onSaveSetup}:Props){
+  const {locale}=useLocale();
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
@@ -92,5 +95,6 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
     {(onMarkMissed||onSaveSetup)?<div className="decision-panel-secondary-actions">{onMarkMissed?<button type="button" onClick={onMarkMissed}>Mark as Missed</button>:null}{onSaveSetup?<button type="button" onClick={onSaveSetup}>Save Setup</button>:null}</div>:null}
     <div className="decision-data-trust available"><strong>{`Market data · ${analysis.provider}`}</strong><span>{analysis.latestCandleTimestamp?`Last verified candle ${new Date(analysis.latestCandleTimestamp).toLocaleString()}`:'No verified candle time available'}{analysis.calculatedAt?` · decision calculated ${new Date(analysis.calculatedAt).toLocaleTimeString()}`:''}</span></div>
     {authorizationError?<p className="error decision-authorization-error" role="alert">{authorizationError}</p>:null}
+    <details className="decision-state-help"><summary>{locale==='es'?'¿Qué significa este estado?':locale==='fr'?'Que signifie cet état ?':'What does this state mean?'}</summary><DecisionStateGuide locale={locale} compact/></details>
   </section>;
 }

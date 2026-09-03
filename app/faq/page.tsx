@@ -1,5 +1,7 @@
-import Image from 'next/image';
 import Link from 'next/link';
+import PublicSiteHeader from '@/components/PublicSiteHeader';
+import DecisionStateGuide from '@/components/DecisionStateGuide';
+import { getRequestLocale } from '@/lib/i18n/server';
 
 const faqGroups = [
   {
@@ -50,21 +52,19 @@ const faqGroups = [
   },
 ];
 
-export default function FAQPage() {
-  return <main className="marketing-page">
-    <nav className="marketing-nav">
-      <Link className="marketing-brand" href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} className="brand-logo-wordmark" /></Link>
-      <div>
-        <Link href="/about">About</Link>
-        <Link href="/faq">FAQ</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link className="button-link secondary marketing-cta" href="/client/login">Sign in</Link>
-      </div>
-    </nav>
+export default async function FAQPage() {
+  const locale=await getRequestLocale();
+  return <main className="public-trust-page">
+    <PublicSiteHeader locale={locale}/>
 
-    <article className="legal-copy faq-copy">
+    <article className="trust-page-content faq-copy">
+      <header className="trust-page-hero compact">
       <p className="eyebrow">FAQ</p>
       <h1>Frequently asked questions</h1>
+      <p className="lead">Clear answers about what Trade Police does, how decisions work, and where your responsibility remains.</p>
+      </header>
+
+      <DecisionStateGuide locale={locale}/>
 
       <div className="faq-group-stack">
         {faqGroups.map((group) => (
