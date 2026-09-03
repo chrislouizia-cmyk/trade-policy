@@ -71,11 +71,28 @@ test('qualification cards explain thresholds and can open internal testing',()=>
 });
 
 test('internal releases tolerate serialization differences without trusting browser strategy data',()=>{
-  assert.match(revisionAlignment,/v_normalized_strategy ->> ''id'' IS DISTINCT FROM v_current_strategy ->> ''id''/);
+  assert.match(revisionAlignment,/v_normalized_strategy ->> ''id'' is distinct from v_current_strategy ->> ''id''/i);
+  assert.match(revisionAlignment,/regexp_replace\(/);
+  assert.match(revisionAlignment,/function_definition ~\* current_guard_pattern/i);
+  assert.match(revisionAlignment,/raise exception 'Expected Marketplace revision guard was not found'/);
   assert.match(revisionAlignment,/create_internal_marketplace_release_v1\(uuid,text,text\)/);
   assert.match(revisionAlignment,/grant execute .* to authenticated/);
   const source=read('supabase/migrations/065_marketplace_revision_single_canonical_source.sql');
   assert.match(source,/v_snapshot := jsonb_build_object/);
   assert.match(source,/v_source_profile\.id/);
   assert.match(source,/v_expected_source_revision_id <> p_source_strategy_revision_id/);
+});
+
+test('095 detects the lowercase pg_get_functiondef guard and remains idempotent',()=>{
+  const lowerCaseDefinition = "if v_normalized_strategy <> v_current_strategy then\n  raise exception 'guard';\nend if;";
+  const upperCaseDefinition = "IF v_normalized_strategy <> v_current_strategy THEN\n  raise exception 'guard';\nEND IF;";
+  const alreadyCorrect = "if v_normalized_strategy ->> 'id' is distinct from v_current_strategy ->> 'id' then\n  raise exception 'guard';\nend if;";
+  const unknownGuard = "if v_other_strategy <> v_current_strategy then\n  raise exception 'guard';\nend if;";
+
+  assert.match(lowerCaseDefinition, /if\s+v_normalized_strategy\s*<>\s*v_current_strategy\s*then/i);
+  assert.match(upperCaseDefinition, /if\s+v_normalized_strategy\s*<>\s*v_current_strategy\s*then/i);
+  assert.match(alreadyCorrect, /if\s+v_normalized_strategy\s*->>\s*'id'\s+is\s+distinct\s+from\s+v_current_strategy\s*->>\s*'id'\s+then/i);
+  assert.doesNotMatch(unknownGuard, /if\s+v_normalized_strategy\s*<>\s*v_current_strategy\s*then/i);
+  assert.match(revisionAlignment, /function_definition ~\* current_guard_pattern/i);
+  assert.match(revisionAlignment, /function_definition ~\* target_guard_pattern/i);
 });
