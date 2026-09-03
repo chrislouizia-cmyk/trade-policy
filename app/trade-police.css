@@ -2436,3 +2436,10 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 .marketplace-consent-check{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid rgba(122,162,255,.28);border-radius:12px;background:rgba(122,162,255,.06);line-height:1.45}
 .marketplace-consent-check input{width:18px;height:18px;margin-top:2px;flex:0 0 auto}
 .marketplace-owner-consent .button-row{margin-top:0;flex-wrap:wrap}
+
+/* Keep Marketplace creation actions reachable on short laptop and mobile viewports. */
+.marketplace-create-modal-backdrop{min-height:100dvh;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.marketplace-create-modal{max-height:min(calc(100dvh - 24px),760px);grid-template-rows:auto auto minmax(0,1fr) auto;gap:14px;overflow:hidden}
+.marketplace-create-form{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 8px 12px 2px;scrollbar-gutter:stable}
+.marketplace-create-footer{position:relative;z-index:1;padding-top:12px;border-top:1px solid var(--border);background:#090c12}
+@media(max-height:700px){.marketplace-create-modal{padding:16px}.marketplace-create-helper{font-size:12px}.marketplace-profile-option{padding:8px 10px}}

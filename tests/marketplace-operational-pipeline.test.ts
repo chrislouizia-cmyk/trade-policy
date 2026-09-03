@@ -50,3 +50,10 @@ test('catalog usage is derived from actual installs and exact-revision evidence'
   assert.match(catalog,/installsByRelease/);assert.match(catalog,/candidateByRevision/);
   assert.match(catalog,/decision_count:candidate\?\.savedDecisions/);assert.match(catalog,/trade_count:candidate\?\.closedTrades/);
 });
+
+test('internal test modal keeps its publish controls visible on short viewports',()=>{
+  const css=read('app/trade-police.css');
+  assert.match(css,/\.marketplace-create-modal\{max-height:min\(calc\(100dvh - 24px\),760px\);grid-template-rows:auto auto minmax\(0,1fr\) auto;gap:14px;overflow:hidden\}/);
+  assert.match(css,/\.marketplace-create-form\{min-height:0;overflow-y:auto;overscroll-behavior:contain/);
+  assert.match(css,/\.marketplace-create-footer\{position:relative;z-index:1/);
+});
