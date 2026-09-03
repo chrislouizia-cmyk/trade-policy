@@ -116,16 +116,6 @@ export default function AdminDashboard({
   ];
   const secondary: Metric[] = [
     {
-      label: "Authorizations today",
-      value: undefined,
-      sub: "Not available yet",
-    },
-    {
-      label: "Trades blocked today",
-      value: undefined,
-      sub: "Not available yet",
-    },
-    {
       label: "Open feedback",
       value: overview.open_feedback,
       sub: "Open or under review",
@@ -176,7 +166,7 @@ export default function AdminDashboard({
       permission: "system.health",
       metrics: [
         ["Analyses today", overview.analyses_today],
-        ["Authorizations today", undefined],
+        ["Open incidents", overview.open_incidents],
       ],
     },
     {
@@ -185,7 +175,7 @@ export default function AdminDashboard({
       permission: "system.health",
       metrics: [
         ["Open trades", overview.open_trades],
-        ["Re-analyses today", undefined],
+        ["Open feedback", overview.open_feedback],
       ],
     },
     {
@@ -212,7 +202,7 @@ export default function AdminDashboard({
       permission: "system.health",
       metrics: [
         ["Open incidents", overview.open_incidents],
-        ["Health status", undefined],
+        ["Failed actions", overview.failed_actions_today],
       ],
     },
   ].filter((module) => can(module.permission));
@@ -231,13 +221,13 @@ export default function AdminDashboard({
         </div>
         <h2>Primary business KPIs</h2>
         <div className="hq-kpi-grid">
-          {primary.map((metric) => (
+          {primary.filter(metric=>typeof metric.value==='number').map((metric) => (
             <MetricCard key={metric.label} metric={metric} />
           ))}
         </div>
         <h2>Operating KPIs</h2>
         <div className="hq-kpi-grid secondary">
-          {secondary.map((metric) => (
+          {secondary.filter(metric=>typeof metric.value==='number').map((metric) => (
             <MetricCard key={metric.label} metric={metric} />
           ))}
         </div>
@@ -357,22 +347,21 @@ export default function AdminDashboard({
         </div>
         <div className="hq-module-grid">
           {modules.map((module) => (
-            <article key={module.name}>
-              <div>
+            <details className="hq-module-card" key={module.name}>
+              <summary>
                 <strong>{module.name}</strong>
-                <span className="status-pill">Available</span>
-              </div>
-              {module.metrics.map(([label, value]) => (
+                <span>Open</span>
+              </summary>
+              <div className="hq-module-card-body">
+              {module.metrics.filter(([,value])=>typeof value==='number').map(([label, value]) => (
                 <p key={String(label)}>
                   <span>{String(label)}</span>
                   <strong>{display(value)}</strong>
-                  <small>
-                    {typeof value === "number" ? "" : "Not available yet"}
-                  </small>
                 </p>
               ))}
               <Link href={module.route}>Open {module.name}</Link>
-            </article>
+              </div>
+            </details>
           ))}
         </div>
       </section>

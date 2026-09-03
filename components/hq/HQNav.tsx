@@ -2,36 +2,26 @@
 
 import {usePathname} from 'next/navigation';
 
-const allLinks = [
-  ['Overview','/hq','hq.view'],
-  ['Customers','/hq/customers','customers.view_metadata'],
-  ['Team','/hq/team','staff.view'],
-  ['Company','/hq/organizations','organizations.view'],
-  ['Sales','/hq/sales','sales.view'],
-  ['Beta','/hq/private-beta','beta.manage'],
-  ['Compliance','/hq/compliance','compliance.view'],
-  ['Support','/hq/support','support.view'],
-  ['System Operations','/hq/system','system.health'],
-  ['Marketplace','/hq/marketplace','marketplace.lab'],
-  ['Constitution','/hq/constitution','hq.view'],
+const navigationGroups = [
+  {label:'Command',icon:'⌁',links:[['Overview','/hq','hq.view']]},
+  {label:'People & company',icon:'○',links:[['Customers','/hq/customers','customers.view_metadata'],['Team','/hq/team','staff.view'],['Company','/hq/organizations','organizations.view']]},
+  {label:'Growth',icon:'↗',links:[['Sales','/hq/sales','sales.view'],['Beta','/hq/private-beta','beta.manage'],['Marketplace','/hq/marketplace','marketplace.lab']]},
+  {label:'Trust & operations',icon:'◇',links:[['Compliance','/hq/compliance','compliance.view'],['Support','/hq/support','support.view'],['System Operations','/hq/system','system.health'],['Constitution','/hq/constitution','hq.view']]},
 ] as const;
-
-const primaryMobileLabels=new Set(['Overview','Customers','Sales','Compliance']);
 
 export default function HQNav({permissions}:{permissions:string[]}){
   const pathname=usePathname();
-  const links=allLinks.filter(([, , permission])=>permissions.includes(permission));
   const isActive=(href:string)=>href==='/hq'?pathname==='/hq':pathname.startsWith(href);
   const link=([label,href]:readonly [string,string,string])=><a className={isActive(href)?'active':undefined} aria-current={isActive(href)?'page':undefined} key={`${href}-${label}`} href={href}>{label}</a>;
-  const mobilePrimary=links.filter(([label])=>primaryMobileLabels.has(label));
-  const mobileMore=links.filter(([label])=>!primaryMobileLabels.has(label));
-  const desktopPrimary=links;
-  const mobileMoreActive=mobileMore.some(([,href])=>isActive(href));
-  return <>
-    <nav className="hq-nav hq-desktop-nav" aria-label="Trade Police HQ">{desktopPrimary.map(link)}</nav>
-    <nav className="hq-mobile-nav" aria-label="Trade Police HQ mobile navigation">
-      {mobilePrimary.map(link)}
-      {mobileMore.length>0&&<details className="hq-more-menu"><summary className={mobileMoreActive?'active':undefined}>More</summary><div>{mobileMore.map(link)}</div></details>}
-    </nav>
-  </>;
+  const groups=navigationGroups.map(group=>({...group,links:group.links.filter(([, ,permission])=>permissions.includes(permission))})).filter(group=>group.links.length>0);
+  return <nav className="hq-command-nav" aria-label="Trade Police HQ">
+    {groups.map(group=>{
+      const active=group.links.some(([,href])=>isActive(href));
+      if(group.links.length===1){const item=group.links[0];return <a className={`hq-command-home ${active?'active':''}`} aria-current={active?'page':undefined} key={group.label} href={item[1]}><span>{group.icon}</span><strong>{group.label}</strong></a>}
+      return <details className="hq-command-group" key={group.label} open={active || undefined}>
+        <summary className={active?'active':undefined}><span>{group.icon}</span><strong>{group.label}</strong><i>+</i></summary>
+        <div>{group.links.map(link)}</div>
+      </details>;
+    })}
+  </nav>;
 }
