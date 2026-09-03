@@ -2,10 +2,24 @@ import 'server-only';
 
 import { createAdminClient } from '../supabase/admin.ts';
 import { getAnchoredMonthlyPeriod } from './period.ts';
+import { planFor, type PlanCode } from './plans.ts';
 import { buildBillingState, type BillingState } from './state.ts';
-import { applyServerEntitlementOverride } from './overrides.ts';
 
 export { buildBillingState, type BillingState } from './state.ts';
+
+async function getCanonicalEffectivePlanCode(userId: string): Promise<PlanCode> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc('get_effective_plan_code_for_user', {
+    p_user_id: userId,
+  });
+
+  if (error || data === null || data === undefined) {
+    throw new Error(`Effective plan could not be resolved. ${error?.message ?? ''}`.trim());
+  }
+
+  const plan = String(data).trim().toUpperCase() as PlanCode;
+  return planFor(plan).code;
+}
 
 type UsageAnchorRow = {
   created_at: string;
@@ -80,7 +94,13 @@ export async function getBillingState(userId: string): Promise<BillingState> {
     usageResult.count,
     usagePeriod,
   );
-  return await applyServerEntitlementOverride(userId, state);
+
+  const effectivePlan = await getCanonicalEffectivePlanCode(userId);
+  return {
+    ...state,
+    plan: effectivePlan,
+    entitlements: planFor(effectivePlan),
+  };
 }
 
 export async function reserveAnalysis(

@@ -53,7 +53,7 @@ test('analysis limits match each designed plan', () => {
   assert.equal(planFor('FOUNDER').monthlyAnalysisLimit, null);
 });
 
-test('getBillingState applies the canonical server-side entitlement override after normal plan resolution', () => {
+test('getBillingState resolves effective plan from the canonical server-side entitlement contract', () => {
   const overridesSource = readFileSync(
     new URL('../lib/billing/overrides.ts', import.meta.url),
     'utf8',
@@ -61,7 +61,7 @@ test('getBillingState applies the canonical server-side entitlement override aft
 
   assert.match(
     billingEntitlementsSource,
-    /const state = buildBillingState\([\s\S]*return await applyServerEntitlementOverride\(userId, state\);/,
+    /getCanonicalEffectivePlanCode\(userId\)|rpc\('get_effective_plan_code_for_user'/,
   );
   assert.match(overridesSource, /internal_entitlement_overrides/);
   assert.match(overridesSource, /\.eq\('user_id', userId\)/);
