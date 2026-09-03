@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LOCALE_COOKIE, normalizeLocale, type Locale, type LocalePreference } from '@/lib/i18n/config';
+import { translate } from '@/lib/i18n/messages';
 import { useLocale } from './LocaleProvider';
 
 function browserLocale(): Locale {
@@ -14,19 +15,29 @@ export default function LanguagePreference({ userId, initialPreference }: { user
   const { t } = useLocale();
   const [preference, setPreference] = useState<LocalePreference>(initialPreference);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [statusMessage, setStatusMessage] = useState('');
 
   async function change(next: LocalePreference) {
+    const resolved = next === 'auto' ? browserLocale() : next;
     setPreference(next);
     setState('saving');
-    const { error } = await createClient().from('profiles').update({ preferred_locale: next }).eq('id', userId);
-    if (error) {
+    setStatusMessage(translate(resolved, 'language.saving'));
+    const { data, error } = await createClient()
+      .from('profiles')
+      .update({ preferred_locale: next })
+      .eq('id', userId)
+      .select('preferred_locale')
+      .maybeSingle();
+    if (error || !data) {
+      setPreference(initialPreference);
       setState('failed');
+      setStatusMessage(translate(resolved, 'language.failed'));
       return;
     }
-    const resolved = next === 'auto' ? browserLocale() : next;
     document.cookie = `${LOCALE_COOKIE}=${resolved}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`;
     document.documentElement.lang = resolved;
     setState('saved');
+    setStatusMessage(translate(resolved, 'language.saved'));
     router.refresh();
   }
 
@@ -44,7 +55,7 @@ export default function LanguagePreference({ userId, initialPreference }: { user
       </select>
     </label>
     <p className={state === 'failed' ? 'error' : 'muted'} role="status" aria-live="polite">
-      {state === 'saving' ? t('language.saving') : state === 'saved' ? t('language.saved') : state === 'failed' ? t('language.failed') : ''}
+      {statusMessage}
     </p>
   </section>;
 }
