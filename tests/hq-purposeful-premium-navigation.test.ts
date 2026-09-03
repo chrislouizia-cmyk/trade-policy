@@ -47,3 +47,14 @@ test('HQ premium layer covers department workspaces and responsive navigation',(
   assert.match(css,/@media\(max-width:520px\)/);
   assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
 });
+
+test('executive mobile overview caps incident previews and links the full queue',()=>{
+  const page=read('app/hq/page.tsx');
+  const dashboard=read('components/admin/AdminDashboard.tsx');
+  const css=read('app/hq-premium.css');
+  assert.match(page,/admin_recent_incidents'.*p_limit:16/);
+  assert.match(dashboard,/openIncidents\.slice\(0, 8\)/);
+  assert.match(dashboard,/View full incident queue/);
+  assert.match(css,/\.hq-condensed-list-footer/);
+  assert.match(css,/\.hq-executive-card \.event-row\{display:grid/);
+});

@@ -373,7 +373,13 @@ export default function AdminDashboard({
             <h2>Open system incidents</h2>
           </div>
         </div>
-        <IncidentRows rows={openIncidents} empty="No open incidents" />
+        <IncidentRows rows={openIncidents.slice(0, 8)} empty="No open incidents" />
+        {openIncidents.length > 8 && (
+          <div className="hq-condensed-list-footer">
+            <span>Showing 8 of {openIncidents.length} recent open incidents</span>
+            <Link className="button-link secondary" href="/hq/system/queue?status=OPEN">View full incident queue</Link>
+          </div>
+        )}
       </section>
     </div>
   );
