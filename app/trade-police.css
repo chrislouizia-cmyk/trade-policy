@@ -2442,4 +2442,8 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 .marketplace-create-modal{max-height:min(calc(100dvh - 24px),760px);grid-template-rows:auto auto minmax(0,1fr) auto;gap:14px;overflow:hidden}
 .marketplace-create-form{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 8px 12px 2px;scrollbar-gutter:stable}
 .marketplace-create-footer{position:relative;z-index:1;padding-top:12px;border-top:1px solid var(--border);background:#090c12}
+.marketplace-candidate-card.selected{border-color:rgba(116,164,255,.72);box-shadow:0 18px 48px rgba(16,38,78,.28)}
+.marketplace-candidate-details{display:grid;gap:12px;margin-top:4px;padding:14px;border:1px solid rgba(116,164,255,.28);border-radius:14px;background:rgba(7,12,22,.7)}
+.marketplace-candidate-details p{margin:0;color:var(--muted)}
+.marketplace-candidate-details ul{display:grid;gap:6px;margin:0;padding-left:20px;color:var(--muted)}
 @media(max-height:700px){.marketplace-create-modal{padding:16px}.marketplace-create-helper{font-size:12px}.marketplace-profile-option{padding:8px 10px}}

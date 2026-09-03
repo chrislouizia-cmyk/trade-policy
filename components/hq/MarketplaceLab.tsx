@@ -41,6 +41,7 @@ export default function MarketplaceLab() {
   const [isFounder, setIsFounder] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<string | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const autoSyncStarted=useRef(false);
 
   const closeCreate = () => {
@@ -110,6 +111,18 @@ export default function MarketplaceLab() {
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
     [profiles, selectedProfileId],
   );
+
+  const selectedCandidate = useMemo(
+    () => candidates.find((candidate) => candidate.candidateId === selectedCandidateId) ?? null,
+    [candidates, selectedCandidateId],
+  );
+
+  const openInternalTestForCandidate = (strategyId: string) => {
+    setSelectedProfileId(strategyId);
+    setProfileSearch('');
+    setError(null);
+    setShowCreate(true);
+  };
 
   const filtered = useMemo(
     () =>
@@ -209,11 +222,24 @@ export default function MarketplaceLab() {
         {candidates.length?<div className="marketplace-candidate-grid">{candidates.map(candidate=>{
           const tradeProgress=Math.min(100,Math.round(candidate.closedTrades/candidate.policy.minimumClosedTrades*100));
           const dayProgress=Math.min(100,Math.round(candidate.observationDays/candidate.policy.minimumObservationDays*100));
-          return <article key={candidate.candidateId} className="marketplace-candidate-card">
+          const isSelected=selectedCandidateId===candidate.candidateId;
+          return <article key={candidate.candidateId} className={`marketplace-candidate-card${isSelected?' selected':''}`}>
             <div><span className={`status-badge ${candidate.status.toLowerCase()}`}>{candidate.status.replaceAll('_',' ')}</span><h3>{candidate.strategyName}</h3><p>{candidate.ownerName??'Private owner'} · {candidate.instruments.join(', ')||'No instrument'}</p></div>
             <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Verified trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
             <div className="marketplace-progress" aria-label={`Observation ${dayProgress} percent`}><i style={{width:`${dayProgress}%`}}/></div>
             <div className="marketplace-progress trades" aria-label={`Verified trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
+            <button className="button secondary compact-button" type="button" aria-expanded={isSelected} onClick={()=>setSelectedCandidateId(isSelected?null:candidate.candidateId)}>{isSelected?'Hide qualification details':'View qualification details'}</button>
+            {isSelected?<div className="marketplace-candidate-details">
+              <p><strong>{candidate.status==='INSUFFICIENT_DATA'?'Public qualification is not ready yet.':'Private observation is in progress.'}</strong> Internal testing remains available and does not bypass the requirements for future public commerce.</p>
+              <ul>
+                <li>{candidate.observationDays}/{candidate.policy.minimumObservationDays} observation days</li>
+                <li>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades} verified closed trades</li>
+                <li>{candidate.adherencePercent===null?'No adherence evidence yet':`${candidate.adherencePercent}%/${candidate.policy.minimumAdherencePercent}% adherence`}</li>
+                <li>{candidate.criticalViolations}/{candidate.policy.maximumCriticalViolations} critical violations allowed</li>
+                <li>{candidate.maximumDrawdownR===null?'No verified drawdown yet':`${candidate.maximumDrawdownR}R/${candidate.policy.maximumDrawdownR}R maximum drawdown`}</li>
+              </ul>
+              {isFounder?<button className="button compact-button" type="button" onClick={()=>openInternalTestForCandidate(candidate.strategyId)}>Create internal test listing</button>:null}
+            </div>:null}
           </article>;
         })}</div>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
       </section>

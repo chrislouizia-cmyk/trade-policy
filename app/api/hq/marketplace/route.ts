@@ -310,7 +310,14 @@ export async function POST(request:Request) {
       userId: user.id,
       sourceStrategyRevisionId,
     });
-    return NextResponse.json({ error: 'Internal test release could not be created.', code: 'RELEASE_CREATE_FAILED' }, { status: 500 });
+    const safeDatabaseReason = ['P0001', '42501', '42883', '23505'].includes(String(creationError.code)) ? message : null;
+    return NextResponse.json({
+      error: safeDatabaseReason
+        ? `Internal test release could not be created: ${safeDatabaseReason}`
+        : `Internal test release could not be created (${creationError.code ?? 'DATABASE_ERROR'}).`,
+      code: 'RELEASE_CREATE_FAILED',
+      databaseCode: creationError.code ?? null,
+    }, { status: 500 });
   }
 
   return NextResponse.json({

@@ -58,3 +58,13 @@ test('internal test modal keeps its publish controls visible on short viewports'
   assert.match(css,/\.marketplace-create-form\{min-height:0;overflow-y:auto;overscroll-behavior:contain/);
   assert.match(css,/\.marketplace-create-footer\{position:relative;z-index:1/);
 });
+
+test('qualification cards explain thresholds and can open internal testing',()=>{
+  const lab=read('components/hq/MarketplaceLab.tsx');
+  assert.match(lab,/View qualification details/);
+  assert.match(lab,/Public qualification is not ready yet/);
+  assert.match(lab,/Create internal test listing/);
+  assert.match(lab,/openInternalTestForCandidate\(candidate\.strategyId\)/);
+  const api=read('app/api/hq/marketplace/route.ts');
+  assert.match(api,/databaseCode: creationError\.code/);
+});
