@@ -4,10 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserScopedSessionState, getUserScopedStorageKey, readUserScopedSelection, writeUserScopedSelection } from '@/lib/user-session-state';
+import { useLocale } from '@/components/i18n/LocaleProvider';
+import { workspaceText } from '@/lib/i18n/workspace-copy';
 
 type StrategyOption = { id: string; name: string; is_default: boolean; market_types: string[] | null; user_id?: string };
 
 export default function ActiveStrategySwitcher() {
+  const { locale } = useLocale();
+  const w = (text: string) => workspaceText(locale, text);
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [activeId, setActiveId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,17 +120,17 @@ export default function ActiveStrategySwitcher() {
     window.dispatchEvent(new CustomEvent('trade-police:strategy-changed', { detail: { strategyId: nextId, strategy: payload?.strategy } }));
   }
 
-  if (!strategies.length) return <div className="header-switcher message-inline"><span>Active strategy</span><small className="inline-state">{stateMessage || 'No strategy available for this user.'}</small></div>;
+  if (!strategies.length) return <div className="header-switcher message-inline"><span>{w('Active strategy')}</span><small className="inline-state">{stateMessage ? w(stateMessage) : w('No strategy available for this user.')}</small></div>;
 
   return (
     <label className="header-switcher">
-      <span>{busy ? 'Applying strategy…' : 'Active strategy'}</span>
+      <span>{busy ? w('Applying strategy…') : w('Active strategy')}</span>
       <select value={activeId} disabled={busy} onChange={(event) => void switchStrategy(event.target.value)}>
         {strategies.map((strategy) => (
           <option key={strategy.id} value={strategy.id}>{strategy.name}</option>
         ))}
       </select>
-      {stateMessage ? <small className="inline-state">{stateMessage}</small> : null}
+      {stateMessage ? <small className="inline-state">{w(stateMessage)}</small> : null}
     </label>
   );
 }

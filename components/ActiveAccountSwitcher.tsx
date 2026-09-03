@@ -1,7 +1,163 @@
-'use client';
-import { useEffect,useRef,useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { clearUserScopedSessionState, getUserScopedStorageKey, readUserScopedSelection, writeUserScopedSelection } from '@/lib/user-session-state';
-type A={id:string;name:string;is_active:boolean;currency:string;current_balance:number;user_id?:string};
-export default function ActiveAccountSwitcher(){const [rows,setRows]=useState<A[]>([]),[active,setActive]=useState(''),[busy,setBusy]=useState(false),[userId,setUserId]=useState<string|null>(null),[stateMessage,setStateMessage]=useState('');const router=useRouter();const previousUserRef=useRef<string|null>(null);useEffect(()=>{const supabase=createClient();const {data:authListener}=supabase.auth.onAuthStateChange(async (event,session)=>{const nextUserId=session?.user?.id ?? null;if(previousUserRef.current && previousUserRef.current !== nextUserId){clearUserScopedSessionState(previousUserRef.current);}previousUserRef.current=nextUserId;setUserId(nextUserId);if(event==='SIGNED_OUT'){setRows([]);setActive('');setStateMessage('No active user session.');return;}if(nextUserId) await load(nextUserId);});void supabase.auth.getUser().then(({data:{user}})=>{const nextUserId=user?.id ?? null;if(previousUserRef.current && previousUserRef.current !== nextUserId){clearUserScopedSessionState(previousUserRef.current);}previousUserRef.current=nextUserId;setUserId(nextUserId);if(nextUserId) void load(nextUserId);});const handleStorage=(event:StorageEvent)=>{if(!event.key||!event.key.startsWith('trade-police:active-account'))return;if(userId){const scopedKey=getUserScopedStorageKey('trade-police:active-account',userId);if(event.key!==scopedKey)return;}void load(userId ?? undefined);};window.addEventListener('storage',handleStorage);window.addEventListener('trade-police:account-changed',()=>void load(userId ?? undefined));return()=>{authListener?.subscription.unsubscribe();window.removeEventListener('storage',handleStorage);window.removeEventListener('trade-police:account-changed',()=>void load(userId ?? undefined));};},[userId]);async function load(nextUserId?:string|null){const resolvedUserId=nextUserId ?? userId;if(!resolvedUserId){setRows([]);setActive('');return;}const {data}=await createClient().from('trading_accounts').select('id,name,is_active,currency,current_balance,user_id').eq('user_id',resolvedUserId).eq('is_archived',false).order('created_at');const r=((data??[])as A[]).map((x:any)=>({...x,current_balance:Number(x.current_balance)}));setRows(r);const activeAccountId=readUserScopedSelection('trade-police:active-account',resolvedUserId);const nextActive=r.find((x:A)=>x.is_active)?.id ?? activeAccountId ?? r[0]?.id ?? '';setActive(nextActive);writeUserScopedSelection('trade-police:active-account',resolvedUserId,nextActive || null);setStateMessage(r.length ? '' : 'No account available for this user.');}async function change(id:string){if(!id||id===active)return;setBusy(true);const {error}=await createClient().rpc('set_active_trading_account',{target_account_id:id});if(error){setBusy(false);setStateMessage(error.message);return;}setActive(id);if(userId) writeUserScopedSelection('trade-police:active-account',userId,id);setBusy(false);setStateMessage('');router.refresh();window.dispatchEvent(new CustomEvent('trade-police:account-changed',{detail:{accountId:id}}))}if(!rows.length)return <div className="header-switcher message-inline"><span>Active account</span><small className="inline-state">{stateMessage || 'No account available for this user.'}</small></div>;return <label className="header-switcher"><span>Active account</span><select value={active} disabled={busy} onChange={e=>void change(e.target.value)}>{rows.map(r=><option key={r.id} value={r.id}>{r.name} · {r.currency} {r.current_balance.toLocaleString()}</option>)}</select>{stateMessage ? <small className="inline-state">{stateMessage}</small> : null}</label>}
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { workspaceText } from "@/lib/i18n/workspace-copy";
+import {
+  clearUserScopedSessionState,
+  getUserScopedStorageKey,
+  readUserScopedSelection,
+  writeUserScopedSelection,
+} from "@/lib/user-session-state";
+type A = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  currency: string;
+  current_balance: number;
+  user_id?: string;
+};
+export default function ActiveAccountSwitcher() {
+  const { locale } = useLocale();
+  const w = (text: string) => workspaceText(locale, text);
+  const [rows, setRows] = useState<A[]>([]),
+    [active, setActive] = useState(""),
+    [busy, setBusy] = useState(false),
+    [userId, setUserId] = useState<string | null>(null),
+    [stateMessage, setStateMessage] = useState("");
+  const router = useRouter();
+  const previousUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const nextUserId = session?.user?.id ?? null;
+        if (previousUserRef.current && previousUserRef.current !== nextUserId) {
+          clearUserScopedSessionState(previousUserRef.current);
+        }
+        previousUserRef.current = nextUserId;
+        setUserId(nextUserId);
+        if (event === "SIGNED_OUT") {
+          setRows([]);
+          setActive("");
+          setStateMessage("No active user session.");
+          return;
+        }
+        if (nextUserId) await load(nextUserId);
+      },
+    );
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      const nextUserId = user?.id ?? null;
+      if (previousUserRef.current && previousUserRef.current !== nextUserId) {
+        clearUserScopedSessionState(previousUserRef.current);
+      }
+      previousUserRef.current = nextUserId;
+      setUserId(nextUserId);
+      if (nextUserId) void load(nextUserId);
+    });
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || !event.key.startsWith("trade-police:active-account"))
+        return;
+      if (userId) {
+        const scopedKey = getUserScopedStorageKey(
+          "trade-police:active-account",
+          userId,
+        );
+        if (event.key !== scopedKey) return;
+      }
+      void load(userId ?? undefined);
+    };
+    window.addEventListener("storage", handleStorage);
+    const refresh = () => void load(userId ?? undefined);
+    window.addEventListener("trade-police:account-changed", refresh);
+    return () => {
+      authListener?.subscription.unsubscribe();
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("trade-police:account-changed", refresh);
+    };
+  }, [userId]);
+  async function load(nextUserId?: string | null) {
+    const resolvedUserId = nextUserId ?? userId;
+    if (!resolvedUserId) {
+      setRows([]);
+      setActive("");
+      return;
+    }
+    const { data } = await createClient()
+      .from("trading_accounts")
+      .select("id,name,is_active,currency,current_balance,user_id")
+      .eq("user_id", resolvedUserId)
+      .eq("is_archived", false)
+      .order("created_at");
+    const r = ((data ?? []) as A[]).map((x: any) => ({
+      ...x,
+      current_balance: Number(x.current_balance),
+    }));
+    setRows(r);
+    const activeAccountId = readUserScopedSelection(
+      "trade-police:active-account",
+      resolvedUserId,
+    );
+    const nextActive =
+      r.find((x: A) => x.is_active)?.id ?? activeAccountId ?? r[0]?.id ?? "";
+    setActive(nextActive);
+    writeUserScopedSelection(
+      "trade-police:active-account",
+      resolvedUserId,
+      nextActive || null,
+    );
+    setStateMessage(r.length ? "" : "No account available for this user.");
+  }
+  async function change(id: string) {
+    if (!id || id === active) return;
+    setBusy(true);
+    const { error } = await createClient().rpc("set_active_trading_account", {
+      target_account_id: id,
+    });
+    if (error) {
+      setBusy(false);
+      setStateMessage(error.message);
+      return;
+    }
+    setActive(id);
+    if (userId)
+      writeUserScopedSelection("trade-police:active-account", userId, id);
+    setBusy(false);
+    setStateMessage("");
+    router.refresh();
+    window.dispatchEvent(
+      new CustomEvent("trade-police:account-changed", {
+        detail: { accountId: id },
+      }),
+    );
+  }
+  if (!rows.length)
+    return (
+      <div className="header-switcher message-inline">
+        <span>{w("Active account")}</span>
+        <small className="inline-state">
+          {stateMessage ? w(stateMessage) : w("No account available for this user.")}
+        </small>
+      </div>
+    );
+  return (
+    <label className="header-switcher">
+      <span>{busy ? w("Applying account…") : w("Active account")}</span>
+      <select
+        value={active}
+        disabled={busy}
+        onChange={(e) => void change(e.target.value)}
+      >
+        {rows.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name} · {r.currency} {r.current_balance.toLocaleString()}
+          </option>
+        ))}
+      </select>
+      {stateMessage ? (
+        <small className="inline-state">{w(stateMessage)}</small>
+      ) : null}
+    </label>
+  );
+}

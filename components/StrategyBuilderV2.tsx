@@ -20,6 +20,8 @@ import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persist
 import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
 import { validateStrategyName } from '@/lib/strategy-name';
 import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
+import { useLocale } from '@/components/i18n/LocaleProvider';
+import { workspaceText } from '@/lib/i18n/workspace-copy';
 
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 export type StrategyBuilderV2Mode='CREATE'|'EDIT';
@@ -60,6 +62,8 @@ export default function StrategyBuilderV2({
   onCancel: () => void;
   onStateChange?: (state: StrategyBuilderV2State) => void;
 }) {
+  const { locale } = useLocale();
+  const w = (text:string) => workspaceText(locale,text);
   const [path, setPath] = useState<CreationPath | null>(()=>mode==='EDIT'?'visual':null);
   const [step, setStep] = useState<StepKey>(1);
   const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(initialState?.methodologyIds ?? []);
@@ -257,7 +261,7 @@ export default function StrategyBuilderV2({
     <div className="builder-step-tabs">
       {([1, 2, 3, 4, 5] as StepKey[]).map((value) => (
         <button key={value} type="button" className={step === value ? 'active' : ''} onClick={() => setStep(value)}>
-          {value}. {STEP_LABELS[value]}
+          {value}. {w(STEP_LABELS[value])}
         </button>
       ))}
     </div>
@@ -272,7 +276,7 @@ export default function StrategyBuilderV2({
           className={`chip ${selectedMethodologyIds.includes(library.id) ? 'selected' : ''}`}
           onClick={() => toggleMethodology(library.id)}
         >
-          {library.label}
+          {w(library.label)}
         </button>
       ))}
     </div>
@@ -285,49 +289,49 @@ export default function StrategyBuilderV2({
       <div className="conversation-prompt">
         <span aria-hidden="true">TP</span>
         <div>
-          <p className="muted">{mode==='EDIT'?'EDIT STRATEGY':'NEW STRATEGY'}</p>
-          <h2>{mode==='EDIT'?strategyName||profile.name:'Build a strategy without learning the engine schema'}</h2>
-          <p>{mode==='EDIT'?'Editing your existing strategy. Changes update this saved strategy only.':'Trade Police turns your trading style into a structured, reviewable playbook.'}</p>
+          <p className="muted">{w(mode==='EDIT'?'EDIT STRATEGY':'NEW STRATEGY')}</p>
+          <h2>{mode==='EDIT'?strategyName||profile.name:w('Build a strategy without learning the engine schema')}</h2>
+          <p>{w(mode==='EDIT'?'Editing your existing strategy. Changes update this saved strategy only.':'Trade Police turns your trading style into a structured, reviewable playbook.')}</p>
         </div>
       </div>
 
       {mode==='CREATE'&&<div className="button-row" aria-label="Create strategy modes">
         {CREATION_MODE_SEQUENCE.map((creationPath) => (
           <button key={creationPath} type="button" onClick={() => enterMode(creationPath)}>
-            {creationPath === 'visual' && 'Build visually'}
-            {creationPath === 'copilot' && 'Describe your strategy — Beta'}
-            {creationPath === 'methodology' && 'Start from a methodology'}
-            {creationPath === 'blank' && 'Start blank'}
+            {creationPath === 'visual' && w('Build visually')}
+            {creationPath === 'copilot' && w('Describe your strategy — Beta')}
+            {creationPath === 'methodology' && w('Start from a methodology')}
+            {creationPath === 'blank' && w('Start blank')}
           </button>
         ))}
       </div>}
 
       {mode==='CREATE'&&!path && (
         <div className="strategy-v2-panel">
-          <h3>Create Strategy</h3>
-          <p className="muted">Choose how you want to begin. No mode opens automatically.</p>
+          <h3>{w('Create Strategy')}</h3>
+          <p className="muted">{w('Choose how you want to begin. No mode opens automatically.')}</p>
         </div>
       )}
 
       {path === 'visual' && (
         <div className="strategy-v2-panel">
-          {mode==='EDIT'&&<label>Strategy name<input value={strategyName} onChange={event=>setStrategyName(event.target.value)} placeholder="Name this strategy" /></label>}
+          {mode==='EDIT'&&<label>{w('Strategy name')}<input value={strategyName} onChange={event=>setStrategyName(event.target.value)} placeholder={w('Name this strategy')} /></label>}
           {stepRouter}
 
           {step === 1 && (
             <div className="builder-step">
-              <h3>Step 1 — Your Style</h3>
-              <label>Direction<select value={direction} onChange={(event) => setDirection(event.target.value as 'LONG' | 'SHORT' | 'BOTH')}>
-                <option value="BOTH">Both</option>
-                <option value="LONG">Long bias</option>
-                <option value="SHORT">Short bias</option>
+              <h3>{w('Step 1 — Your Style')}</h3>
+              <label>{w('Direction')}<select value={direction} onChange={(event) => setDirection(event.target.value as 'LONG' | 'SHORT' | 'BOTH')}>
+                <option value="BOTH">{w('Both')}</option>
+                <option value="LONG">{w('Long bias')}</option>
+                <option value="SHORT">{w('Short bias')}</option>
               </select></label>
               <div className="field-block">
-                <p className="muted">Choose one or more methodologies</p>
+                <p className="muted">{w('Choose one or more methodologies')}</p>
                 {methodRow}
               </div>
               <div className="field-block">
-                <p className="muted">Markets</p>
+                <p className="muted">{w('Markets')}</p>
                 <div className="chip-list">
                   {SUPPORTED_INSTRUMENT_SYMBOLS.map((instrument) => (
                     <button
@@ -341,15 +345,15 @@ export default function StrategyBuilderV2({
                   ))}
                 </div>
               </div>
-              <div className="button-row"><button type="button" onClick={onCancel}>Back</button><button type="button" className="primary" onClick={() => setStep(2)}>Continue</button></div>
+              <div className="button-row"><button type="button" onClick={onCancel}>{w('Back')}</button><button type="button" className="primary" onClick={() => setStep(2)}>{w('Continue')}</button></div>
             </div>
           )}
 
           {step === 2 && (
             <div className="builder-step">
-              <h3>Step 2 — When You Trade</h3>
+              <h3>{w('Step 2 — When You Trade')}</h3>
               <div className="field-block">
-                <p className="muted">Sessions</p>
+                <p className="muted">{w('Sessions')}</p>
                 <div className="chip-list">
                   {['London', 'New York', 'Sydney', 'Tokyo'].map((session) => (
                     <button
@@ -364,25 +368,25 @@ export default function StrategyBuilderV2({
                 </div>
               </div>
               <div className="grid grid-2">
-                <label>Execution timeframe<select value={executionTimeframe} onChange={(event) => setExecutionTimeframe(event.target.value)}>
+                <label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={(event) => setExecutionTimeframe(event.target.value)}>
                   {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'].map((timeframe) => <option key={timeframe} value={timeframe}>{timeframe}</option>)}
                 </select></label>
-                <label>Context timeframe<select value={contextTimeframe} onChange={(event) => setContextTimeframe(event.target.value)}>
+                <label>{w('Context timeframe')}<select value={contextTimeframe} onChange={(event) => setContextTimeframe(event.target.value)}>
                   {['H1', 'H4', 'D1', 'W1'].map((timeframe) => <option key={timeframe} value={timeframe}>{timeframe}</option>)}
                 </select></label>
               </div>
-              <div className="button-row"><button type="button" onClick={() => setStep(1)}>Back</button><button type="button" className="primary" onClick={() => setStep(3)}>Continue</button></div>
+              <div className="button-row"><button type="button" onClick={() => setStep(1)}>{w('Back')}</button><button type="button" className="primary" onClick={() => setStep(3)}>{w('Continue')}</button></div>
             </div>
           )}
 
           {step === 3 && (
             <div className="builder-step">
-              <h3>Step 3 — Your Setup</h3>
+              <h3>{w('Step 3 — Your Setup')}</h3>
               <div className="field-block">
-                <p className="muted">Choose rule subsets from each selected methodology</p>
+                <p className="muted">{w('Choose rule subsets from each selected methodology')}</p>
                 {selectedLibraries.map((library) => (
                   <div key={library.id} className="card methodology-card">
-                    <strong>{library.label}</strong>
+                    <strong>{w(library.label)}</strong>
                     <div className="rule-list">
                       {library.rules.map((rule) => {
                         const selected = canonicalRuleSelections.some((item) => item.key === rule.key);
@@ -390,18 +394,18 @@ export default function StrategyBuilderV2({
                         return (
                           <div key={rule.key} className={`rule-row ${selected ? 'selected' : ''}`}>
                             <div className="rule-main">
-                              <button type="button" className={`chip ${selected ? 'selected' : ''}`} onClick={() => toggleRuleSelection(rule.key)}>{rule.label}</button>
+                              <button type="button" className={`chip ${selected ? 'selected' : ''}`} onClick={() => toggleRuleSelection(rule.key)}>{w(rule.label)}</button>
                               <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.capability}</span>
                             </div>
                             {selected && currentSelection && (
                               <div className="rule-controls">
                                 <select value={currentSelection.requirement} onChange={(event) => updateRuleSelection(rule.key, { requirement: event.target.value as 'REQUIRED' | 'OPTIONAL' })}>
-                                  <option value="REQUIRED">Required</option>
-                                  <option value="OPTIONAL">Optional</option>
+                                  <option value="REQUIRED">{w('Required')}</option>
+                                  <option value="OPTIONAL">{w('Optional')}</option>
                                 </select>
                                 <select value={currentSelection.group} onChange={(event) => updateRuleSelection(rule.key, { group: event.target.value as RuleGroupType })}>
-                                  <option value="ALL">All of these must be true</option>
-                                  <option value="ANY">Any of these can be true</option>
+                                  <option value="ALL">{w('All of these must be true')}</option>
+                                  <option value="ANY">{w('Any of these can be true')}</option>
                                 </select>
                                 <select value={currentSelection.timeframe} onChange={(event) => updateRuleSelection(rule.key, { timeframe: event.target.value })}>
                                   {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'].map((timeframe) => <option key={timeframe} value={timeframe}>{timeframe}</option>)}
@@ -410,12 +414,12 @@ export default function StrategyBuilderV2({
                                   <button type="button" className="menu-trigger" onClick={() => setRuleMenuOpen(rule.key === ruleMenuOpen ? null : rule.key)}>•••</button>
                                   {ruleMenuOpen === rule.key && (
                                     <div className="menu-panel">
-                                      <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'REQUIRED' })}>Set as required</button>
-                                      <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'OPTIONAL' })}>Set as optional</button>
+                                      <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'REQUIRED' })}>{w('Set as required')}</button>
+                                      <button type="button" onClick={() => updateRuleSelection(rule.key, { requirement: 'OPTIONAL' })}>{w('Set as optional')}</button>
                                       <button type="button" onClick={() => setSelectedRuleSelections((current) => reconcileRuleSelectionsWithMethodologies({
                                         methodologyIds: selectedMethodologyIds,
                                         ruleSelections: current.filter((item) => item.key !== rule.key),
-                                      }))}>Remove rule</button>
+                                      }))}>{w('Remove rule')}</button>
                                     </div>
                                   )}
                                 </div>
@@ -428,42 +432,42 @@ export default function StrategyBuilderV2({
                   </div>
                 ))}
               </div>
-              <div className="button-row"><button type="button" onClick={() => setStep(2)}>Back</button><button type="button" className="primary" onClick={() => setStep(4)}>Continue</button></div>
+              <div className="button-row"><button type="button" onClick={() => setStep(2)}>{w('Back')}</button><button type="button" className="primary" onClick={() => setStep(4)}>{w('Continue')}</button></div>
             </div>
           )}
 
           {step === 4 && (
             <div className="builder-step">
-              <h3>Step 4 — Risk & Management</h3>
+              <h3>{w('Step 4 — Risk & Management')}</h3>
               <div className="grid grid-2">
-                <label>Risk %<input type="number" value={riskPercent} min={0.1} max={10} step={0.1} onChange={(event) => setRiskPercent(Number(event.target.value))} /></label>
-                <label>Minimum RR<input type="number" value={minimumRR} min={1} step={0.5} onChange={(event) => setMinimumRR(Number(event.target.value))} /></label>
-                <label>Stop logic<input value={stopLogic} onChange={(event) => setStopLogic(event.target.value)} /></label>
-                <label>Target logic<input value={targetLogic} onChange={(event) => setTargetLogic(event.target.value)} /></label>
+                <label>{w('Risk %')}<input type="number" value={riskPercent} min={0.1} max={10} step={0.1} onChange={(event) => setRiskPercent(Number(event.target.value))} /></label>
+                <label>{w('Minimum RR')}<input type="number" value={minimumRR} min={1} step={0.5} onChange={(event) => setMinimumRR(Number(event.target.value))} /></label>
+                <label>{w('Stop logic')}<input value={stopLogic} onChange={(event) => setStopLogic(event.target.value)} /></label>
+                <label>{w('Target logic')}<input value={targetLogic} onChange={(event) => setTargetLogic(event.target.value)} /></label>
               </div>
-              <div className="button-row"><button type="button" onClick={() => setStep(3)}>Back</button><button type="button" className="primary" onClick={() => setStep(5)}>Continue</button></div>
+              <div className="button-row"><button type="button" onClick={() => setStep(3)}>{w('Back')}</button><button type="button" className="primary" onClick={() => setStep(5)}>{w('Continue')}</button></div>
             </div>
           )}
 
           {step === 5 && (
             <div className="builder-step">
-              <h3>Step 5 — Review & Activate</h3>
+              <h3>{w('Step 5 — Review & Activate')}</h3>
               <div className="playbook-summary">
-                <h4>YOUR PLAYBOOK</h4>
+                <h4>{w('YOUR PLAYBOOK')}</h4>
                 <div className="grid grid-2">
-                  <div><span className="muted">Markets</span><strong>{selectedInstruments.join(', ') || 'No instruments selected'}</strong></div>
-                  <div><span className="muted">Trading Window</span><strong>{sessions.join(' + ') || 'No sessions selected'}</strong></div>
-                  <div><span className="muted">Methodologies</span><strong>{selectedLibraries.map((library) => library.label).join(' + ') || 'No methodology selected'}</strong></div>
-                  <div><span className="muted">Setup</span><strong>{selectedRulesText}</strong></div>
-                  <div><span className="muted">Risk</span><strong>{riskPercent}%</strong></div>
-                  <div><span className="muted">Minimum RR</span><strong>1:{minimumRR}</strong></div>
+                  <div><span className="muted">{w('Markets')}</span><strong>{selectedInstruments.join(', ') || w('No instruments selected')}</strong></div>
+                  <div><span className="muted">{w('Trading Window')}</span><strong>{sessions.join(' + ') || w('No sessions selected')}</strong></div>
+                  <div><span className="muted">{w('Methodologies')}</span><strong>{selectedLibraries.map((library) => w(library.label)).join(' + ') || w('No methodology selected')}</strong></div>
+                  <div><span className="muted">{w('Setup')}</span><strong>{selectedRulesText}</strong></div>
+                  <div><span className="muted">{w('Risk')}</span><strong>{riskPercent}%</strong></div>
+                  <div><span className="muted">{w('Minimum RR')}</span><strong>1:{minimumRR}</strong></div>
                 </div>
                 <pre>{JSON.stringify(draftSummary, null, 2)}</pre>
               </div>
 
               <div className="strategy-health-summary">
-                <p className="eyebrow">STRATEGY HEALTH</p>
-                <h4>{health.totalRules} rules configured</h4>
+                <p className="eyebrow">{w('STRATEGY HEALTH')}</p>
+                <h4>{health.totalRules} {w('rules configured')}</h4>
                 <div className="grid grid-2">
                   {(['AUTOMATIC', 'MANUAL', 'EXTERNAL', 'DESCRIPTIVE'] as Capability[]).map((capability) => {
                     const count = canonicalRuleSelections.filter((rule) => {
@@ -472,7 +476,7 @@ export default function StrategyBuilderV2({
                     }).length;
                     return (
                       <div key={capability} className={`capability-pill ${capabilityTone[capability]}`}>
-                        <span>{capability}</span>
+                        <span>{w(capability)}</span>
                         <strong>{count}</strong>
                       </div>
                     );
@@ -490,12 +494,12 @@ export default function StrategyBuilderV2({
 
               <label className="check-row">
                 <input type="checkbox" checked={approvalConfirmed} onChange={(event) => setApprovalConfirmed(event.target.checked)} />
-                <span>I approve this strategy draft and understand the review warnings above.</span>
+                <span>{w('I approve this strategy draft and understand the review warnings above.')}</span>
               </label>
 
               <div className="button-row">
-                <button type="button" onClick={() => setStep(4)}>Back</button>
-                <button type="button" className="primary" onClick={() => { void buildVisualApply(); }} disabled={!approvalConfirmed || saving}>{saving ? 'Saving…' : 'Approve & Save'}</button>
+                <button type="button" onClick={() => setStep(4)}>{w('Back')}</button>
+                <button type="button" className="primary" onClick={() => { void buildVisualApply(); }} disabled={!approvalConfirmed || saving}>{w(saving ? 'Saving…' : 'Approve & Save')}</button>
               </div>
             </div>
           )}
@@ -504,12 +508,12 @@ export default function StrategyBuilderV2({
 
       {path === 'copilot' && (
         <div className="strategy-v2-panel">
-          <h3>AI Strategy Copilot — Beta</h3>
-          <p className="muted">Describe how you trade in plain language. Trade Police turns your description into a structured draft that you can review and modify before applying.</p>
-          <p className="muted small">The deterministic trading engine remains authoritative. AI cannot activate or modify a strategy without your approval.</p>
+          <h3>{w('AI Strategy Copilot — Beta')}</h3>
+          <p className="muted">{w('Describe how you trade in plain language. Trade Police turns your description into a structured draft that you can review and modify before applying.')}</p>
+          <p className="muted small">{w('The deterministic trading engine remains authoritative. AI cannot activate or modify a strategy without your approval.')}</p>
           <textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} />
           <div className="button-row">
-            <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }])}>Add note</button>
+            <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }])}>{w('Add note')}</button>
             <button type="button" className="primary" disabled={copilotBusy || !copilotInput.trim()} onClick={async () => {
               if (!copilotInput.trim()) return;
               setCopilotBusy(true);
@@ -553,7 +557,7 @@ export default function StrategyBuilderV2({
               } finally {
                 setCopilotBusy(false);
               }
-            }}>{copilotBusy ? 'Thinking…' : 'Generate structured draft'}</button>
+            }}>{w(copilotBusy ? 'Thinking…' : 'Generate structured draft')}</button>
           </div>
           <div className="copilot-log">
             {copilotConversation.map((entry, index) => (
@@ -566,11 +570,11 @@ export default function StrategyBuilderV2({
 
           {copilotDraft.rules.length > 0 && (
             <div className="strategy-v2-panel">
-              <h4>Refine your strategy</h4>
-              <p className="muted">Add more detail to adjust the draft without restarting the flow.</p>
+              <h4>{w('Refine your strategy')}</h4>
+              <p className="muted">{w('Add more detail to adjust the draft without restarting the flow.')}</p>
               <textarea value={copilotRefinementInput} onChange={(event) => setCopilotRefinementInput(event.target.value)} rows={4} placeholder="Add XAUUSD, London and New York sessions, require a liquidity sweep, FVG minimum 8 points, and minimum risk of 0.5%." />
               <div className="button-row">
-                <button type="button" onClick={() => setCopilotReviewVisible((current) => !current)}>{copilotReviewVisible ? 'Hide review' : 'Review draft'}</button>
+                <button type="button" onClick={() => setCopilotReviewVisible((current) => !current)}>{w(copilotReviewVisible ? 'Hide review' : 'Review draft')}</button>
                 <button type="button" className="primary" disabled={copilotBusy || !copilotRefinementInput.trim()} onClick={async () => {
                   if (!copilotRefinementInput.trim()) return;
                   setCopilotBusy(true);
@@ -611,25 +615,25 @@ export default function StrategyBuilderV2({
                   } finally {
                     setCopilotBusy(false);
                   }
-                }}>Apply / Update Draft</button>
+                }}>{w('Apply / Update Draft')}</button>
               </div>
             </div>
           )}
 
           {copilotReviewVisible && copilotDraft.rules.length > 0 && (
             <div className="draft-review-panel">
-              <h4>Draft summary</h4>
+              <h4>{w('Draft summary')}</h4>
               <div className="grid grid-2">
-                <div><span className="muted">Instrument</span><strong>{copilotDraft.instrument ?? 'Not set'}</strong></div>
-                <div><span className="muted">Session</span><strong>{copilotDraft.sessions.join(' + ') || 'Not set'}</strong></div>
-                <div><span className="muted">Risk</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : 'Not set'}</strong></div>
-                <div><span className="muted">Minimum RR</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : 'Not set'}</strong></div>
+                <div><span className="muted">{w('Instrument')}</span><strong>{copilotDraft.instrument ?? w('Not set')}</strong></div>
+                <div><span className="muted">{w('Session')}</span><strong>{copilotDraft.sessions.join(' + ') || w('Not set')}</strong></div>
+                <div><span className="muted">{w('Risk')}</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : w('Not set')}</strong></div>
+                <div><span className="muted">{w('Minimum RR')}</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : w('Not set')}</strong></div>
               </div>
               <div className="rule-list">
                 {copilotDraft.rules.map((rule) => (
                   <div key={rule.key} className="rule-row">
                     <div className="rule-main">
-                      <strong>{rule.label}</strong>
+                      <strong>{w(rule.label)}</strong>
                       <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.requirement}</span>
                     </div>
                     <div className="rule-controls">
@@ -640,25 +644,25 @@ export default function StrategyBuilderV2({
                   </div>
                 ))}
               </div>
-              <p className="muted">Logic: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
+              <p className="muted">{w('Logic')}: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
             </div>
           )}
 
           {copilotDraft.rules.length > 0 && (
             <div>
-              <label>Strategy name<input value={strategyName} onChange={event=>{setStrategyName(event.target.value);setCopilotApplyError('');}} placeholder="Name this strategy" /></label>
-              <div className="grid grid-2"><label>Context timeframe<select value={contextTimeframe} onChange={event=>setContextTimeframe(event.target.value)}><option value="">Choose context timeframe</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>Execution timeframe<select value={executionTimeframe} onChange={event=>setExecutionTimeframe(event.target.value)}><option value="">Choose execution timeframe</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
+              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{setStrategyName(event.target.value);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
+              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>setContextTimeframe(event.target.value)}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>setExecutionTimeframe(event.target.value)}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
               <div className="button-row">
-                <button type="button" onClick={() => setPath('copilot')}>Back</button>
+                <button type="button" onClick={() => setPath('copilot')}>{w('Back')}</button>
                 <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
                   if (!copilotApproved) return;
                   buildCopilotApply();
-                }}>Approve & Apply</button>
+                }}>{w('Approve & Apply')}</button>
               </div>
               <label className="check-row">
                 <input type="checkbox" checked={copilotApproved} onChange={(event) => setCopilotApproved(event.target.checked)} />
-                <span>I review and explicitly approve this draft before applying it to the deterministic engine.</span>
+                <span>{w('I review and explicitly approve this draft before applying it to the deterministic engine.')}</span>
               </label>
             </div>
           )}
@@ -667,30 +671,30 @@ export default function StrategyBuilderV2({
 
       {path === 'methodology' && (
         <div className="strategy-v2-panel">
-          <h3>Start From a Methodology</h3>
-          <p className="muted">Select a methodology library, then keep only the concepts you actually use.</p>
+          <h3>{w('Start From a Methodology')}</h3>
+          <p className="muted">{w('Select a methodology library, then keep only the concepts you actually use.')}</p>
           {methodRow}
           <div className="button-row">
-            <button type="button" onClick={() => setPath('methodology')}>Back</button>
+            <button type="button" onClick={() => setPath('methodology')}>{w('Back')}</button>
             <button type="button" className="primary" onClick={() => {
               setSelectedRuleSelections((current) => buildDraftFromSelection(selectedMethodologyIds, current.map((rule) => rule.key), current).rules);
               setPath('visual');
               setStep(1);
-            }}>Apply methodology set</button>
+            }}>{w('Apply methodology set')}</button>
           </div>
         </div>
       )}
 
       {path === 'blank' && (
         <div className="strategy-v2-panel">
-          <h3>Start Blank</h3>
-          <p className="muted">Open the established builder and build the strategy from a blank configuration.</p>
+          <h3>{w('Start Blank')}</h3>
+          <p className="muted">{w('Open the established builder and build the strategy from a blank configuration.')}</p>
           <div className="button-row">
-            <button type="button" onClick={() => setPath('blank')}>Back</button>
+            <button type="button" onClick={() => setPath('blank')}>{w('Back')}</button>
             <button type="button" className="primary" onClick={() => {
               setPath('visual');
               setStep(1);
-            }}>Continue with blank builder</button>
+            }}>{w('Continue with blank builder')}</button>
           </div>
         </div>
       )}

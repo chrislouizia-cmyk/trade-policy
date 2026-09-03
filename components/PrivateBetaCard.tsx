@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLocale } from '@/components/i18n/LocaleProvider';
+import { workspaceText } from '@/lib/i18n/workspace-copy';
 
 type Status = {
   status: 'PENDING' | 'APPROVED' | 'WAITLISTED' | 'REJECTED' | null;
@@ -12,6 +14,8 @@ type Status = {
 };
 
 export default function PrivateBetaCard() {
+  const { locale } = useLocale();
+  const w = (text:string) => workspaceText(locale,text);
   const [state, setState] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -30,10 +34,10 @@ export default function PrivateBetaCard() {
     try {
       const response = await fetch('/api/private-beta', { method: 'POST' });
       const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message ?? 'Application failed.');
+      if (!response.ok) throw new Error(body?.error?.message ?? w('Application failed.'));
       setState(body);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Application failed.');
+      setError(cause instanceof Error ? cause.message : w('Application failed.'));
     } finally {
       setBusy(false);
     }
@@ -55,20 +59,20 @@ export default function PrivateBetaCard() {
     <section className="card">
       <div className="section-title">
         <div>
-          <span className="eyebrow">BACKTEST ACCESS</span>
-          <h2>{copy[0]}</h2>
+          <span className="eyebrow">{w('BACKTEST ACCESS')}</span>
+          <h2>{w(copy[0])}</h2>
         </div>
         {state.status && <span className="status-pill info">{state.status}</span>}
       </div>
-      <p className="muted">{copy[1]}</p>
+      <p className="muted">{w(copy[1])}</p>
       {!state.status && (
         <div className="button-row">
           <button className="primary" type="button" onClick={apply} disabled={busy}>
-            {busy ? 'Submitting…' : 'Apply for Private Beta'}
+            {busy ? w('Submitting…') : w('Apply for Private Beta')}
           </button>
         </div>
       )}
-      {state.status === 'WAITLISTED' && <small>{state.spots_remaining} spots currently available.</small>}
+      {state.status === 'WAITLISTED' && <small>{state.spots_remaining} {w('spots currently available.')}</small>}
       {error && <p className="error">{error}</p>}
     </section>
   );

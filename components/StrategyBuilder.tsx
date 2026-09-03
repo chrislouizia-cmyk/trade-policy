@@ -548,12 +548,12 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
           <div className="strategy-list">
             {activeProfiles.map((item) => (
               <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => requestOpenProfile(item)}>
-                <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
+                <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? w('ACTIVE') : `${item.instruments.length} ${w('instruments')}`}</small></div>
               </button>
             ))}
-            {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
+            {archivedProfiles.length>0&&<><p className="muted strategy-list-label">{w('ARCHIVED')}</p>{archivedProfiles.map((item) => (
               <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => requestOpenProfile(item)}>
-                <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
+                <span>◇</span><div><strong>{item.name}</strong><small>{w('ARCHIVED')} · {item.instruments.length} {w('instruments')}</small></div>
               </button>
             ))}</>}
           </div>
@@ -601,39 +601,39 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
         <div className="strategy-list">
           {activeProfiles.map((item) => (
             <button type="button" key={item.id} className={`strategy-list-item ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
-              <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? 'ACTIVE' : `${item.instruments.length} instruments`}</small></div>
+              <span>{item.isDefault ? '●' : '○'}</span><div><strong>{item.name}</strong><small>{item.isDefault ? w('ACTIVE') : `${item.instruments.length} ${w('instruments')}`}</small></div>
             </button>
           ))}
-          {archivedProfiles.length>0&&<><p className="muted strategy-list-label">ARCHIVED</p>{archivedProfiles.map((item) => (
+          {archivedProfiles.length>0&&<><p className="muted strategy-list-label">{w('ARCHIVED')}</p>{archivedProfiles.map((item) => (
             <button type="button" key={item.id} className={`strategy-list-item archived ${item.id === profile.id ? 'selected' : ''}`} onClick={() => void openProfile(item)}>
-              <span>◇</span><div><strong>{item.name}</strong><small>ARCHIVED · {item.instruments.length} instruments</small></div>
+              <span>◇</span><div><strong>{item.name}</strong><small>{w('ARCHIVED')} · {item.instruments.length} {w('instruments')}</small></div>
             </button>
           ))}</>}
         </div>
       </aside>
 
       <div className="stack strategy-main" data-step={builderStep}>
-        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">{w('MY STRATEGIES')}</p><h2>{w('No saved strategies yet')}</h2><p>Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>{w('Create New Strategy')}</button><button type="button" onClick={() => useStarterRules()}>{w('Use starter rules')}</button></div></section>}
+        {activeProfiles.length===0&&<section className="card quick-start-card"><p className="eyebrow">{w('MY STRATEGIES')}</p><h2>{w('No saved strategies yet')}</h2><p>{w('Start a strategy from a guided setup or create a blank playbook. The method you choose determines the flow and review steps.')}</p><div className="button-row"><button className="primary" type="button" onClick={startNew}>{w('Create New Strategy')}</button><button type="button" onClick={() => useStarterRules()}>{w('Use starter rules')}</button></div></section>}
         <div className="card builder-progress"><div className="mobile-step-summary"><strong>Step {BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1} of {BUILDER_STEPS.length}</strong><span>{BUILDER_STEPS.find(([key])=>key===builderStep)?.[1]}</span><div><i style={{width:`${((BUILDER_STEPS.findIndex(([key])=>key===builderStep)+1)/BUILDER_STEPS.length)*100}%`}} /></div></div><div className="wizard-steps">{BUILDER_STEPS.map(([key,label],index)=><button type="button" key={key} className={builderStep===key?'active':''} onClick={()=>setBuilderStep(key)}><span>{index+1}</span>{label}</button>)}</div></div>
         <div className="card builder-section step-identity">
-          <div className="conversation-prompt"><span aria-hidden="true">TP</span><div><p className="muted">LET'S START WITH YOUR APPROACH</p><h2>What do you call the way you trade?</h2><p>Describe it in your own terms. I’ll turn your answers into rules I can check consistently.</p></div>{profile.isDefault && <strong className="badge authorized">ACTIVE</strong>}</div>
+          <div className="conversation-prompt"><span aria-hidden="true">TP</span><div><p className="muted">{w("LET'S START WITH YOUR APPROACH")}</p><h2>{w('What do you call the way you trade?')}</h2><p>{w('Describe it in your own terms. I’ll turn your answers into rules I can check consistently.')}</p></div>{profile.isDefault && <strong className="badge authorized">{w('ACTIVE')}</strong>}</div>
           <div className="grid grid-2">
             <label>{w('Strategy name')}<input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label>
             <label>{w('Description')}<textarea value={profile.description ?? ''} onChange={(event) => setProfile({ ...profile, description: event.target.value })} /></label>
           </div>
         </div>
 
-        <div className="card builder-section step-markets"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>What do you trade?</h2><p>Choose every instrument that belongs to this strategy.</p></div></div><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
+        <div className="card builder-section step-markets"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('What do you trade?')}</h2><p>{w('Choose every instrument that belongs to this strategy.')}</p></div></div><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
 
-        <div className="card builder-section step-timeframes"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>How do you read price from context to entry?</h2><p>Teach me the five layers you use to move from the bigger picture to the trigger.</p></div></div><div className="grid grid-3">
+        <div className="card builder-section step-timeframes"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('How do you read price from context to entry?')}</h2><p>{w('Teach me the five layers you use to move from the bigger picture to the trigger.')}</p></div></div><div className="grid grid-3">
           {([['macroTimeframe','Macro'],['trendTimeframe','Trend'],['confirmationTimeframe','Confirmation'],['entryTimeframe','Entry'],['triggerTimeframe','Trigger']] as [keyof StrategyProfile,string][]).map(([key,label]) => <label key={String(key)}>{label}<select value={String(profile[key] ?? '')} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}>{TIMEFRAMES.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>)}
-        </div><p className="muted">All five configured layers are persisted and used by live analysis.</p></div>
+        </div><p className="muted">{w('All five configured layers are persisted and used by live analysis.')}</p></div>
 
-        <div className="card builder-section step-schedule"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>When are you willing to trade?</h2><p>Tell me the sessions and hours that belong to this strategy. I’ll translate them to your timezone.</p></div></div><SessionSelector sessions={sessions} onChange={setSessions} userTimezone={userTimezone} onUserTimezoneChange={updateUserTimezone} /></div>
+        <div className="card builder-section step-schedule"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('When are you willing to trade?')}</h2><p>{w('Tell me the sessions and hours that belong to this strategy. I’ll translate them to your timezone.')}</p></div></div><SessionSelector sessions={sessions} onChange={setSessions} userTimezone={userTimezone} onUserTimezoneChange={updateUserTimezone} /></div>
 
-        <div className="card builder-section step-risk"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>How should I protect you when risk rises?</h2><p>Set the boundaries that must hold before I authorize a trade.</p></div></div><RiskSettings profile={profile} onChange={setProfile} /></div>
+        <div className="card builder-section step-risk"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('How should I protect you when risk rises?')}</h2><p>{w('Set the boundaries that must hold before I authorize a trade.')}</p></div></div><RiskSettings profile={profile} onChange={setProfile} /></div>
 
-        <div className="card builder-section step-rules"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>What must you see before taking the trade?</h2><p>Choose what Trade Police can check, what you must confirm, and what cannot be verified here.</p></div></div><StrategyPersonalization profile={profile} onChange={setProfile} /><RuleComposer key={profile.id??'new'} rules={rules} onChange={setRules}/></div>
+        <div className="card builder-section step-rules"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('What must you see before taking the trade?')}</h2><p>{w('Choose what Trade Police can check, what you must confirm, and what cannot be verified here.')}</p></div></div><StrategyPersonalization profile={profile} onChange={setProfile} /><RuleComposer key={profile.id??'new'} rules={rules} onChange={setRules}/></div>
 
         <div className="card builder-section step-management"><h2>Stop-loss operating range by instrument</h2><p className="muted">Minimum prevents unrealistically tight stops, preferred defines your normal operating distance, and maximum is the hard ceiling.</p><StopLimitBuilder instruments={profile.instruments} limits={stopLimits} onChange={setStopLimits} /></div>
 
