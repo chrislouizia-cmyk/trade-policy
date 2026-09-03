@@ -13,6 +13,15 @@ test('HQ navigation is permission-scoped and grouped into compact disclosures',(
   assert.doesNotMatch(nav,/hq-desktop-nav|hq-mobile-nav|primaryMobileLabels/);
 });
 
+test('HQ navigation keeps one disclosure open and dismisses it predictably',()=>{
+  const nav=read('components/hq/HQNav.tsx');
+  assert.match(nav,/const \[openGroup,setOpenGroup\]=useState<string\|null>\(null\)/);
+  assert.match(nav,/document\.addEventListener\('pointerdown',closeFromOutside\)/);
+  assert.match(nav,/event\.key==='Escape'/);
+  assert.match(nav,/setOpenGroup\(expanded\?null:group\.label\)/);
+  assert.doesNotMatch(nav,/open=\{active \|\| undefined\}/);
+});
+
 test('executive cards expose verified values and a real destination',()=>{
   const dashboard=read('components/admin/AdminDashboard.tsx');
   assert.match(dashboard,/typeof metric\.value==='number'/);
