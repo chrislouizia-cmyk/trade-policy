@@ -59,11 +59,11 @@ export default async function AppHeader({
           <Link href="/dashboard">{t('nav.dashboard')}</Link>
           <Link href="/validate">{t('nav.decision')}</Link>
           <Link href="/active-trade">{t('nav.activeTrade') || 'Active Trade'}{activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}</Link>
-          <Link href="/history">{t('nav.history')}</Link>
           <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
-          <Link href="/account">{t('nav.account')}</Link>
           <Link href="/profile">{t('nav.strategies')}</Link>
+          <Link href="/history">{t('nav.history')}</Link>
           <Link href="/analytics">{t('nav.analytics')}</Link>
+          <Link href="/account">{t('nav.account')}</Link>
         </nav>
 
         <div className="context-bar compact-context-bar">
