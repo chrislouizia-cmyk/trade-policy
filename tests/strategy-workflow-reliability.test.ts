@@ -121,3 +121,38 @@ test('completion success card keeps a resilient responsive container and title l
   assert.match(stylesheet, /\.strategy-complete-hero\{[^}]*min-width:\s*0/);
   assert.match(stylesheet, /overflow-wrap:\s*anywhere|word-break:\s*break-word/);
 });
+
+test('strategy builder distinguishes initial bootstrap from background refresh and preserves the live authenticated tree', () => {
+  const builder = read('components/StrategyBuilder.tsx');
+
+  assert.match(builder, /const \[initialLoading, setInitialLoading\] = useState\(true\);/);
+  assert.match(builder, /const \[refreshing, setRefreshing\] = useState\(false\);/);
+  assert.match(builder, /if \(initialLoading\) return <div className="strategy-builder-skeleton"/);
+  assert.match(builder, /const preserveCurrentSelection = options\.preserveCurrentSelection \?\? \(!initialLoading && \(Boolean\(profile\.id\) \|\| profiles\.length > 0\)\);/);
+  assert.match(builder, /const currentSelectionId = preserveCurrentSelection \? profile\.id \?\? selectedProfile\?\.id : undefined;/);
+  assert.match(builder, /setRefreshing\(true\);/);
+  assert.match(builder, /setRefreshing\(false\);/);
+});
+
+test('locale sync refreshes only on real mismatch and suppresses loops', () => {
+  const sync = read('components/i18n/LocaleSynchronizer.tsx');
+
+  assert.match(sync, /const lastSyncedLocaleRef = useRef<string \| null>\(null\);/);
+  assert.match(sync, /if \(!resolved\) return;/);
+  assert.match(sync, /if \(resolved === locale && cookieLocale === locale\) return;/);
+  assert.match(sync, /if \(resolved !== locale && lastSyncedLocaleRef\.current === resolved\) return;/);
+  assert.match(sync, /router\.refresh\(\);/);
+});
+
+test('production profile refresh symptom stays stable while data revalidates', () => {
+  const builder = read('components/StrategyBuilder.tsx');
+  const sync = read('components/i18n/LocaleSynchronizer.tsx');
+
+  assert.match(builder, /const preserveCurrentSelection = options\.preserveCurrentSelection \?\? \(!initialLoading && \(Boolean\(profile\.id\) \|\| profiles\.length > 0\)\);/);
+  assert.match(builder, /const currentSelectionId = preserveCurrentSelection \? profile\.id \?\? selectedProfile\?\.id : undefined;/);
+  assert.match(builder, /if \(preserveCurrentSelection && currentSelectionId && target\.id === currentSelectionId\)/);
+  assert.match(sync, /const lastSyncedLocaleRef = useRef<string \| null>\(null\);/);
+  assert.ok(builder.includes('setProfile(target);'));
+  assert.ok(builder.includes('setV2EntryOpen(false);'));
+  assert.ok(sync.includes('router.refresh();'));
+});

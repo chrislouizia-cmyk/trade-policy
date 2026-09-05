@@ -124,7 +124,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const [rules, setRules] = useState<StrategyRule[]>(DEFAULT_RULES);
   const [stopLimits, setStopLimits] = useState<StopLimit[]>([]);
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [userTimezone, setUserTimezone] = useState('America/Monterrey');
@@ -156,7 +157,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Monterrey';
     const saved = window.localStorage.getItem('trade-police-timezone');
     setUserTimezone(saved || detected);
-    void loadAll();
+    void loadAll(undefined, { preserveCurrentSelection: false });
     void trackBetaEventOnce('ONBOARDING_STARTED');
   }, [userId]);
 
@@ -181,14 +182,14 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   }, [profile, sessions, rules, stopLimits]);
 
   useEffect(() => {
-    if (!quickstartRequested || loading) return;
+    if (!quickstartRequested || initialLoading) return;
     setMessage('Starter template includes XAUUSD. Review the template and choose Use starter rules to apply it explicitly.');
     if (typeof window !== 'undefined') {
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.delete('quickstart');
       window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
     }
-  }, [quickstartRequested, loading]);
+  }, [quickstartRequested, initialLoading]);
 
   useEffect(() => {
     if (!selectedStrategyId || !profiles.length) return;
@@ -240,10 +241,14 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     window.localStorage.setItem('trade-police-timezone', timezone);
   }
 
-  async function loadAll(selectId?: string) {
+  async function loadAll(selectId?: string, options: { preserveCurrentSelection?: boolean } = {}) {
+    const preserveCurrentSelection = options.preserveCurrentSelection ?? (!initialLoading && (Boolean(profile.id) || profiles.length > 0));
+    const currentSelectionId = preserveCurrentSelection ? profile.id ?? selectedProfile?.id : undefined;
+
     const supabase = createClient();
     setBootstrapError(null);
     setMessage('');
+    if (preserveCurrentSelection) setRefreshing(true);
 
     await runStrategyBuilderBootstrap(
       async () => {
@@ -269,26 +274,45 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
         const mapped = (profileRows ?? []).map(profileFromRow);
         setProfiles(mapped);
-        const target = mapped.find((item) => item.id === selectId) ?? mapped.find((item) => item.isDefault) ?? mapped[0];
+
+        const fallbackSelectionId = selectId ?? currentSelectionId ?? mapped.find((item) => item.isDefault)?.id ?? mapped[0]?.id;
+        const target = mapped.find((item) => item.id === fallbackSelectionId) ?? mapped.find((item) => item.isDefault) ?? mapped[0];
 
         if (target) {
+          if (preserveCurrentSelection && currentSelectionId && target.id === currentSelectionId) {
+            setProfile(target);
+            setV2EntryOpen(false);
+            await openProfile(target);
+            return;
+          }
           await openProfile(target);
-        } else {
-          setV2EntryOpen(false);
-          setBuilderStep('identity');
-          setProfile(createEmptyStrategyProfile());
-          setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
-          setRules(DEFAULT_RULES);
-          setStopLimits([]);
-          setMessage('No saved strategies yet. Create a new strategy to begin.');
+          return;
         }
+
+        if (preserveCurrentSelection && currentSelectionId) {
+          return;
+        }
+
+        setV2EntryOpen(false);
+        setBuilderStep('identity');
+        setProfile(createEmptyStrategyProfile());
+        setSessions(PRESET_SESSIONS.filter((item) => ['LONDON','NEW_YORK'].includes(item.sessionCode)));
+        setRules(DEFAULT_RULES);
+        setStopLimits([]);
+        setMessage('No saved strategies yet. Create a new strategy to begin.');
       },
       (error) => {
         const nextMessage = summarizeStrategyBuilderBootstrapFailure(error);
         setBootstrapError(nextMessage);
         setMessage(nextMessage);
       },
-      setLoading,
+      (value) => {
+        setInitialLoading(false);
+        setRefreshing(false);
+        if (!preserveCurrentSelection && !value) {
+          setInitialLoading(false);
+        }
+      },
     );
   }
 
@@ -534,8 +558,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const activeProfiles = useMemo(() => profiles.filter((item) => !item.isArchived), [profiles]);
   const archivedProfiles = useMemo(() => profiles.filter((item) => item.isArchived), [profiles]);
 
-  if (loading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
-  if (resolveStrategyBuilderBootstrapRenderState({ loading, bootstrapError }) === 'error') {
+  if (initialLoading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
+  if (resolveStrategyBuilderBootstrapRenderState({ loading: initialLoading, bootstrapError }) === 'error') {
     return <div className="card strategy-builder-status" role="alert" aria-live="assertive"><h2>Strategy Builder could not load</h2><p>{bootstrapError}</p><button type="button" onClick={() => { setBootstrapError(null); void loadAll(selectedStrategyId ?? undefined); }}>Retry</button></div>;
   }
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');if (verification.profile.id) { window.location.assign(`/validate?strategy=${encodeURIComponent(verification.profile.id)}`); return; } window.location.assign('/validate');}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
