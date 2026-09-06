@@ -7,6 +7,7 @@ import type { Candle } from '@/lib/market-analysis';
 import { getSupportedInstrument } from '@/lib/instrument-registry';
 import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverlayModel } from '@/lib/position-geometry';
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
+import { buildDisplayChartData, deriveDisplayChartTime } from './chartDisplayTime';
 
 type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void };
 
@@ -14,8 +15,6 @@ type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
 type TooltipState = { x: number; y: number; candle: Candle; candleIndex: number };
 
 type PriceScaleConfig = { precision: number; minMove: number };
-
-const chartTime = (datetime: string) => Math.floor(Date.parse(datetime) / 1000) as UTCTimestamp;
 
 export function getInstrumentPriceScaleConfig(instrument: string): PriceScaleConfig {
   const value = instrument.toUpperCase();
@@ -180,7 +179,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (!series || !candles.length) return;
-    const data = candles.map((candle) => ({ time: chartTime(candle.datetime), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume }));
+    const data = buildDisplayChartData(candles, timeframe);
     series.setData(data as Array<{ time: Time; open: number; high: number; low: number; close: number }>);
     series.priceScale().applyOptions({ autoScale: true, scaleMargins: { top: 0.12, bottom: 0.18 } });
     if (!initialVisibleRangeRef.current) {
@@ -226,8 +225,8 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const rightBoundaryIndex = overlay.status === 'CLOSED' ? (rightIndex ?? candles.length - 1) : candles.length - 1;
     const rightCandle = candles[Math.max(0, Math.min(rightBoundaryIndex, candles.length - 1))];
     if (!leftCandle || !rightCandle) return;
-    const leftTime = chartTime(leftCandle.datetime);
-    const rightTime = chartTime(rightCandle.datetime);
+    const leftTime = deriveDisplayChartTime(candles, leftIndex, timeframe);
+    const rightTime = deriveDisplayChartTime(candles, rightBoundaryIndex, timeframe);
     const region = (value: number, color: string) => {
       const series = chart.addSeries(BaselineSeries, { baseValue: { type: 'price', price: geometry.entry }, lineVisible: false, priceLineVisible: false, lastValueVisible: false, topFillColor1: color, topFillColor2: color, bottomFillColor1: color, bottomFillColor2: color });
       series.setData([{ time: leftTime, value }, { time: rightTime, value }]);

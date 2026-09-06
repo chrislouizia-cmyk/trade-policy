@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
+import { candleRangeForTimeframe, getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
+import { buildDisplayChartData, deriveDisplayChartTime } from '../components/chartDisplayTime.ts';
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
@@ -52,6 +53,39 @@ test('candle request validates and normalizes instrument, timeframe, and range',
 test('Twelve Data candles normalize deterministically to UTC numeric OHLC', () => {
   assert.deepEqual(normalizeTwelveDataCandles([{ datetime: '2025-01-01 12:00:00', open: '1', high: '3', low: '0.5', close: '2', volume: '9' }], 'GBPUSD', 'H1'), [{ datetime: '2025-01-01T12:00:00.000Z', open: 1, high: 3, low: 0.5, close: 2, volume: 9 }]);
   assert.throws(() => normalizeTwelveDataCandles([{ datetime: 'bad', open: 1, high: 3, low: 0.5, close: 2 }]), /malformed/);
+});
+
+test('live polling uses a fresh range window and never reuses stale market timestamps', () => {
+  const first = candleRangeForTimeframe('H1', new Date('2025-01-01T00:00:00.000Z'));
+  const second = candleRangeForTimeframe('H1', new Date('2025-01-01T00:05:00.000Z'));
+  assert.notEqual(first.to, second.to);
+  assert.notEqual(first.from, second.from);
+  assert.equal(new Date(second.to).getTime() > new Date(first.to).getTime(), true);
+});
+
+test('new candles append with no duplicate timestamps and no synthetic closed-market bars', () => {
+  const previous = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 1, high: 2, low: 0.8, close: 1.7, volume: 10 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 1.7, high: 1.9, low: 1.4, close: 1.5, volume: 8 },
+  ];
+  const incoming = [
+    { datetime: '2025-01-03T01:00:00.000Z', open: 1.7, high: 1.9, low: 1.4, close: 1.5, volume: 8 },
+    { datetime: '2025-01-03T02:00:00.000Z', open: 1.5, high: 1.8, low: 1.3, close: 1.6, volume: 12 },
+  ];
+  const merged = mergeIncomingCandles(previous, incoming);
+  assert.deepEqual(merged.map((item) => item.datetime), ['2025-01-03T00:00:00.000Z', '2025-01-03T01:00:00.000Z', '2025-01-03T02:00:00.000Z']);
+
+  const actualWeekendClosed = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 11, low: 9.5, close: 10.5, volume: 101 },
+    { datetime: '2025-01-06T00:00:00.000Z', open: 10.5, high: 11.2, low: 10.1, close: 10.9, volume: 96 },
+  ];
+  const chartData = buildDisplayChartData(actualWeekendClosed, 'H1');
+  assert.deepEqual(actualWeekendClosed.map((item) => item.datetime), ['2025-01-03T00:00:00.000Z', '2025-01-06T00:00:00.000Z']);
+  assert.equal(chartData.length, 2);
+  assert.deepEqual(chartData.map((item) => item.open), [10, 10.5]);
+  assert.equal(chartData[1].time > chartData[0].time, true);
+  assert.equal(Number(deriveDisplayChartTime(actualWeekendClosed, 1, 'H1')) > Number(deriveDisplayChartTime(actualWeekendClosed, 0, 'H1')), true);
+  assert.deepEqual(normalizeTwelveDataCandles(actualWeekendClosed.map((item) => ({ ...item })), 'XAUUSD', 'H1'), actualWeekendClosed);
 });
 
 test('candidate creates a proposed controlled overlay model with a stable proposal timestamp', () => {

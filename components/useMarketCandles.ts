@@ -122,7 +122,7 @@ export function getPollingIntervalMs(timeframe: string): number {
 }
 
 export function useMarketCandles(instrument: string, timeframe: string) {
-  const range = useMemo(() => candleRangeForTimeframe(timeframe), [instrument, timeframe]);
+  const [range, setRange] = useState(() => candleRangeForTimeframe(timeframe));
   const [candles, setCandles] = useState<Candle[]>([]);
   const candlesRef = useRef<Candle[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
@@ -135,10 +135,16 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     candlesRef.current = candles;
   }, [candles]);
 
+  useEffect(() => {
+    setRange(candleRangeForTimeframe(timeframe));
+  }, [timeframe]);
+
   const fetchCandles = useCallback(async (manualRefresh = false, backgroundRefresh = false) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     const previousCandles = candlesRef.current;
+    const activeRange = candleRangeForTimeframe(timeframe);
+    setRange(activeRange);
 
     if (manualRefresh) {
       setRefreshing(true);
@@ -151,7 +157,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     }
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ instrument, timeframe, from: range.from, to: range.to });
+    const params = new URLSearchParams({ instrument, timeframe, from: activeRange.from, to: activeRange.to });
     try {
       const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal });
       const payload = await readApiResponse(response) as { candles?: Candle[]; provider?: string; error?: unknown; message?: string } | null;
@@ -193,7 +199,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
         }
       }
     }
-  }, [instrument, range.from, range.to, timeframe]);
+  }, [instrument, timeframe]);
 
   const refetch = useCallback(async () => {
     if (inFlightRef.current || loading || refreshing) return;
@@ -210,6 +216,20 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     }, getPollingIntervalMs(timeframe));
     return () => window.clearInterval(interval);
   }, [timeframe, fetchCandles]);
+
+  useEffect(() => {
+    const onWindowActivity = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchCandles(false, true);
+      }
+    };
+    window.addEventListener('focus', onWindowActivity);
+    document.addEventListener('visibilitychange', onWindowActivity);
+    return () => {
+      window.removeEventListener('focus', onWindowActivity);
+      document.removeEventListener('visibilitychange', onWindowActivity);
+    };
+  }, [fetchCandles]);
 
   return { candles, provider, loading, refreshing, error, range, refetch, summary: deriveMarketSummary(candles, instrument, provider) };
 }
