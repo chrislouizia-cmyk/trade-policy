@@ -1,11 +1,28 @@
 import 'server-only';
 
 import { createAdminClient } from '../supabase/admin.ts';
+import { serverEntitlementOverride } from './overrides.ts';
 import { getAnchoredMonthlyPeriod } from './period.ts';
 import { planFor, type PlanCode } from './plans.ts';
 import { buildBillingState, type BillingState } from './state.ts';
 
 export { buildBillingState, type BillingState } from './state.ts';
+
+export function resolveFallbackPlan(
+  statePlan: PlanCode,
+  overridePlan: PlanCode | null,
+  betaApproved: boolean,
+): PlanCode {
+  if (overridePlan) {
+    return overridePlan;
+  }
+
+  if (betaApproved) {
+    return 'PRIVATE_BETA';
+  }
+
+  return statePlan;
+}
 
 async function getCanonicalEffectivePlanCode(userId: string): Promise<PlanCode> {
   const admin = createAdminClient();
@@ -19,6 +36,28 @@ async function getCanonicalEffectivePlanCode(userId: string): Promise<PlanCode> 
 
   const plan = String(data).trim().toUpperCase() as PlanCode;
   return planFor(plan).code;
+}
+
+async function hasApprovedPrivateBeta(userId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('private_beta_applications')
+    .select('status')
+    .eq('user_id', userId)
+    .order('reviewed_at', { ascending: false, nullsFirst: false })
+    .order('applied_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Approved beta fallback lookup failed', {
+      userId,
+      error,
+    });
+    return false;
+  }
+
+  return String((data as { status?: string } | null)?.status ?? '').trim().toUpperCase() === 'APPROVED';
 }
 
 type UsageAnchorRow = {
@@ -95,7 +134,31 @@ export async function getBillingState(userId: string): Promise<BillingState> {
     usagePeriod,
   );
 
-  const effectivePlan = await getCanonicalEffectivePlanCode(userId);
+  let effectivePlan: PlanCode = state.plan;
+
+  try {
+    effectivePlan = await getCanonicalEffectivePlanCode(userId);
+  } catch (error) {
+    console.error('Canonical effective plan resolution failed; using persisted fallback state.', {
+      userId,
+      error,
+      fallbackPlan: state.plan,
+    });
+
+    try {
+      const overridePlan = await serverEntitlementOverride(userId).catch(() => null);
+      const betaApproved = await hasApprovedPrivateBeta(userId).catch(() => false);
+      effectivePlan = resolveFallbackPlan(state.plan, overridePlan, betaApproved);
+    } catch (fallbackError) {
+      console.error('Persisted entitlement fallback failed; keeping billing state intact.', {
+        userId,
+        error: fallbackError,
+        fallbackPlan: state.plan,
+      });
+      effectivePlan = state.plan;
+    }
+  }
+
   return {
     ...state,
     plan: effectivePlan,
