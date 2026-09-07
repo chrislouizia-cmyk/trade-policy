@@ -22,7 +22,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
 import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
-import { persistedStrategyToV2State, v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
+import { persistedStrategyToV2State, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { validateStrategyName } from '@/lib/strategy-name';
 import { isStrategyDirty } from '@/lib/strategy-dirty-state';
 import { strategyCatalogInstruments } from '@/lib/instrument-registry';
@@ -139,6 +139,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const [v2EntryMode,setV2EntryMode]=useState<'CREATE'|'EDIT'>('CREATE');
   const [v2State, setV2State] = useState<StrategyBuilderV2State|undefined>();
   const [savedStrategy, setSavedStrategy] = useState<{id:string;name:string;isDefault:boolean}|null>(null);
+  const [canonicalCompletion, setCanonicalCompletion] = useState<{id:string;name:string;isDefault:boolean}|null>(null);
   const [v2Baseline,setV2Baseline]=useState<StrategyBuilderV2State|null>(null);
   const [v2Draft,setV2Draft]=useState<StrategyBuilderV2State|null>(null);
   const [pendingNavigation,setPendingNavigation]=useState<null|(()=>void)>(null);
@@ -391,18 +392,18 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     setProfile(next);setSessions(PRESET_SESSIONS.filter(item=>['LONDON','NEW_YORK'].includes(item.sessionCode)));setRules(DEFAULT_RULES);setStopLimits([]);setBuilderStep('review');setMessage('Starter rules loaded for review. Nothing is active until you save and confirm them.');
   }
 
-  function handleV2Apply(persisted: V2Persisted): Promise<boolean> {
+  async function handleV2Apply(persisted: V2Persisted): Promise<boolean> {
     setProfile(persisted.profile);
     setRules(persisted.rules);
     setSessions(persisted.sessions);
     setStopLimits(persisted.profile.stopLimitSettings ?? []);
     setV2State(persistedStrategyToV2State(persisted.profile, persisted.rules, persisted.sessions));
-    setV2EntryOpen(false);
-    setBuilderStep('review');
-    return Promise.resolve(true);
+    const saved = await save(persisted, 'CANONICAL');
+    if (saved) setV2EntryOpen(false);
+    return saved;
   }
 
-  async function save(persistedOverride?:V2Persisted):Promise<boolean> {
+  async function save(persistedOverride?:V2Persisted, experience:'LEGACY'|'CANONICAL'='LEGACY'):Promise<boolean> {
     const saveProfile=persistedOverride?.profile??profile, rawSaveRules=persistedOverride?.rules??rules, saveSessions=persistedOverride?.sessions??sessions, saveStops=persistedOverride?.profile.stopLimitSettings??stopLimits;
     const saveRuleState=normalizePersistableStrategyRules(rawSaveRules), saveRules=saveRuleState.rules;
     if(!saveRuleState.persistable){setMessage(saveRuleState.issues[0]??'Every strategy rule needs a stable key before saving.');return false;}
@@ -435,42 +436,42 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       market_types: saveProfile.marketTypes ?? ['FOREX'],
       instruments: saveProfile.instruments,
       macro_timeframe: saveProfile.macroTimeframe, trend_timeframe: saveProfile.trendTimeframe, confirmation_timeframe: saveProfile.confirmationTimeframe, entry_timeframe: saveProfile.entryTimeframe, trigger_timeframe: saveProfile.triggerTimeframe, minimum_rr: saveProfile.minimumRR, preferred_rr: saveProfile.preferredRR, maximum_risk_percent: saveProfile.maximumRiskPercent,
-      maximum_daily_risk_percent: profile.maximumDailyRiskPercent,
-      maximum_weekly_risk_percent: profile.maximumWeeklyRiskPercent,
-      maximum_daily_loss_percent: profile.maximumDailyLossPercent,
-      maximum_total_exposure_percent: profile.maximumTotalExposurePercent,
-      maximum_currency_exposure_percent: profile.maximumCurrencyExposurePercent,
-      maximum_trades_per_day: profile.maximumTradesPerDay,
-      instrument_trade_limits: profile.instrumentTradeLimits ?? {},
-      green_day_protection_enabled: Boolean(profile.greenDayProtectionEnabled),
-      green_day_protected_floor_mode: profile.greenDayProtectedFloorMode ?? 'ZERO',
-      green_day_protected_floor_value: profile.greenDayProtectedFloorValue ?? 0,
-      green_day_max_extra_trades: profile.greenDayMaxExtraTrades ?? 1,
-      green_day_extra_risk_multiplier: profile.greenDayExtraRiskMultiplier ?? 0.5,
-      green_day_require_authorized: profile.greenDayRequireAuthorized !== false,
-      maximum_consecutive_losses: profile.maximumConsecutiveLosses,
+      maximum_daily_risk_percent: saveProfile.maximumDailyRiskPercent,
+      maximum_weekly_risk_percent: saveProfile.maximumWeeklyRiskPercent,
+      maximum_daily_loss_percent: saveProfile.maximumDailyLossPercent,
+      maximum_total_exposure_percent: saveProfile.maximumTotalExposurePercent,
+      maximum_currency_exposure_percent: saveProfile.maximumCurrencyExposurePercent,
+      maximum_trades_per_day: saveProfile.maximumTradesPerDay,
+      instrument_trade_limits: saveProfile.instrumentTradeLimits ?? {},
+      green_day_protection_enabled: Boolean(saveProfile.greenDayProtectionEnabled),
+      green_day_protected_floor_mode: saveProfile.greenDayProtectedFloorMode ?? 'ZERO',
+      green_day_protected_floor_value: saveProfile.greenDayProtectedFloorValue ?? 0,
+      green_day_max_extra_trades: saveProfile.greenDayMaxExtraTrades ?? 1,
+      green_day_extra_risk_multiplier: saveProfile.greenDayExtraRiskMultiplier ?? 0.5,
+      green_day_require_authorized: saveProfile.greenDayRequireAuthorized !== false,
+      maximum_consecutive_losses: saveProfile.maximumConsecutiveLosses,
       allowed_sessions: saveSessions.map((item) => item.sessionCode),
-      avoid_high_impact_news: profile.newsMode !== 'ALLOW',
-      news_mode: profile.newsMode,
-      news_block_minutes_before: profile.newsBlockMinutesBefore,
-      news_block_minutes_after: profile.newsBlockMinutesAfter,
-      news_currencies: profile.newsCurrencies,
-      require_trend_alignment: profile.requireTrendAlignment,
+      avoid_high_impact_news: saveProfile.newsMode !== 'ALLOW',
+      news_mode: saveProfile.newsMode,
+      news_block_minutes_before: saveProfile.newsBlockMinutesBefore,
+      news_block_minutes_after: saveProfile.newsBlockMinutesAfter,
+      news_currencies: saveProfile.newsCurrencies,
+      require_trend_alignment: saveProfile.requireTrendAlignment,
       required_evidence: requiredEvidence,
       evidence_weights: evidenceWeights,
       stop_limits: legacyStopLimits,
-      authorization_score: profile.authorizationScore,
-      wait_score: profile.waitScore,
-      loss_streak_limit: profile.maximumConsecutiveLosses ?? profile.lossStreakLimit,
-      preferred_setups: profile.preferredSetups ?? [],
-      reject_unlisted_setups: profile.rejectUnlistedSetups ?? false,
-      trailing_config: profile.trailingConfig ?? {},
-      exit_config: profile.exitConfig ?? {},
-      monitor_config: profile.monitorConfig ?? {},
-      trading_style: profile.tradingStyle ?? 'day-trading',
-      minimum_holding_minutes: profile.minimumHoldingMinutes ?? 0,
-      strategy_methodologies: profile.strategyMethodologies ?? [],
-      personal_rules: profile.personalRules ?? [],
+      authorization_score: saveProfile.authorizationScore,
+      wait_score: saveProfile.waitScore,
+      loss_streak_limit: saveProfile.maximumConsecutiveLosses ?? saveProfile.lossStreakLimit,
+      preferred_setups: saveProfile.preferredSetups ?? [],
+      reject_unlisted_setups: saveProfile.rejectUnlistedSetups ?? false,
+      trailing_config: saveProfile.trailingConfig ?? {},
+      exit_config: saveProfile.exitConfig ?? {},
+      monitor_config: saveProfile.monitorConfig ?? {},
+      trading_style: saveProfile.tradingStyle ?? 'day-trading',
+      minimum_holding_minutes: saveProfile.minimumHoldingMinutes ?? 0,
+      strategy_methodologies: saveProfile.strategyMethodologies ?? [],
+      personal_rules: saveProfile.personalRules ?? [],
       ai_behavior: normalized.aiBehavior,
     };
     const response=await fetch('/api/strategies/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
@@ -483,7 +484,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     const savedProfile:StrategyProfile={...normalized,...saveProfile,id:result.strategyId,allowedSessions:saveSessions.map(item=>item.sessionCode),requiredEvidence,evidenceWeights,rules:[...saveRules],stopLimits:legacyStopLimits,stopLimitSettings:[...saveStops]};
     await loadAll(result.strategyId);
     setSavedStrategy({id:result.strategy.id,name:result.strategy.name,isDefault:Boolean(result.strategy.is_default)}); setMessage(`Strategy saved — ${result.strategy.name}`);
-    if(refinementRequested){setVerification({profile:savedProfile,rules:[...saveRules]});setLearningConfirmation(null);setRefinementRequested(false)}
+    if(experience==='CANONICAL') { setLearningConfirmation(null); setVerification(null); setCanonicalCompletion({id:result.strategy.id,name:result.strategy.name,isDefault:Boolean(result.strategy.is_default)}); }
+    else if(refinementRequested){setVerification({profile:savedProfile,rules:[...saveRules]});setLearningConfirmation(null);setRefinementRequested(false)}
     else setLearningConfirmation({profile:savedProfile,rules:[...saveRules]});
     void trackBetaEvent(updatingExisting?'PLAYBOOK_UPDATED':'PLAYBOOK_CREATED',result.strategyId);void trackBetaEvent('STRATEGY_SAVED',result.strategyId);
     window.dispatchEvent(new CustomEvent('trade-police:strategy-changed',{detail:{strategyId:result.strategyId}}));return true;
@@ -564,8 +566,9 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   }
   if (verification) return <MethodologyVerification profile={verification.profile} rules={verification.rules} onAccept={()=>{void trackBetaEvent('SIMULATION_APPROVED',verification.profile.id);void trackBetaEvent('ONBOARDING_COMPLETED',verification.profile.id);window.localStorage.setItem(`trade-police-methodology-confirmed:${verification.profile.id??'current'}`,'true');if (verification.profile.id) { window.location.assign(`/validate?strategy=${encodeURIComponent(verification.profile.id)}`); return; } window.location.assign('/validate');}} onRefine={()=>{void trackBetaEvent('SIMULATION_REJECTED',verification.profile.id);void trackBetaEvent('METHODOLOGY_REJECTED',verification.profile.id);setVerification(null);setLearningConfirmation(null);setRefinementRequested(true);setBuilderStep('rules');setMessage('What did I miss? Update the rules, confirmations, thresholds, or any playbook setting, then save to verify again.')}}/>;
   if (learningConfirmation) return <><section className="card strategy-save-success" aria-live="polite"><strong>Strategy saved — {savedStrategy?.name??learningConfirmation.profile.name}</strong><p>{savedStrategy?.isDefault?'Active strategy':'Saved strategy — not active.'}</p><button type="button" onClick={()=>{setLearningConfirmation(null);void loadAll(savedStrategy?.id)}}>View strategy</button></section><StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/></>;
+  if (canonicalCompletion) return <section className="card strategy-save-success" aria-live="polite"><p className="eyebrow">STRATEGY SAVED</p><h2>{canonicalCompletion.name}</h2><p>{canonicalCompletion.isDefault?'Saved and active.':'Saved without activation.'}</p><div className="button-row"><button type="button" onClick={()=>{const id=canonicalCompletion.id;setCanonicalCompletion(null);void loadAll(id)}}>View strategy</button><a className="button-link primary" href={`/validate?strategy=${encodeURIComponent(canonicalCompletion.id)}`}>Check a setup</a></div></section>;
   if (v2EntryOpen) {
-    return <><StrategyBuilderV2 key={`${v2EntryMode}:${profile.id??'new'}`} profile={profile} initialState={v2State} mode={v2EntryMode} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Save or discard your strategy edits before leaving.</p><div className="button-row"><button className="primary" disabled={saving} onClick={()=>{const draft=v2Draft;if(!draft)return;void save(v2StateToPersistedStrategy(profile,draft)).then(saved=>{if(!saved)return;setV2Baseline(draft);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.();});}}> {saving?'Saving…':'Save changes'}</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
+    return <><StrategyBuilderV2 key={`${v2EntryMode}:${profile.id??'new'}`} profile={profile} initialState={v2State} mode={v2EntryMode} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Review and confirm the current strategy before saving, or discard the changes.</p><div className="button-row"><button className="primary" onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Continue to review</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
   }
 
   if (selectedProfile) {

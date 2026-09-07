@@ -23,7 +23,8 @@ test('methodology, visual builder and blank initialization remain reachable only
 
 test('canonical readiness still gates Copilot apply and no instrument fallback is introduced', () => {
   assert.match(component, /assessCanonicalCreationDraft\(canonicalCopilotDraft\)/);
-  assert.match(component, /canonicalCopilotDraft\.state !== 'CONFIRMED'/);
+  assert.match(component, /!copilotReviewCurrent/);
+  assert.match(component, /persistedStrategyFromCurrentReview\(profile, canonicalCopilotDraft, copilotConfirmation\)/);
   assert.doesNotMatch(component, /XAUUSD.*(?:fallback|default)|(?:fallback|default).*XAUUSD/i);
 });
 

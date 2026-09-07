@@ -16,18 +16,23 @@ import {
   type RuleGroupType,
   type RuleSelection,
 } from '@/lib/strategy-builder-v2';
-import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
+import { type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
 import { mapCopilotReplyToCanonicalCreation } from '@/lib/strategy-copilot-creation';
 import {
-  adaptCanonicalCreationDraftToV2Persistence,
   assessCanonicalCreationDraft,
-  confirmCanonicalCreationDraft,
   createCanonicalCreationDraft,
   updateCanonicalCreationDraft,
   type CanonicalCreationAssessment,
   type CanonicalCreationDraft,
 } from '@/lib/strategy-creation-contract';
+import {
+  buildCanonicalStrategyReview,
+  canonicalDraftForVisibleV2Review,
+  confirmCanonicalStrategyReview,
+  persistedStrategyFromCurrentReview,
+  type CanonicalReviewConfirmation,
+} from '@/lib/strategy-creation-review';
 import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
 import { useLocale } from '@/components/i18n/LocaleProvider';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
@@ -105,9 +110,9 @@ export default function StrategyBuilderV2({
   const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
   const [copilotBusy, setCopilotBusy] = useState(false);
-  const [copilotApproved, setCopilotApproved] = useState(false);
+  const [copilotConfirmation, setCopilotConfirmation] = useState<CanonicalReviewConfirmation | null>(null);
   const [copilotApplyError, setCopilotApplyError] = useState('');
-  const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+  const [visualConfirmation, setVisualConfirmation] = useState<CanonicalReviewConfirmation | null>(null);
   const [saving, setSaving] = useState(false);
   const [ruleMenuOpen, setRuleMenuOpen] = useState<string | null>(null);
 
@@ -142,12 +147,12 @@ export default function StrategyBuilderV2({
   const selectedRulesText = formatRuleSummary(canonicalRuleSelections);
 
   function initializeVisualMode() {
-    setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
+    setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setVisualConfirmation(null);
   }
   function initializeCopilotMode() {
-    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft(emptyStrategyCopilotDraft()); setCanonicalCopilotDraft(createCanonicalCreationDraft({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}) })); setCopilotReviewVisible(false); setCopilotApproved(false); setCopilotRefinementInput('');
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft(emptyStrategyCopilotDraft()); setCanonicalCopilotDraft(createCanonicalCreationDraft({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}) })); setCopilotReviewVisible(false); setCopilotConfirmation(null); setCopilotRefinementInput('');
   }
-  function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
+  function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setVisualConfirmation(null); }
   function initializeBlankMode() { initializeCopilotMode(); }
   function enterMode(mode: StrategyCreationMode) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
   function enterCreationEntry(entryPath: StrategyCreationEntryPath) {
@@ -187,7 +192,7 @@ export default function StrategyBuilderV2({
     setRiskPercent(values.riskPercent);
     setMinimumRR(values.minimumRR);
     if (values.direction) setDirection(values.direction);
-    setCopilotApproved(false);
+    setCopilotConfirmation(null);
     return canonical.assessment;
   }
   useEffect(() => { onStateChange?.(currentState()); }, [strategyName, selectedInstruments, sessions, contextTimeframe, executionTimeframe, selectedMethodologyIds, canonicalRuleSelections, riskPercent, minimumRR, stopLogic, targetLogic, direction]);
@@ -245,27 +250,35 @@ export default function StrategyBuilderV2({
   }
 
   async function buildVisualApply() {
-    if (!approvalConfirmed || saving) return;
+    if (!visualConfirmation || saving) return;
     setSaving(true);
     try {
-      const persisted = v2StateToPersistedStrategy(profile, currentState());
-      await onApply(persisted);
+      const draft = canonicalDraftForVisibleV2Review({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}), values: currentState() });
+      await onApply(persistedStrategyFromCurrentReview(profile, draft, visualConfirmation));
+    } catch (error) {
+      setCopilotApplyError(error instanceof Error ? error.message : 'Review the current strategy before saving.');
+      setVisualConfirmation(null);
     } finally {
       setSaving(false);
     }
   }
 
-  function buildCopilotApply() {
+  async function buildCopilotApply() {
     const assessment = assessCanonicalCreationDraft(canonicalCopilotDraft);
     if (!assessment.canPersist) {
       setCopilotApplyError(assessment.clarifications[0]?.question ?? 'Review and confirm the canonical strategy draft before applying it.');
       return;
     }
+    if (saving) return;
+    setSaving(true);
     try {
       setCopilotApplyError('');
-      void onApply(adaptCanonicalCreationDraftToV2Persistence(profile, canonicalCopilotDraft).persisted);
+      await onApply(persistedStrategyFromCurrentReview(profile, canonicalCopilotDraft, copilotConfirmation));
     } catch (error) {
       setCopilotApplyError(error instanceof Error ? error.message : 'The canonical strategy draft could not be applied.');
+      setCopilotConfirmation(null);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -325,6 +338,11 @@ export default function StrategyBuilderV2({
   );
 
   const draftSummary = createPersistedV2RuleTree(selectedRuleSelections);
+  const visualReviewDraft = canonicalDraftForVisibleV2Review({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}), values: currentState() });
+  const visualReview = (() => { try { return buildCanonicalStrategyReview(profile, visualReviewDraft); } catch { return null; } })();
+  const copilotReview = (() => { try { return buildCanonicalStrategyReview(profile, canonicalCopilotDraft); } catch { return null; } })();
+  const visualReviewCurrent = Boolean(visualConfirmation && visualReview?.fingerprint === visualConfirmation.review.fingerprint);
+  const copilotReviewCurrent = Boolean(copilotConfirmation && copilotReview?.fingerprint === copilotConfirmation.review.fingerprint);
 
   return (
     <div className="card strategy-builder-v2">
@@ -404,14 +422,14 @@ export default function StrategyBuilderV2({
               <div className="field-block">
                 <p className="muted">{w('Sessions')}</p>
                 <div className="chip-list">
-                  {['London', 'New York', 'Sydney', 'Tokyo'].map((session) => (
+                  {[['LONDON','London'],['NEW_YORK','New York'],['SYDNEY','Sydney'],['TOKYO','Tokyo']].map(([session, label]) => (
                     <button
                       key={session}
                       type="button"
                       className={`chip ${sessions.includes(session) ? 'selected' : ''}`}
                       onClick={() => setSessions((current) => current.includes(session) ? current.filter((value) => value !== session) : [...current, session])}
                     >
-                      {session}
+                      {w(label)}
                     </button>
                   ))}
                 </div>
@@ -503,6 +521,7 @@ export default function StrategyBuilderV2({
               <h3>{w('Step 5 — Review & Activate')}</h3>
               <div className="playbook-summary">
                 <h4>{w('YOUR PLAYBOOK')}</h4>
+                <p><strong>{visualReview?.operation === 'UPDATE' ? w('Update selected strategy') : w('Create new strategy')}</strong> · {visualReview?.activationIntent === 'ACTIVATE' ? w('Save and activate') : w('Save without activation')}</p>
                 <div className="grid grid-2">
                   <div><span className="muted">{w('Markets')}</span><strong>{selectedInstruments.join(', ') || w('No instruments selected')}</strong></div>
                   <div><span className="muted">{w('Trading Window')}</span><strong>{sessions.join(' + ') || w('No sessions selected')}</strong></div>
@@ -511,7 +530,8 @@ export default function StrategyBuilderV2({
                   <div><span className="muted">{w('Risk')}</span><strong>{riskPercent}%</strong></div>
                   <div><span className="muted">{w('Minimum RR')}</span><strong>1:{minimumRR}</strong></div>
                 </div>
-                <pre>{JSON.stringify(draftSummary, null, 2)}</pre>
+                <p className="muted">{w('Rule relationships')}: {draftSummary.logic} · {w('Required and optional conditions are shown below.')}</p>
+                <div className="rule-list">{visualReview?.conditions.map((condition)=><div className="rule-row" key={condition.key}><div className="rule-main"><strong>{w(condition.label)}</strong><span className={`capability-pill ${capabilityTone[condition.capability]}`}>{w(condition.requirement)}</span></div><div className="rule-controls"><span>{condition.relationship}</span><span>{condition.timeframe}</span><span>{condition.capability}</span></div></div>)}</div>
               </div>
 
               <div className="strategy-health-summary">
@@ -542,13 +562,18 @@ export default function StrategyBuilderV2({
               </div>
 
               <label className="check-row">
-                <input type="checkbox" checked={approvalConfirmed} onChange={(event) => setApprovalConfirmed(event.target.checked)} />
-                <span>{w('I approve this strategy draft and understand the review warnings above.')}</span>
+                <input type="checkbox" checked={visualReviewCurrent} onChange={(event) => {
+                  if (!event.target.checked) return setVisualConfirmation(null);
+                  try { setVisualConfirmation(confirmCanonicalStrategyReview(profile, visualReviewDraft)); setCopilotApplyError(''); }
+                  catch (error) { setVisualConfirmation(null); setCopilotApplyError(error instanceof Error ? error.message : 'Resolve required clarification before confirmation.'); }
+                }} />
+                <span>{w('I confirm this exact strategy, its rule relationships, risk, and activation intent.')}</span>
               </label>
+              {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
 
               <div className="button-row">
                 <button type="button" onClick={() => setStep(4)}>{w('Back')}</button>
-                <button type="button" className="primary" onClick={() => { void buildVisualApply(); }} disabled={!approvalConfirmed || saving}>{w(saving ? 'Saving…' : 'Approve & Save')}</button>
+                <button type="button" className="primary" onClick={() => { void buildVisualApply(); }} disabled={!visualReviewCurrent || saving}>{w(saving ? 'Saving…' : visualReview?.operation === 'UPDATE' ? 'Confirm & Update' : 'Confirm & Save')}</button>
               </div>
             </div>
           )}
@@ -595,7 +620,7 @@ export default function StrategyBuilderV2({
                 ]);
                 setCopilotRefinementInput('');
                 setCopilotReviewVisible(true);
-                setCopilotApproved(false);
+                setCopilotConfirmation(null);
               } catch (error) {
                 setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The copilot is unavailable right now.' }]);
               } finally {
@@ -648,7 +673,7 @@ export default function StrategyBuilderV2({
                     ]);
                     setCopilotRefinementInput('');
                     setCopilotReviewVisible(true);
-                    setCopilotApproved(false);
+                    setCopilotConfirmation(null);
                   } catch (error) {
                     setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The draft could not be updated.' }]);
                   } finally {
@@ -662,6 +687,7 @@ export default function StrategyBuilderV2({
           {copilotReviewVisible && copilotDraft.rules.length > 0 && (
             <div className="draft-review-panel">
               <h4>{w('Draft summary')}</h4>
+              <p><strong>{copilotReview?.operation === 'UPDATE' ? w('Update selected strategy') : w('Create new strategy')}</strong> · {copilotReview?.activationIntent === 'ACTIVATE' ? w('Save and activate') : w('Save without activation')}</p>
               <div className="grid grid-2">
                 <div><span className="muted">{w('Instrument')}</span><strong>{copilotDraft.instrument ?? w('Not set')}</strong></div>
                 <div><span className="muted">{w('Session')}</span><strong>{copilotDraft.sessions.join(' + ') || w('Not set')}</strong></div>
@@ -689,34 +715,34 @@ export default function StrategyBuilderV2({
 
           {copilotDraft.rules.length > 0 && (
             <div>
-              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{const name=event.target.value;setStrategyName(name);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{name},{name:'EXPLICIT'}));setCopilotApproved(false);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
-              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>{const value=event.target.value;setContextTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{contextTimeframe:value||undefined},{contextTimeframe:'EXPLICIT'}));setCopilotApproved(false);}}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>{const value=event.target.value;setExecutionTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{executionTimeframe:value||undefined},{executionTimeframe:'EXPLICIT'}));setCopilotApproved(false);}}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
+              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{const name=event.target.value;setStrategyName(name);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{name},{name:'EXPLICIT'}));setCopilotConfirmation(null);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
+              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>{const value=event.target.value;setContextTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{contextTimeframe:value||undefined},{contextTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>{const value=event.target.value;setExecutionTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{executionTimeframe:value||undefined},{executionTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
               <div className="button-row">
                 <button type="button" onClick={() => setPath('copilot')}>{w('Back')}</button>
-                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved || canonicalCopilotDraft.state !== 'CONFIRMED'} onClick={() => {
-                  if (!copilotApproved) return;
-                  buildCopilotApply();
-                }}>{w('Approve & Apply')}</button>
+                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || saving || !copilotReviewCurrent} onClick={() => {
+                  if (!copilotReviewCurrent) return;
+                  void buildCopilotApply();
+                }}>{w(copilotReview?.operation === 'UPDATE' ? 'Confirm & Update' : 'Confirm & Save')}</button>
               </div>
               <label className="check-row">
-                <input type="checkbox" checked={copilotApproved} onChange={(event) => {
+                <input type="checkbox" checked={copilotReviewCurrent} onChange={(event) => {
                   if (!event.target.checked) {
-                    setCopilotApproved(false);
+                    setCopilotConfirmation(null);
                     setCanonicalCopilotDraft((current) => updateCanonicalCreationDraft(current, {}));
                     return;
                   }
                   try {
-                    const confirmed = confirmCanonicalCreationDraft(canonicalCopilotDraft);
-                    setCanonicalCopilotDraft(confirmed);
-                    setCopilotApproved(true);
+                    const confirmation = confirmCanonicalStrategyReview(profile, canonicalCopilotDraft);
+                    setCanonicalCopilotDraft(confirmation.confirmedDraft);
+                    setCopilotConfirmation(confirmation);
                     setCopilotApplyError('');
                   } catch (error) {
-                    setCopilotApproved(false);
+                    setCopilotConfirmation(null);
                     setCopilotApplyError(error instanceof Error ? error.message : 'Resolve the required clarification before approval.');
                   }
                 }} />
-                <span>{w('I review and explicitly approve this draft before applying it to the deterministic engine.')}</span>
+                <span>{w('I confirm this exact strategy, its rule relationships, risk, and activation intent.')}</span>
               </label>
             </div>
           )}

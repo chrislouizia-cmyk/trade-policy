@@ -23,14 +23,14 @@ test('editing hydrates the exact persisted strategy and opens the shared editor 
 });
 
 test('edit apply keeps the selected profile identity and canonical save path',()=>{
-  assert.match(v2,/v2StateToPersistedStrategy\(profile, currentState\(\)\)/);
-  assert.match(builder,/function handleV2Apply\(persisted: V2Persisted\)[\s\S]*setProfile\(persisted\.profile\)[\s\S]*setRules\(persisted\.rules\)[\s\S]*setSessions\(persisted\.sessions\)/);
-  assert.match(builder,/save\(v2StateToPersistedStrategy\(profile,draft\)\)/);
+  assert.match(v2,/persistedStrategyFromCurrentReview\(profile, draft, visualConfirmation\)/);
+  assert.match(builder,/async function handleV2Apply\(persisted: V2Persisted\)[\s\S]*setProfile\(persisted\.profile\)[\s\S]*setRules\(persisted\.rules\)[\s\S]*setSessions\(persisted\.sessions\)/);
+  assert.match(builder,/save\(persisted, 'CANONICAL'\)/);
 });
 
 test('the existing semantic dirty guard still owns edit cancellation and discard',()=>{
   assert.match(builder,/isStrategyDirty\(v2Baseline,v2Draft\)/);
-  assert.match(builder,/Save changes/);
+  assert.match(builder,/Continue to review/);
   assert.match(builder,/Discard changes/);
   assert.match(builder,/setV2State\(v2Baseline\?\?undefined\)/);
 });
