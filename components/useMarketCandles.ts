@@ -98,6 +98,62 @@ export function filterCompletedCandles(candles: readonly Candle[], referenceTime
   });
 }
 
+export function getTimeframeBucketSeconds(timeframe: string): number {
+  switch ((timeframe ?? '').toUpperCase()) {
+    case 'M1': return 60;
+    case 'M3': return 180;
+    case 'M5': return 300;
+    case 'M15': return 900;
+    case 'M30': return 1800;
+    case 'H1': return 3600;
+    case 'H2': return 7200;
+    case 'H4': return 14400;
+    case 'H6': return 21600;
+    case 'H8': return 28800;
+    case 'H12': return 43200;
+    case 'D1': return 86400;
+    case 'W1': return 604800;
+    case 'MN': return 2592000;
+    default: return 3600;
+  }
+}
+
+export function getCanonicalBucketStartMs(timestampMs: number, timeframe: string): number {
+  const bucketSeconds = getTimeframeBucketSeconds(timeframe);
+  const bucketMs = bucketSeconds * 1000;
+  return Math.floor(timestampMs / bucketMs) * bucketMs;
+}
+
+export function getCanonicalBucketStartIso(timestampIso: string, timeframe: string): string {
+  const timestampMs = Date.parse(timestampIso);
+  if (!Number.isFinite(timestampMs)) return timestampIso;
+  return new Date(getCanonicalBucketStartMs(timestampMs, timeframe)).toISOString();
+}
+
+export function mergeLivePriceIntoCandles(candles: readonly Candle[], price: number, timeframe: string, eventTimeMs = Date.now()): Candle[] {
+  if (!Number.isFinite(price) || !candles.length) return candles.slice();
+  const latest = candles.at(-1);
+  if (!latest) return candles.slice();
+  const latestTimestampMs = Date.parse(latest.datetime);
+  if (!Number.isFinite(latestTimestampMs)) return candles.slice();
+  const nowMs = Date.now();
+  if (eventTimeMs > nowMs + 60_000) return candles.slice();
+  if (eventTimeMs < latestTimestampMs) return candles.slice();
+  const eventBucketMs = getCanonicalBucketStartMs(eventTimeMs, timeframe);
+  const latestBucketMs = getCanonicalBucketStartMs(latestTimestampMs, timeframe);
+  if (eventBucketMs === latestBucketMs) {
+    const next = {
+      ...latest,
+      high: Math.max(latest.high, price),
+      low: Math.min(latest.low, price),
+      close: price,
+    };
+    return [...candles.slice(0, -1), next];
+  }
+  const nextBucketStart = new Date(eventBucketMs).toISOString();
+  return [...candles, { datetime: nextBucketStart, open: price, high: price, low: price, close: price }];
+}
+
 export function mergeIncomingCandles(previousCandles: readonly Candle[], incomingCandles: readonly Candle[]): Candle[] {
   if (!incomingCandles.length) return previousCandles.slice();
   const byTime = new Map<string, Candle>();
@@ -121,6 +177,10 @@ export function getPollingIntervalMs(timeframe: string): number {
   }
 }
 
+export function getLiveQuotePollingIntervalMs(): number {
+  return 1_500;
+}
+
 export function useMarketCandles(instrument: string, timeframe: string) {
   const [range, setRange] = useState(() => candleRangeForTimeframe(timeframe));
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -130,6 +190,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const inFlightRef = useRef(false);
+  const liveQuoteSeqRef = useRef(0);
 
   useEffect(() => {
     candlesRef.current = candles;
@@ -210,17 +271,51 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     void fetchCandles(false, false);
   }, [fetchCandles]);
 
+  const fetchLatestQuote = useCallback(async () => {
+    const token = ++liveQuoteSeqRef.current;
+    const response = await fetch(`/api/market/quote?instrument=${encodeURIComponent(instrument)}`, { cache: 'no-store' });
+    const payload = await readApiResponse(response) as {
+      price?: number | string;
+      providerEventTimeMs?: number | string | null;
+      providerTimestamp?: string | null;
+      timestamp?: number | string | null;
+      provider?: string;
+      instrument?: string;
+    } | null;
+    if (!response.ok || payload == null || !Number.isFinite(Number(payload.price))) {
+      if (token === liveQuoteSeqRef.current) {
+        setError((current) => current || 'Live market price is currently unavailable.');
+      }
+      return;
+    }
+    const price = Number(payload.price);
+    const providerEventTimeMs = Number(payload.providerEventTimeMs ?? payload.timestamp ?? NaN);
+    if (!Number.isFinite(providerEventTimeMs)) {
+      if (token === liveQuoteSeqRef.current) {
+        setError((current) => current || 'Live market price does not include a valid provider timestamp.');
+      }
+      return;
+    }
+    if (token !== liveQuoteSeqRef.current) return;
+    setCandles((current) => mergeLivePriceIntoCandles(current, price, timeframe, providerEventTimeMs));
+    setProvider((current) => current ?? payload.provider ?? null);
+    setError('');
+  }, [instrument, timeframe]);
+
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void fetchCandles(false, true);
-    }, getPollingIntervalMs(timeframe));
+      if (document.visibilityState === 'visible') {
+        void fetchLatestQuote();
+      }
+    }, getLiveQuotePollingIntervalMs());
     return () => window.clearInterval(interval);
-  }, [timeframe, fetchCandles]);
+  }, [fetchLatestQuote]);
 
   useEffect(() => {
     const onWindowActivity = () => {
       if (document.visibilityState === 'visible') {
         void fetchCandles(false, true);
+        void fetchLatestQuote();
       }
     };
     window.addEventListener('focus', onWindowActivity);
@@ -229,7 +324,16 @@ export function useMarketCandles(instrument: string, timeframe: string) {
       window.removeEventListener('focus', onWindowActivity);
       document.removeEventListener('visibilitychange', onWindowActivity);
     };
-  }, [fetchCandles]);
+  }, [fetchCandles, fetchLatestQuote]);
+
+  useEffect(() => {
+    const lowFrequencyResync = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchCandles(false, true);
+      }
+    }, Math.max(300_000, getPollingIntervalMs(timeframe) * 10));
+    return () => window.clearInterval(lowFrequencyResync);
+  }, [fetchCandles, timeframe]);
 
   return { candles, provider, loading, refreshing, error, range, refetch, summary: deriveMarketSummary(candles, instrument, provider) };
 }

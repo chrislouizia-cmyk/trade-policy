@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { candleRangeForTimeframe, getPollingIntervalMs, mergeIncomingCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
+import { candleRangeForTimeframe, getCanonicalBucketStartIso, getCanonicalBucketStartMs, getLiveQuotePollingIntervalMs, getPollingIntervalMs, mergeIncomingCandles, mergeLivePriceIntoCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
 import { buildDisplayChartData, deriveDisplayChartTime } from '../components/chartDisplayTime.ts';
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
-import { normalizeTwelveDataCandles } from '../lib/market-data.ts';
+import { extractProviderEventTimeMs, extractProviderPrice, normalizeProviderEventTimeMs, normalizeTwelveDataCandles } from '../lib/market-data.ts';
 import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, closePositionOverlay, positionOverlayProvenance, proposedPositionFromCandidate, resolveLifecycleAnchorIndex, updateProposedGeometry } from '../lib/position-geometry.ts';
 
 const normalizeMarketCandlesError = (value: unknown, fallback: string): string => {
@@ -55,12 +55,132 @@ test('Twelve Data candles normalize deterministically to UTC numeric OHLC', () =
   assert.throws(() => normalizeTwelveDataCandles([{ datetime: 'bad', open: 1, high: 3, low: 0.5, close: 2 }]), /malformed/);
 });
 
+test('provider event timestamps normalize across supported values and reject malformed input', () => {
+  assert.equal(normalizeProviderEventTimeMs(1768204680), 1768204680000);
+  assert.equal(normalizeProviderEventTimeMs('1768204680'), 1768204680000);
+  assert.equal(normalizeProviderEventTimeMs(1768204680000), 1768204680000);
+  assert.equal(normalizeProviderEventTimeMs('2025-01-01T12:00:00.000Z'), Date.parse('2025-01-01T12:00:00.000Z'));
+  assert.equal(normalizeProviderEventTimeMs(null), null);
+  assert.equal(normalizeProviderEventTimeMs(''), null);
+  assert.equal(normalizeProviderEventTimeMs(NaN), null);
+  assert.equal(normalizeProviderEventTimeMs('not-a-time'), null);
+  assert.equal(normalizeProviderEventTimeMs('99999999999999999999999'), null);
+  assert.equal(extractProviderEventTimeMs({ timestamp: '1768204680' }), 1768204680000);
+  assert.equal(extractProviderEventTimeMs({ timestamp: 1768204680 }), 1768204680000);
+  assert.equal(extractProviderEventTimeMs({ thousand: 123 }), null);
+  assert.equal(extractProviderPrice({ price: 123.45 }), 123.45);
+  assert.equal(extractProviderPrice({ close: 123.45 }), 123.45);
+  assert.equal(extractProviderPrice({}), null);
+});
+
+test('live endpoint returns price and providerEventTimeMs and rejects timestamp-less payloads for candle construction', () => {
+  const quote = { price: 234.56, timestamp: 1768204680 };
+  assert.equal(extractProviderPrice(quote), 234.56);
+  assert.equal(extractProviderEventTimeMs(quote), 1768204680000);
+  assert.equal(extractProviderEventTimeMs({ price: 234.56 }), null);
+  assert.equal(extractProviderEventTimeMs({}), null);
+  assert.equal(extractProviderPrice({ price: null }), null);
+});
+
+test('no wall-clock fallback and stale same provider timestamp do not create a new future bucket', () => {
+  const initial = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 10.5, low: 9.7, close: 10.2, volume: 10 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 10.2, high: 10.7, low: 9.8, close: 10.4, volume: 8 },
+  ];
+  const wallClock = mergeLivePriceIntoCandles(initial, 10.9, 'H1', Date.now() + 5 * 60_000);
+  assert.equal(wallClock.length, 2);
+  assert.equal(wallClock.at(-1)?.close, 10.4);
+
+  const sameTimestamp = mergeLivePriceIntoCandles(initial, 10.9, 'H1', Date.parse('2025-01-03T01:00:00.000Z'));
+  assert.equal(sameTimestamp.length, 2);
+  assert.equal(sameTimestamp.at(-1)?.close, 10.9);
+});
+
+test('serverReceivedAt is never used for candle bucket and stale repeated provider timestamps do not create future candles', () => {
+  const initial = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 10.5, low: 9.7, close: 10.2, volume: 10 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 10.2, high: 10.7, low: 9.8, close: 10.4, volume: 8 },
+  ];
+
+  const sameBucketUpdate = mergeLivePriceIntoCandles(initial, 10.9, 'H1', Date.parse('2025-01-03T01:00:00.000Z'));
+  assert.equal(sameBucketUpdate.length, 2);
+  assert.equal(sameBucketUpdate.at(-1)?.close, 10.9);
+
+  const sameBucketLaterInHour = mergeLivePriceIntoCandles(initial, 10.95, 'H1', Date.parse('2025-01-03T01:30:00.000Z'));
+  assert.equal(sameBucketLaterInHour.length, 2);
+  assert.equal(sameBucketLaterInHour.at(-1)?.close, 10.95);
+
+  const futureFromProvider = mergeLivePriceIntoCandles(initial, 10.9, 'H1', Date.parse('2025-01-03T02:00:00.000Z'));
+  assert.equal(futureFromProvider.length, 3);
+  assert.equal(futureFromProvider.at(-1)?.datetime, '2025-01-03T02:00:00.000Z');
+});
+
+test('same timestamp updates same bucket only and valid provider timestamps remain the only bucket driver', () => {
+  const initial = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 10.8, low: 9.6, close: 10.4, volume: 12 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 10.4, high: 11.0, low: 10.1, close: 10.7, volume: 9 },
+  ];
+
+  const sameBucket = mergeLivePriceIntoCandles(initial, 10.9, 'H1', Date.parse('2025-01-03T01:15:00.000Z'));
+  assert.equal(sameBucket.length, 2);
+  assert.equal(sameBucket.at(-1)?.close, 10.9);
+  assert.equal(sameBucket.at(-1)?.high, 11.0);
+
+  const nextBucketFromProvider = mergeLivePriceIntoCandles(initial, 11.2, 'H1', Date.parse('2025-01-03T02:00:00.000Z'));
+  assert.equal(nextBucketFromProvider.length, 3);
+  assert.equal(nextBucketFromProvider.at(-1)?.datetime, '2025-01-03T02:00:00.000Z');
+  assert.equal(nextBucketFromProvider.at(-1)?.close, 11.2);
+});
+
 test('live polling uses a fresh range window and never reuses stale market timestamps', () => {
   const first = candleRangeForTimeframe('H1', new Date('2025-01-01T00:00:00.000Z'));
   const second = candleRangeForTimeframe('H1', new Date('2025-01-01T00:05:00.000Z'));
   assert.notEqual(first.to, second.to);
   assert.notEqual(first.from, second.from);
   assert.equal(new Date(second.to).getTime() > new Date(first.to).getTime(), true);
+});
+
+test('live quote cadence is lightweight and active candles evolve without full-history refetches', () => {
+  const previous = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 100, high: 101, low: 99.5, close: 100.5, volume: 10 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 100.5, high: 101.2, low: 99.8, close: 100.9, volume: 8 },
+  ];
+  const updated = mergeLivePriceIntoCandles(previous, 101.4, 'H1', Date.parse('2025-01-03T01:30:00.000Z'));
+  assert.equal(updated.length, 2);
+  assert.equal(updated.at(-1)?.close, 101.4);
+  assert.equal(updated.at(-1)?.high, 101.4);
+  assert.equal(updated.at(-1)?.low, 99.8);
+  assert.equal(updated.at(-1)?.open, 100.5);
+  assert.equal(getLiveQuotePollingIntervalMs(), 1500);
+  assert.notEqual(getPollingIntervalMs('H1'), getLiveQuotePollingIntervalMs());
+  assert.equal(getCanonicalBucketStartMs(Date.parse('2025-01-03T01:30:00.000Z'), 'H1'), Date.parse('2025-01-03T01:00:00.000Z'));
+  assert.equal(getCanonicalBucketStartIso('2025-01-03T01:30:00.000Z', 'H1'), '2025-01-03T01:00:00.000Z');
+});
+
+test('new candles append only on timeframe rollover and duplicate live events do not create duplicate timestamps', () => {
+  const previous = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 10.5, low: 9.8, close: 10.2, volume: 10 },
+    { datetime: '2025-01-03T01:00:00.000Z', open: 10.2, high: 10.7, low: 9.9, close: 10.4, volume: 8 },
+  ];
+  const roll = mergeLivePriceIntoCandles(previous, 10.6, 'H1', Date.parse('2025-01-03T02:00:00.000Z'));
+  assert.equal(roll.length, 3);
+  assert.equal(roll.at(-1)?.datetime, '2025-01-03T02:00:00.000Z');
+  assert.equal(roll.at(-1)?.open, 10.6);
+  assert.equal(roll.at(-1)?.high, 10.6);
+  assert.equal(roll.at(-1)?.low, 10.6);
+  assert.equal(roll.at(-1)?.close, 10.6);
+
+  const duplicate = mergeLivePriceIntoCandles(roll, 10.6, 'H1', Date.parse('2025-01-03T02:15:00.000Z'));
+  assert.equal(duplicate.length, 3);
+  assert.deepEqual(duplicate.map((item) => item.datetime), ['2025-01-03T00:00:00.000Z', '2025-01-03T01:00:00.000Z', '2025-01-03T02:00:00.000Z']);
+});
+
+test('no incoming events during a closed market create no synthetic candles', () => {
+  const existing = [
+    { datetime: '2025-01-03T00:00:00.000Z', open: 10, high: 10.8, low: 9.6, close: 10.4, volume: 12 },
+  ];
+  const withNoEvent = mergeLivePriceIntoCandles(existing, Number.NaN, 'H1', Date.parse('2025-01-03T05:00:00.000Z'));
+  assert.deepEqual(withNoEvent, existing);
 });
 
 test('new candles append with no duplicate timestamps and no synthetic closed-market bars', () => {
@@ -238,7 +358,10 @@ test('polling utilities auto-refresh on a timeframe-aware schedule and preserve 
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   assert.match(hook, /if \(inFlightRef\.current\) return;/);
   assert.match(hook, /backgroundRefresh \? mergeIncomingCandles\(previousCandles, completedCandles\) : completedCandles/);
-  assert.match(hook, /window\.setInterval\(\(\) => \{\s*void fetchCandles\(false, true\);\s*\}, getPollingIntervalMs\(timeframe\)\)/s);
+  assert.match(hook, /fetchLatestQuote/);
+  assert.match(hook, /\/api\/market\/quote\?/);
+  assert.match(hook, /getLiveQuotePollingIntervalMs\(\)/);
+  assert.match(hook, /Math\.max\(300_000, getPollingIntervalMs\(timeframe\) \* 10\)/);
   assert.match(hook, /window\.clearInterval\(interval\)/);
   assert.match(chart, /initialVisibleRangeRef\.current = true;/);
   assert.match(chart, /if \(!initialVisibleRangeRef\.current\) \{\s*const range = getInitialVisibleLogicalRange\(candles\.length, timeframe\);\s*const timeScale = chartRef\.current\?\.timeScale\(\);\s*if \(timeScale\) \{\s*timeScale\.setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\);\s*\}\s*initialVisibleRangeRef\.current = true;\s*\}/s);

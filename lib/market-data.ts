@@ -51,6 +51,46 @@ async function request(params: Record<string, string>) {
   return json;
 }
 
+export function normalizeProviderEventTimeMs(value: unknown): number | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    const absolute = Math.abs(value);
+    if (absolute > 1e14) return null;
+    if (absolute >= 1e12) return value;
+    if (absolute >= 1e9 && absolute < 1e12) return value * 1000;
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(trimmed)) {
+      const numeric = Number(trimmed);
+      if (!Number.isFinite(numeric)) return null;
+      const absolute = Math.abs(numeric);
+      if (absolute > 1e14) return null;
+      if (absolute >= 1e12) return numeric;
+      if (absolute >= 1e9 && absolute < 1e12) return numeric * 1000;
+      return null;
+    }
+    const parsed = Date.parse(trimmed);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed;
+  }
+  return null;
+}
+
+export function extractProviderEventTimeMs(payload: Record<string, unknown>): number | null {
+  const candidate = payload.timestamp ?? payload.datetime ?? payload.time ?? payload.last_updated ?? payload.epoch ?? payload.ts ?? null;
+  return normalizeProviderEventTimeMs(candidate);
+}
+
+export function extractProviderPrice(payload: Record<string, unknown>): number | null {
+  const candidate = payload.price ?? payload.close ?? payload.last ?? payload.value ?? payload.current_price ?? payload.current ?? null;
+  if (candidate == null || candidate === '') return null;
+  const price = Number(candidate);
+  return Number.isFinite(price) ? price : null;
+}
+
 export async function fetchSeries(symbol: string, timeframe: string, outputsize = 120): Promise<Candle[]> {
   if (!isMarketDataTimeframe(timeframe)) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
   const json = await request({
@@ -95,9 +135,18 @@ export async function fetchSeriesRange(symbol: string, timeframe: string, from: 
   return normalizeTwelveDataCandles(json.values, symbol, timeframe);
 }
 
+export async function fetchPriceQuote(symbol: string): Promise<{ price: number; providerTimestamp: string | null; providerEventTimeMs: number | null; serverReceivedAt: string; raw: Record<string, unknown> }> {
+  const json = await request({ endpoint: 'quote', symbol: providerSymbol(symbol) });
+  const payload = json as Record<string, unknown>;
+  const price = extractProviderPrice(payload);
+  if (price == null) throw new Error(`No live price returned for ${symbol}.`);
+  const providerEventTimeMs = extractProviderEventTimeMs(payload);
+  if (providerEventTimeMs == null) throw new Error(`Live quote for ${symbol} does not include a valid provider event timestamp.`);
+  const providerTimestamp = new Date(providerEventTimeMs).toISOString();
+  return { price, providerTimestamp, providerEventTimeMs, serverReceivedAt: new Date().toISOString(), raw: payload };
+}
+
 export async function fetchPrice(symbol: string): Promise<number> {
-  const json = await request({ endpoint: 'price', symbol: providerSymbol(symbol) });
-  const price = Number(json.price);
-  if (!Number.isFinite(price)) throw new Error(`No current price returned for ${symbol}.`);
+  const { price } = await fetchPriceQuote(symbol);
   return price;
 }
