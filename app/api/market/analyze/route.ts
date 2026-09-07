@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { buildLiveAnalysis, MarketAnalysisError } from '@/lib/market-analysis';
-import { fetchSeries, providerSymbol } from '@/lib/market-data';
+import { fetchSeries, MarketDataProviderError, providerSymbol } from '@/lib/market-data';
 import { type ChartAnalysis, type Instrument } from '@/types/trade';
 import { loadActiveStrategy } from '@/lib/server/active-strategy';
 import { apiError, publicApiError } from '@/lib/server/public-error';
@@ -58,6 +58,10 @@ export async function POST(req: Request) {
       const code=error.status==='INSUFFICIENT_DATA'?'INSUFFICIENT_MARKET_DATA':error.status==='ANALYSIS_FAILED'?'STRATEGY_CONFIGURATION_INCOMPLETE':'MARKET_DATA_UNAVAILABLE';
       const message=error.status==='INSUFFICIENT_DATA'?'Insufficient market data.':error.status==='ANALYSIS_FAILED'?'Strategy configuration incomplete.':'Market analysis unavailable.';
       return apiError(code,message,422,{analysisStatus:error.status});
+    }
+    if(error instanceof MarketDataProviderError&&error.code==='RATE_LIMITED'){
+      console.warn('[TWELVE_DATA_RATE_LIMITED]',{endpoint:'/api/market/analyze',retryAfterSeconds:error.retryAfterSeconds});
+      return apiError('MARKET_DATA_RATE_LIMITED','Market data reached its provider minute limit. Please retry in one minute.',429,{retryAfterSeconds:error.retryAfterSeconds});
     }
     if(supabase){await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}}));await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}}))}
     return publicApiError({message:'Market analysis unavailable.',code:'MARKET_ANALYSIS_UNAVAILABLE',internalCode:'LIVE_MARKET_ANALYSIS_FAILED',provider:'twelvedata',endpoint:'/api/market/analyze',error});

@@ -1,6 +1,12 @@
 import type { Candle } from '@/lib/market-analysis';
 
 const MARKET_DATA_TIMEOUT_MS = 12_000;
+export class MarketDataProviderError extends Error{
+  code:'RATE_LIMITED'|'PROVIDER_REJECTED'|'UNREACHABLE'|'TIMEOUT'|'INVALID_RESPONSE';
+  retryAfterSeconds:number|null;
+  constructor(code:'RATE_LIMITED'|'PROVIDER_REJECTED'|'UNREACHABLE'|'TIMEOUT'|'INVALID_RESPONSE',message:string,retryAfterSeconds:number|null=null){super(message);this.name='MarketDataProviderError';this.code=code;this.retryAfterSeconds=retryAfterSeconds;}
+}
+export const isTwelveDataRateLimit=(status:number,message:string)=>status===429||/api credit|credits|current minute|rate limit|too many requests/i.test(message);
 
 export const MARKET_DATA_INTERVALS = Object.freeze({
   M1: '1min', M3: '3min', M5: '5min', M15: '15min', M30: '30min',
@@ -33,9 +39,9 @@ async function request(params: Record<string, string>) {
     response = await fetch(url, { cache: 'no-store', signal: controller.signal });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Market-data provider timed out.');
+      throw new MarketDataProviderError('TIMEOUT','Market-data provider timed out.');
     }
-    throw new Error('Market-data provider is unreachable.');
+    throw new MarketDataProviderError('UNREACHABLE','Market-data provider is unreachable.');
   } finally {
     clearTimeout(timeout);
   }
@@ -43,10 +49,12 @@ async function request(params: Record<string, string>) {
   try {
     json = await response.json();
   } catch {
-    throw new Error('Market-data provider returned an invalid response.');
+    throw new MarketDataProviderError('INVALID_RESPONSE','Market-data provider returned an invalid response.');
   }
   if (!response.ok || json.status === 'error' || json.code) {
-    throw new Error(json.message || 'Market-data request failed.');
+    const message=String(json.message||'Market-data request failed.');
+    if(isTwelveDataRateLimit(response.status,message))throw new MarketDataProviderError('RATE_LIMITED',message,60);
+    throw new MarketDataProviderError('PROVIDER_REJECTED',message);
   }
   return json;
 }

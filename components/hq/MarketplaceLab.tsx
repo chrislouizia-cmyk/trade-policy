@@ -42,6 +42,8 @@ export default function MarketplaceLab() {
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [candidateEvidence,setCandidateEvidence]=useState<Record<string,any>>({});
+  const [candidateEvidenceState,setCandidateEvidenceState]=useState<Record<string,string>>({});
   const autoSyncStarted=useRef(false);
 
   const closeCreate = () => {
@@ -122,6 +124,22 @@ export default function MarketplaceLab() {
     setProfileSearch('');
     setError(null);
     setShowCreate(true);
+  };
+
+  const toggleCandidateDetails=async(candidateId:string)=>{
+    if(selectedCandidateId===candidateId){setSelectedCandidateId(null);return;}
+    setSelectedCandidateId(candidateId);
+    if(candidateEvidence[candidateId])return;
+    setCandidateEvidenceState(current=>({...current,[candidateId]:'Loading verified evidence…'}));
+    try{
+      const response=await fetch(`/api/hq/marketplace/candidates/${candidateId}`,{cache:'no-store'});
+      const body=await response.json();if(!response.ok)throw new Error(body.error||'Verified evidence unavailable.');
+      setCandidateEvidence(current=>({...current,[candidateId]:body}));
+      setCandidates(current=>current.map(candidate=>candidate.candidateId===candidateId?{...candidate,...body.candidate}:candidate));
+      setCandidateEvidenceState(current=>({...current,[candidateId]:''}));
+    }catch(caught){
+      setCandidateEvidenceState(current=>({...current,[candidateId]:caught instanceof Error?caught.message:'Verified evidence unavailable.'}));
+    }
   };
 
   const filtered = useMemo(
@@ -228,7 +246,7 @@ export default function MarketplaceLab() {
             <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Verified trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
             <div className="marketplace-progress" aria-label={`Observation ${dayProgress} percent`}><i style={{width:`${dayProgress}%`}}/></div>
             <div className="marketplace-progress trades" aria-label={`Verified trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
-            <button className="button secondary compact-button" type="button" aria-expanded={isSelected} onClick={()=>setSelectedCandidateId(isSelected?null:candidate.candidateId)}>{isSelected?'Hide qualification details':'View qualification details'}</button>
+            <button className="button secondary compact-button" type="button" aria-expanded={isSelected} onClick={()=>void toggleCandidateDetails(candidate.candidateId)}>{isSelected?'Hide qualification details':'View qualification details'}</button>
             {isSelected?<div className="marketplace-candidate-details">
               <p><strong>{candidate.status==='INSUFFICIENT_DATA'?'Public qualification is not ready yet.':'Private observation is in progress.'}</strong> Internal testing remains available and does not bypass the requirements for future public commerce.</p>
               <ul>
@@ -238,6 +256,8 @@ export default function MarketplaceLab() {
                 <li>{candidate.criticalViolations}/{candidate.policy.maximumCriticalViolations} critical violations allowed</li>
                 <li>{candidate.maximumDrawdownR===null?'No verified drawdown yet':`${candidate.maximumDrawdownR}R/${candidate.policy.maximumDrawdownR}R maximum drawdown`}</li>
               </ul>
+              {candidateEvidenceState[candidate.candidateId]?<p className="muted" role="status">{candidateEvidenceState[candidate.candidateId]}</p>:null}
+              {candidateEvidence[candidate.candidateId]?.evidence?<CandidateEvidence evidence={candidateEvidence[candidate.candidateId].evidence}/>:null}
               {isFounder?<button className="button compact-button" type="button" onClick={()=>openInternalTestForCandidate(candidate.strategyId)}>Create internal test listing</button>:null}
             </div>:null}
           </article>;
@@ -413,4 +433,17 @@ export default function MarketplaceLab() {
       )}
     </div>
   );
+}
+
+function CandidateEvidence({evidence}:{evidence:any}){
+  const live=evidence.live,points=live.equityCurve??[];
+  const values=points.map((point:any)=>Number(point.cumulativeR)),min=Math.min(...values,0),max=Math.max(...values,0),range=Math.max(max-min,1);
+  const geometry=points.length>1?points.map((point:any,index:number)=>`${index/(points.length-1)*100},${92-(Number(point.cumulativeR)-min)/range*84}`).join(' '):null;
+  return <section className="marketplace-candidate-proof" aria-label="Exact revision verified evidence">
+    <div><span className="eyebrow">EXACT REVISION · VERIFIED LIVE RESULTS</span><h4>Evidence report</h4><p>Real closed trades and historical simulations are kept separate.</p></div>
+    <dl><div><dt>Total R</dt><dd>{live.totalR}R</dd></div><div><dt>Win rate</dt><dd>{live.winRate==null?'No evidence':`${live.winRate}%`}</dd></div><div><dt>Maximum drawdown</dt><dd>{live.maxDrawdownR}R</dd></div><div><dt>Discipline</dt><dd>{live.adherencePercent==null?'No evidence':`${live.adherencePercent}%`}</dd></div></dl>
+    {geometry?<svg className="marketplace-equity-chart compact" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Cumulative verified R curve"><line x1="0" y1="92" x2="100" y2="92"/><polyline points={geometry}/></svg>:<div className="marketplace-equity-empty compact">The verified R curve appears after the first closed trade.</div>}
+    <div><h4>Recent verified trades</h4>{live.recentTrades.length?<div className="marketplace-trade-list">{live.recentTrades.slice(0,5).map((trade:any)=><div className="marketplace-trade-row" key={trade.id}><span><strong>{trade.instrument}</strong><small>{new Date(trade.closedAt).toLocaleString()}</small></span><strong className={trade.resultR>=0?'positive':'negative'}>{trade.resultR>=0?'+':''}{trade.resultR}R</strong><span>{trade.followedVerdict?'Rules followed':'Override'}</span></div>)}</div>:<p className="muted">No closed verified trades exist for this revision yet.</p>}</div>
+    <div><span className="eyebrow">HISTORICAL SIMULATION · SEPARATE EVIDENCE</span>{evidence.backtests.length?<div className="marketplace-backtest-list">{evidence.backtests.map((run:any)=><div className="marketplace-backtest-row" key={run.id}><span><strong>{run.instrument} · {run.execution_timeframe}</strong><small>{run.period_start} → {run.period_end}</small></span><span>{run.result?`${run.result.total_trades??0} trades · ${run.result.net_return_percent??'—'}% net`:'Completed'}</span></div>)}</div>:<p className="muted">No completed backtest exists for this exact revision.</p>}</div>
+  </section>;
 }
