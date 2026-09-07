@@ -46,6 +46,15 @@ test('strategy owner gets an explicit consent gate after qualification',()=>{
   assert.match(migration,/Public visibility and commerce remain disabled/);
 });
 
+test('marketplace report proves an exact revision without exposing its private payload',()=>{
+  const api=read('app/api/hq/marketplace/[listingId]/route.ts');const detail=read('components/hq/MarketplaceReleaseDetail.tsx');
+  assert.match(api,/from\('active_trades'\)/);assert.match(api,/from\('backtest_runs'\)/);
+  assert.match(api,/scope:'EXACT_STRATEGY_REVISION'/);assert.doesNotMatch(api,/snapshot_json/);
+  assert.match(detail,/EXACT REVISION · VERIFIED LIVE RESULTS/);assert.match(detail,/Verified R curve/);
+  assert.match(detail,/Recent verified trades/);assert.match(detail,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
+  assert.match(detail,/not a profit guarantee/);
+});
+
 test('catalog usage is derived from actual installs and exact-revision evidence',()=>{
   const catalog=read('app/api/hq/marketplace/route.ts');
   assert.match(catalog,/installsByRelease/);assert.match(catalog,/candidateByRevision/);
