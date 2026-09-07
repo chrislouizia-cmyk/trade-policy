@@ -368,7 +368,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     if (typeof window !== 'undefined') window.localStorage.removeItem('trade-police-strategy-draft');
     setV2EntryOpen(true);
     setBuilderStep('identity');
-    setMessage('Choose a creation mode to start your new strategy.');
+    setMessage('Describe how you trade, or open Advanced configuration for manual setup.');
   }
   function openV2Edit(targetProfile = profile, targetRules = rules, targetSessions = sessions){
     if(!targetProfile.id)return;

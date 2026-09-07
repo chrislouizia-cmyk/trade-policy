@@ -7,8 +7,9 @@ const v2=readFileSync(new URL('../components/StrategyBuilderV2.tsx',import.meta.
 
 test('CREATE and EDIT are explicit V2 intents, not inferred from populated fields',()=>{
   assert.match(v2,/export type StrategyBuilderV2Mode='CREATE'\|'EDIT'/);
-  assert.match(v2,/useState<CreationPath \| null>\(\(\)=>mode==='EDIT'\?'visual':null\)/);
-  assert.match(v2,/mode==='CREATE'&&<div className="button-row" aria-label="Create strategy modes">/);
+  assert.match(v2,/useState<CreationPath>\(\(\)=>mode==='EDIT'\?'visual':'copilot'\)/);
+  assert.match(v2,/mode==='CREATE'&&<div className="button-row" aria-label="Strategy creation entry paths">/);
+  assert.match(v2,/STRATEGY_CREATION_ENTRY_PATHS\.map/);
   assert.match(builder,/setV2EntryMode\('CREATE'\)/);
   assert.match(builder,/setV2EntryMode\('EDIT'\)/);
 });

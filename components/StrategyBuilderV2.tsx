@@ -31,11 +31,16 @@ import {
 import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
 import { useLocale } from '@/components/i18n/LocaleProvider';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
+import {
+  ADVANCED_STRATEGY_CREATION_MODES,
+  STRATEGY_CREATION_ENTRY_PATHS,
+  type StrategyCreationEntryPath,
+  type StrategyCreationMode,
+} from '@/lib/strategy-creation-flow';
 
-type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
+type CreationPath = StrategyCreationMode | 'advanced';
 export type StrategyBuilderV2Mode='CREATE'|'EDIT';
 type StepKey = 1 | 2 | 3 | 4 | 5;
-const CREATION_MODE_SEQUENCE: CreationPath[] = ['visual', 'copilot', 'methodology', 'blank'];
 
 const STEP_LABELS: Record<StepKey, string> = {
   1: 'Your Style',
@@ -72,7 +77,7 @@ export default function StrategyBuilderV2({
   const { locale } = useLocale();
   const [copilotSessionId] = useState(() => crypto.randomUUID());
   const w = (text:string) => workspaceText(locale,text);
-  const [path, setPath] = useState<CreationPath | null>(()=>mode==='EDIT'?'visual':null);
+  const [path, setPath] = useState<CreationPath>(()=>mode==='EDIT'?'visual':'copilot');
   const [step, setStep] = useState<StepKey>(1);
   const [selectedMethodologyIds, setSelectedMethodologyIds] = useState<string[]>(initialState?.methodologyIds ?? []);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>(initialState?.instruments ?? []);
@@ -144,7 +149,14 @@ export default function StrategyBuilderV2({
   }
   function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
   function initializeBlankMode() { initializeCopilotMode(); }
-  function enterMode(mode: CreationPath) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
+  function enterMode(mode: StrategyCreationMode) { if (mode === 'visual') initializeVisualMode(); else if (mode === 'copilot') initializeCopilotMode(); else if (mode === 'methodology') initializeMethodologyMode(); else initializeBlankMode(); setPath(mode); setStep(1); }
+  function enterCreationEntry(entryPath: StrategyCreationEntryPath) {
+    if (entryPath === 'describe') {
+      if (path !== 'copilot') enterMode('copilot');
+      return;
+    }
+    setPath('advanced');
+  }
 
   function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
     return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: canonicalRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
@@ -325,21 +337,28 @@ export default function StrategyBuilderV2({
         </div>
       </div>
 
-      {mode==='CREATE'&&<div className="button-row" aria-label="Create strategy modes">
-        {CREATION_MODE_SEQUENCE.map((creationPath) => (
-          <button key={creationPath} type="button" onClick={() => enterMode(creationPath)}>
-            {creationPath === 'visual' && w('Build visually')}
-            {creationPath === 'copilot' && w('Describe your strategy — Beta')}
-            {creationPath === 'methodology' && w('Start from a methodology')}
-            {creationPath === 'blank' && w('Start blank')}
+      {mode==='CREATE'&&<div className="button-row" aria-label="Strategy creation entry paths">
+        {STRATEGY_CREATION_ENTRY_PATHS.map((entryPath) => (
+          <button key={entryPath} type="button" className={entryPath === 'describe' ? 'primary' : ''} aria-current={(entryPath === 'describe' && path === 'copilot') || (entryPath === 'advanced' && path !== 'copilot') ? 'page' : undefined} onClick={() => enterCreationEntry(entryPath)}>
+            {entryPath === 'describe' && w('Describe how you trade')}
+            {entryPath === 'advanced' && w('Advanced configuration')}
           </button>
         ))}
       </div>}
 
-      {mode==='CREATE'&&!path && (
+      {path === 'advanced' && (
         <div className="strategy-v2-panel">
-          <h3>{w('Create Strategy')}</h3>
-          <p className="muted">{w('Choose how you want to begin. No mode opens automatically.')}</p>
+          <h3>{w('Advanced configuration')}</h3>
+          <p className="muted">{w('Choose a guided visual setup, begin with a methodology, or open a truly blank manual builder.')}</p>
+          <div className="button-row" aria-label="Advanced strategy creation options">
+            {ADVANCED_STRATEGY_CREATION_MODES.map((advancedMode) => (
+              <button key={advancedMode} type="button" onClick={() => enterMode(advancedMode)}>
+                {advancedMode === 'visual' && w('Build visually')}
+                {advancedMode === 'methodology' && w('Start from a methodology')}
+                {advancedMode === 'blank' && w('Start blank')}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -710,7 +729,7 @@ export default function StrategyBuilderV2({
           <p className="muted">{w('Select a methodology library, then keep only the concepts you actually use.')}</p>
           {methodRow}
           <div className="button-row">
-            <button type="button" onClick={() => setPath('methodology')}>{w('Back')}</button>
+            <button type="button" onClick={() => setPath('advanced')}>{w('Back')}</button>
             <button type="button" className="primary" onClick={() => {
               setSelectedRuleSelections((current) => buildDraftFromSelection(selectedMethodologyIds, current.map((rule) => rule.key), current).rules);
               setPath('visual');
@@ -725,7 +744,7 @@ export default function StrategyBuilderV2({
           <h3>{w('Start Blank')}</h3>
           <p className="muted">{w('Open the established builder and build the strategy from a blank configuration.')}</p>
           <div className="button-row">
-            <button type="button" onClick={() => setPath('blank')}>{w('Back')}</button>
+            <button type="button" onClick={() => setPath('advanced')}>{w('Back')}</button>
             <button type="button" className="primary" onClick={() => {
               setPath('visual');
               setStep(1);

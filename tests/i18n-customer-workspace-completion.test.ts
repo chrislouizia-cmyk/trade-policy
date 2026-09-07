@@ -11,6 +11,8 @@ const read=(file:string)=>fs.readFileSync(path.join(root,file),'utf8');
 test('dashboard, strategy creation, and trading accounts have Spanish and French copy',()=>{
   assert.equal(workspaceText('es','Make the next decision with your rules in view.'),'Toma la siguiente decisión con tus reglas a la vista.');
   assert.equal(workspaceText('fr','Create Strategy'),'Créer une stratégie');
+  assert.equal(workspaceText('es','Describe how you trade'),'Describe cómo operas');
+  assert.equal(workspaceText('fr','Advanced configuration'),'Configuration avancée');
   assert.equal(workspaceText('es','Add trading account'),'Agregar cuenta de trading');
   assert.equal(workspaceText('fr','No broker login or password is required. This account is used for risk, history, and analytics inside Trade Police.'),'Aucun identifiant ni mot de passe du broker n’est requis. Ce compte sert au risque, à l’historique et aux analyses dans Trade Police.');
 });
@@ -31,8 +33,11 @@ test('trading accounts are permanently discoverable after onboarding',()=>{
 
 test('strategy builder localizes the internal creation paths and steps',()=>{
   const builder=read('components/StrategyBuilderV2.tsx');
+  assert.match(builder,/w\('Describe how you trade'\)/);
+  assert.match(builder,/w\('Advanced configuration'\)/);
   assert.match(builder,/w\('Build visually'\)/);
-  assert.match(builder,/w\('Describe your strategy — Beta'\)/);
+  assert.match(builder,/w\('Start from a methodology'\)/);
+  assert.match(builder,/w\('Start blank'\)/);
   assert.match(builder,/w\('Step 5 — Review & Activate'\)/);
   assert.match(builder,/w\('Approve & Apply'\)/);
 });

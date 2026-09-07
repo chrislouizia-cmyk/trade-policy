@@ -16,7 +16,16 @@ import { createPersistedV2RuleTree, type RuleSelection } from '../lib/strategy-b
 import { persistedStrategyToV2State, v2StateToPersistedStrategy } from '../lib/strategy-builder-v2-persistence.ts';
 import { canReviewStrategyDraft, emptyStrategyCopilotDraft, extractStructuredDraftFromText, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotDraft } from '../lib/strategy-copilot.ts';
 import { resolveBuilderEntryMode } from '../lib/strategy-builder-entry.ts';
-import { STRATEGY_CREATION_MODE_LABELS, canReachFinalReviewDirectlyFromSelector, getStrategyCreationModes } from '../lib/strategy-creation-flow.ts';
+import {
+  ADVANCED_STRATEGY_CREATION_MODES,
+  DEFAULT_STRATEGY_CREATION_ENTRY_PATH,
+  STRATEGY_CREATION_ENTRY_LABELS,
+  STRATEGY_CREATION_MODE_LABELS,
+  canReachFinalReviewDirectlyFromSelector,
+  getAdvancedStrategyCreationModes,
+  getStrategyCreationEntryPaths,
+  getStrategyCreationModes,
+} from '../lib/strategy-creation-flow.ts';
 import { DEFAULT_STRATEGY_PROFILE, type EvidenceKey } from '../types/trade.ts';
 import { assertUsableRequiredRules, deriveRequiredEvidence, ZeroRequiredRulesError } from '../lib/strategy-policy.ts';
 
@@ -69,15 +78,19 @@ test('an empty Copilot draft does not replace approved risk or RR with zero', ()
   assert.equal(approved.strategyDraft.minimumRR, 2);
 });
 
-test('strategy creation selector exposes the required four modes in the exact order and never auto-opens a mode', () => {
-  const modes = getStrategyCreationModes();
-  assert.deepEqual(modes, ['visual', 'copilot', 'methodology', 'blank']);
-  assert.deepEqual(modes.map((mode) => STRATEGY_CREATION_MODE_LABELS[mode]), [
-    'Build visually',
-    'Describe your strategy — Beta',
-    'Start from a methodology',
-    'Start blank',
+test('strategy creation exposes two top-level entry paths while retaining legacy modes under the advanced path', () => {
+  const entries = getStrategyCreationEntryPaths();
+  assert.deepEqual(entries, ['describe', 'advanced']);
+  assert.deepEqual(entries.map((entry) => STRATEGY_CREATION_ENTRY_LABELS[entry]), [
+    'Describe how you trade',
+    'Advanced configuration',
   ]);
+  assert.equal(DEFAULT_STRATEGY_CREATION_ENTRY_PATH, 'describe');
+  assert.deepEqual(getAdvancedStrategyCreationModes(), ['visual', 'methodology', 'blank']);
+  assert.deepEqual(ADVANCED_STRATEGY_CREATION_MODES.map((mode) => STRATEGY_CREATION_MODE_LABELS[mode]), [
+    'Build visually', 'Start from a methodology', 'Start blank',
+  ]);
+  assert.deepEqual(getStrategyCreationModes(), ['visual', 'copilot', 'methodology', 'blank']);
   assert.equal(canReachFinalReviewDirectlyFromSelector(null), false);
   assert.equal(canReachFinalReviewDirectlyFromSelector('visual'), false);
   assert.equal(canReachFinalReviewDirectlyFromSelector('copilot'), false);
