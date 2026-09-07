@@ -3,18 +3,19 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const cache = fs.readFileSync('lib/server/backtest-historical-cache.ts', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/096_coordinate_twelve_data_credits.sql', 'utf8');
 
-test('provider budget is shared through globalThis instead of being request-local only', () => {
-  assert.match(cache, /__tradePoliceTwelveDataBudget/);
-  assert.match(cache, /providerBudgetState/);
-  assert.match(cache, /PROVIDER_WINDOW_MS = 60_000/);
+test('provider budget is database-coordinated across all serverless instances', () => {
+  assert.doesNotMatch(cache, /__tradePoliceTwelveDataBudget/);
+  assert.match(cache, /reserveTwelveDataCredits/);
+  assert.match(migration, /pg_advisory_xact_lock/);
 });
 
-test('rolling provider budget blocks the ninth call across concurrent requests', () => {
-  assert.match(cache, /providerBudgetState\.calls\.length >= PROVIDER_CALL_BUDGET/);
-  assert.match(cache, /reserveProviderCall\(\)/);
-  assert.match(cache, /if \(!providerBudget\.allowed\)/);
-  assert.match(cache, /retryAfterSeconds: providerBudget\.retryAfterSeconds/);
+test('atomic provider budget blocks calls beyond the exact minute allowance', () => {
+  assert.match(migration, /v_minute_used \+ p_credits <= v_minute_ceiling/);
+  assert.match(migration, /p_minute_limit integer default 8/);
+  assert.match(cache, /ProviderCreditLimitError/);
+  assert.match(cache, /retryAfterSeconds:error\.reservation\.retryAfterSeconds/);
 });
 
 test('existing per-execution eight-call ceiling remains in place', () => {

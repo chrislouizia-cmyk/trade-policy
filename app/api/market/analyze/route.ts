@@ -13,6 +13,7 @@ import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {strategyRevisionId} from '@/lib/historical-decisions/strategy-revision';
+import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
     const strategy = await loadActiveStrategy(supabase,user.id);
     if (!strategy.instruments.includes(instrument)) return apiError('INSTRUMENT_DISABLED','Instrument is disabled in this strategy.',400,{instrument});
     const timeframes = strategyTimeframes(strategy);
+    await reserveTwelveDataCredits({requestKey:`analysis:${user.id}:${requestKey}`,operation:'live.analysis',priority:'LIVE',credits:timeframes.length});
     const values = await Promise.all(timeframes.map((timeframe) => fetchSeries(instrument, timeframe)));
     const series = Object.fromEntries(timeframes.map((timeframe, index) => [timeframe, values[index]]));
     const analysis = buildLiveAnalysis(instrument, strategy, series, 'Twelve Data',providerSymbol(instrument));
@@ -63,6 +65,7 @@ export async function POST(req: Request) {
       console.warn('[TWELVE_DATA_RATE_LIMITED]',{endpoint:'/api/market/analyze',retryAfterSeconds:error.retryAfterSeconds});
       return apiError('MARKET_DATA_RATE_LIMITED','Market data reached its provider minute limit. Please retry in one minute.',429,{retryAfterSeconds:error.retryAfterSeconds});
     }
+    if(error instanceof ProviderCreditLimitError)return apiError('MARKET_DATA_CREDIT_WINDOW',error.message,429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt,reason:error.reservation.reason});
     if(supabase){await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}}));await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}}))}
     return publicApiError({message:'Market analysis unavailable.',code:'MARKET_ANALYSIS_UNAVAILABLE',internalCode:'LIVE_MARKET_ANALYSIS_FAILED',provider:'twelvedata',endpoint:'/api/market/analyze',error});
   }

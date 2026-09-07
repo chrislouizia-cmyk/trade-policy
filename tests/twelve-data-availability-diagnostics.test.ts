@@ -10,9 +10,12 @@ test('Twelve Data minute-credit exhaustion is identified instead of reported as 
   assert.match(route,/MARKET_DATA_RATE_LIMITED/);assert.match(route,/retryAfterSeconds/);
 });
 
-test('HQ provider probe is cached and exposes the real degraded reason',()=>{
+test('HQ provider health consumes no credits and exposes coordinated usage',()=>{
   const health=read('app/api/hq/health/route.ts');
   assert.match(health,/CACHE_MS=300_000/);
-  assert.match(health,/Provider minute limit reached/);
+  assert.doesNotMatch(health,/api\.twelvedata\.com/);
+  assert.match(health,/provider_credit_windows/);
+  assert.match(health,/provider_credit_events/);
+  assert.match(health,/minuteUsed.*minuteLimit.*dailyUsed.*dailyLimit/);
   assert.match(health,/message:services\.twelveData\.message/);
 });

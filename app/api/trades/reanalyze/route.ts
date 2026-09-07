@@ -8,6 +8,7 @@ import {validateTradeWithStrategy} from '@/lib/server/decision-engine';
 import {loadDailyTradeContext} from '@/lib/server/daily-trade-context';
 import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
+import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 
 export const runtime='nodejs';export const maxDuration=60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
@@ -35,7 +36,7 @@ export async function POST(request:Request){
     if(!policy.instruments.includes(trade.instrument))return failure(`${trade.instrument} is not enabled in the active strategy.`,'UNSUPPORTED_INSTRUMENT',400,{instrument:trade.instrument});
     const timeframes=strategyTimeframes(strategy);
     let values;
-    try{values=await Promise.all(timeframes.map(timeframe=>fetchSeries(trade.instrument,timeframe)));}catch(error){return failure(error instanceof Error?error.message:'Twelve Data could not return configured candles.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
+    try{await reserveTwelveDataCredits({requestKey:`reanalyze:${user.id}:${trade.id}:${request.headers.get('idempotency-key')??Date.now()}`,operation:'active-trade.reanalysis',priority:'LIVE',credits:timeframes.length+1});values=await Promise.all(timeframes.map(timeframe=>fetchSeries(trade.instrument,timeframe)));}catch(error){if(error instanceof ProviderCreditLimitError)return failure(error.message,'MARKET_DATA_CREDIT_WINDOW',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});return failure(error instanceof Error?error.message:'Twelve Data could not return configured candles.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
     if(values.some(candles=>candles.length<25))return failure('Twelve Data returned insufficient candles for deterministic analysis.','INSUFFICIENT_MARKET_DATA',422,{instrument:trade.instrument,timeframes});
     let currentPrice:number;try{currentPrice=await fetchPrice(trade.instrument);}catch(error){return failure(error instanceof Error?error.message:'Current price is unavailable.','CURRENT_PRICE_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument});}
     const analysis=buildLiveAnalysis(trade.instrument,strategy,Object.fromEntries(timeframes.map((timeframe,index)=>[timeframe,values[index]])),'Twelve Data');

@@ -6,45 +6,12 @@ import { strategyFromSnapshot } from '@/lib/server/backtest-executor';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
 import type { Candle } from '@/lib/market-analysis';
+import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 
 const PROVIDER = 'Twelve Data';
 const PROVIDER_CALL_BUDGET = 8;
-const PROVIDER_WINDOW_MS = 60_000;
 const MAX_ACCEPTABLE_TAIL_GAP_MS = 6 * 60 * 60 * 1000;
 
-type ProviderBudgetState = {
-  calls: number[];
-};
-
-const providerBudgetState: ProviderBudgetState = (() => {
-  const root = globalThis as typeof globalThis & {
-    __tradePoliceTwelveDataBudget?: ProviderBudgetState;
-  };
-  if (!root.__tradePoliceTwelveDataBudget) {
-    root.__tradePoliceTwelveDataBudget = { calls: [] };
-  }
-  return root.__tradePoliceTwelveDataBudget;
-})();
-
-function pruneProviderBudget(now = Date.now()) {
-  providerBudgetState.calls = providerBudgetState.calls.filter(
-    (timestamp) => now - timestamp < PROVIDER_WINDOW_MS,
-  );
-}
-
-function reserveProviderCall(): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
-  const now = Date.now();
-  pruneProviderBudget(now);
-
-  if (providerBudgetState.calls.length >= PROVIDER_CALL_BUDGET) {
-    const oldest = providerBudgetState.calls[0] ?? now;
-    const waitMs = Math.max(1_000, PROVIDER_WINDOW_MS - (now - oldest) + 1_000);
-    return { allowed: false, retryAfterSeconds: Math.ceil(waitMs / 1000) };
-  }
-
-  providerBudgetState.calls.push(now);
-  return { allowed: true };
-}
 
 const FRAME_MINUTES: Record<string, number> = {
   M1: 1, M5: 5, M15: 15, M30: 30, H1: 60, H2: 120, H4: 240, D1: 1440, W1: 10080,
@@ -253,16 +220,6 @@ export async function prepareHistoricalBacktestData(
         };
       }
 
-      const providerBudget = reserveProviderCall();
-      if (!providerBudget.allowed) {
-        return {
-          ready: false,
-          requestsUsed,
-          retryAfterSeconds: providerBudget.retryAfterSeconds,
-          message: 'Historical data is still being prepared. Trade Police will continue in the next provider window.',
-        };
-      }
-
       let chunkStart: number;
       let chunkEnd: number;
 
@@ -278,6 +235,7 @@ export async function prepareHistoricalBacktestData(
       }
 
       try {
+        await reserveTwelveDataCredits({requestKey:`backtest:${run.id}:${timeframe}:${chunkStart}:${chunkEnd}`,operation:'backtest.historical',priority:'BACKGROUND',credits:1});
         const rows = await fetchChunk(run.instrument, timeframe, chunkStart, chunkEnd);
         requestsUsed += 1;
         await saveCandles(admin, rows);
@@ -292,6 +250,7 @@ export async function prepareHistoricalBacktestData(
         await saveRange(admin, run.instrument, timeframe, nextStart, nextEnd);
         range = { covered_start: nextStart, covered_end: nextEnd };
       } catch (error) {
+        if(error instanceof ProviderCreditLimitError)return{ready:false,requestsUsed,retryAfterSeconds:error.reservation.retryAfterSeconds,message:'Historical data is paused to preserve live decision capacity. Trade Police will continue automatically.'};
         const message = error instanceof Error ? error.message : 'Historical provider request failed.';
         if ((error as any)?.retryableProviderLimit || retryableProviderError(message)) {
           console.warn('Backtest historical provider window exhausted', {
