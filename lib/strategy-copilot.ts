@@ -1,4 +1,5 @@
 import { METHODOLOGY_LIBRARY, type Capability, type RuleGroupType, type RuleRequirement, type RuleSelection } from './strategy-builder-v2.ts';
+import type { CanonicalCreationDraft } from './strategy-creation-contract.ts';
 
 export type StrategyCopilotIntent = 'CREATE' | 'UPDATE' | 'CLARIFY' | 'NONE';
 export type StrategyCopilotDraft = {
@@ -10,6 +11,7 @@ export type StrategyCopilotDraft = {
   logicTree: { logic: 'ALL' | 'ANY'; children: string[] };
   riskPercent?: number;
   minimumRR?: number;
+  direction?: 'LONG' | 'SHORT' | 'BOTH';
   notes: string[];
 };
 
@@ -25,6 +27,7 @@ export type StrategyCopilotSessionState = {
   sessionId: string;
   draft: StrategyCopilotDraft;
   messages: Array<{ role: 'user' | 'assistant'; text: string; createdAt: string }>;
+  canonicalDraft?: CanonicalCreationDraft;
   updatedAt: number;
 };
 
@@ -68,12 +71,15 @@ export function ensureStrategyCopilotSession(sessionId: string): StrategyCopilot
   return fresh;
 }
 
-export function upsertStrategyCopilotSession(sessionId: string, draft: StrategyCopilotDraft, message?: { role: 'user' | 'assistant'; text: string }) {
+export function upsertStrategyCopilotSession(
+  sessionId: string,
+  draft: StrategyCopilotDraft,
+  messages: Array<{ role: 'user' | 'assistant'; text: string }> = [],
+  canonicalDraft?: CanonicalCreationDraft,
+) {
   const session = ensureStrategyCopilotSession(sessionId);
-  const next = { ...session, draft, updatedAt: Date.now() };
-  if (message) {
-    next.messages = [...next.messages, { ...message, createdAt: new Date().toISOString() }];
-  }
+  const next: StrategyCopilotSessionState = { ...session, draft, ...(canonicalDraft ? { canonicalDraft } : {}), updatedAt: Date.now() };
+  next.messages = [...next.messages, ...messages.map((message) => ({ ...message, createdAt: new Date().toISOString() }))];
   sessionStore.set(sessionId, next);
   return next;
 }
@@ -88,7 +94,11 @@ export function buildLogicTreeFromRules(rules: RuleSelection[]): { logic: 'ALL' 
   return { logic: allRules.length ? 'ALL' : 'ANY', children };
 }
 
-export function mergeStrategyCopilotDraft(previous: StrategyCopilotDraft, next: StrategyCopilotDraft): StrategyCopilotDraft {
+export function mergeStrategyCopilotDraft(
+  previous: StrategyCopilotDraft,
+  next: StrategyCopilotDraft,
+  options: { acceptNormalizedSensitiveChanges?: boolean } = {},
+): StrategyCopilotDraft {
   const mergedRules = new Map<string, RuleSelection>();
   for (const rule of previous.rules) mergedRules.set(rule.key, { ...rule });
   for (const rule of next.rules) mergedRules.set(rule.key, { ...rule });
@@ -105,8 +115,13 @@ export function mergeStrategyCopilotDraft(previous: StrategyCopilotDraft, next: 
     timeframes: mergedTimeframes,
     rules: mergedRulesList,
     logicTree: next.logicTree?.children?.length ? next.logicTree : buildLogicTreeFromRules(mergedRulesList),
-    riskPercent: typeof next.riskPercent === 'number' ? previous.riskPercent ?? next.riskPercent : previous.riskPercent,
-    minimumRR: typeof next.minimumRR === 'number' ? previous.minimumRR ?? next.minimumRR : previous.minimumRR,
+    riskPercent: options.acceptNormalizedSensitiveChanges && typeof next.riskPercent === 'number'
+      ? next.riskPercent
+      : typeof next.riskPercent === 'number' ? previous.riskPercent ?? next.riskPercent : previous.riskPercent,
+    minimumRR: options.acceptNormalizedSensitiveChanges && typeof next.minimumRR === 'number'
+      ? next.minimumRR
+      : typeof next.minimumRR === 'number' ? previous.minimumRR ?? next.minimumRR : previous.minimumRR,
+    direction: next.direction ?? previous.direction,
     notes: mergedNotes,
   };
 }
@@ -149,23 +164,29 @@ export function rejectUnsupportedStrategyCopilotFields(draft: Record<string, unk
   return unsupported;
 }
 
-export function normalizeStrategyCopilotReply(value: unknown, previous: StrategyCopilotDraft = emptyStrategyCopilotDraft()): StrategyCopilotReply {
+export function normalizeStrategyCopilotReply(
+  value: unknown,
+  previous: StrategyCopilotDraft = emptyStrategyCopilotDraft(),
+  context: { userMessage?: string } = {},
+): StrategyCopilotReply {
   if (!value || typeof value !== 'object') throw new Error('Copilot response is not an object.');
   const response = value as Record<string, unknown>;
   const rawDraft = response.strategyDraft;
   if (!rawDraft || typeof rawDraft !== 'object') throw new Error('Copilot response has no strategy draft.');
 
   const unsupported = rejectUnsupportedStrategyCopilotFields(rawDraft as Record<string, unknown>);
-  if (unsupported.length) throw new Error(unsupported[0]);
 
   const draft = rawDraft as Record<string, unknown>;
   const rawRules = Array.isArray(draft.rules) ? draft.rules : [];
-  const rules: RuleSelection[] = rawRules.map((item) => {
+  const rules: RuleSelection[] = rawRules.flatMap((item) => {
     if (!item || typeof item !== 'object') throw new Error('Copilot returned an invalid rule.');
     const raw = item as Record<string, unknown>;
     const key = String(raw.key ?? '').trim();
     const definition = catalog.get(key);
-    if (!definition) throw new Error(`Copilot returned an unknown rule: ${key || 'missing key'}.`);
+    if (!definition) {
+      unsupported.push(`Unsupported rule: ${key || 'missing key'}`);
+      return [];
+    }
 
     const capability = definition.capability as Capability;
     const requirementValue = String(raw.requirement ?? 'REQUIRED');
@@ -173,7 +194,7 @@ export function normalizeStrategyCopilotReply(value: unknown, previous: Strategy
     const group: RuleGroupType = raw.group === 'ANY' ? 'ANY' : 'ALL';
     const timeframe = timeframes.has(String(raw.timeframe ?? '')) ? String(raw.timeframe) : previous.rules.find((rule) => rule.key === key)?.timeframe ?? 'M15';
 
-    return {
+    return [{
       key,
       label: definition.label,
       capability,
@@ -181,7 +202,7 @@ export function normalizeStrategyCopilotReply(value: unknown, previous: Strategy
       timeframe,
       group,
       description: definition.description,
-    };
+    }];
   });
 
   const selectedSessions = Array.isArray(draft.sessions)
@@ -191,8 +212,12 @@ export function normalizeStrategyCopilotReply(value: unknown, previous: Strategy
     ? draft.timeframes.filter((item): item is string => typeof item === 'string' && timeframes.has(item))
     : previous.timeframes;
 
-  const risk = typeof previous.riskPercent === 'number' ? previous.riskPercent : typeof draft.riskPercent === 'number' && Number.isFinite(draft.riskPercent) && draft.riskPercent > 0 && draft.riskPercent <= 10 ? draft.riskPercent : undefined;
-  const rr = typeof previous.minimumRR === 'number' ? previous.minimumRR : typeof draft.minimumRR === 'number' && Number.isFinite(draft.minimumRR) && draft.minimumRR > 0 ? draft.minimumRR : undefined;
+  const explicitlyChangesRisk = /(?:risk[^.\n%]{0,30}[0-9]+(?:\.[0-9]+)?\s*%|[0-9]+(?:\.[0-9]+)?\s*%[^.\n]{0,20}risk)/i.test(context.userMessage ?? '');
+  const explicitlyChangesRR = /(?:minimum\s+)?(?:rr|risk[- ]to[- ]reward|risk reward)[^.\n]{0,24}(?:1\s*:\s*)?[0-9]+(?:\.[0-9]+)?/i.test(context.userMessage ?? '');
+  const validRisk = typeof draft.riskPercent === 'number' && Number.isFinite(draft.riskPercent) && draft.riskPercent > 0 && draft.riskPercent <= 10 ? draft.riskPercent : undefined;
+  const validRR = typeof draft.minimumRR === 'number' && Number.isFinite(draft.minimumRR) && draft.minimumRR > 0 ? draft.minimumRR : undefined;
+  const risk = typeof previous.riskPercent === 'number' && !explicitlyChangesRisk ? previous.riskPercent : validRisk ?? previous.riskPercent;
+  const rr = typeof previous.minimumRR === 'number' && !explicitlyChangesRR ? previous.minimumRR : validRR ?? previous.minimumRR;
 
   const rawLogicTree = draft.logicTree && typeof draft.logicTree === 'object' ? (draft.logicTree as Record<string, unknown>) : null;
   const next: StrategyCopilotDraft = {
@@ -204,6 +229,7 @@ export function normalizeStrategyCopilotReply(value: unknown, previous: Strategy
     logicTree: rawLogicTree ? { logic: rawLogicTree.logic === 'ANY' ? 'ANY' : 'ALL', children: Array.isArray(rawLogicTree.children) ? (rawLogicTree.children as unknown[]).filter((item): item is string => typeof item === 'string') : rules.map((rule) => rule.key) } : { logic: 'ALL', children: rules.map((rule) => rule.key) },
     riskPercent: risk,
     minimumRR: rr,
+    direction: draft.direction === 'LONG' || draft.direction === 'SHORT' || draft.direction === 'BOTH' ? draft.direction : previous.direction,
     notes: Array.isArray(draft.notes) ? draft.notes.filter((item): item is string => typeof item === 'string').slice(0, 12) : previous.notes,
   };
 
@@ -212,7 +238,10 @@ export function normalizeStrategyCopilotReply(value: unknown, previous: Strategy
     intent: ['CREATE', 'UPDATE', 'CLARIFY', 'NONE'].includes(String(response.intent)) ? (String(response.intent) as StrategyCopilotIntent) : 'NONE',
     strategyDraft: next,
     changes: Array.isArray(response.changes) ? response.changes.filter((item): item is string => typeof item === 'string').slice(0, 20) : [],
-    unresolvedQuestions: Array.isArray(response.unresolvedQuestions) ? response.unresolvedQuestions.filter((item): item is string => typeof item === 'string').slice(0, 8) : [],
+    unresolvedQuestions: [
+      ...(Array.isArray(response.unresolvedQuestions) ? response.unresolvedQuestions.filter((item): item is string => typeof item === 'string') : []),
+      ...unsupported,
+    ].slice(0, 8),
   };
 }
 
@@ -226,7 +255,7 @@ export const strategyCopilotSchema = {
     strategyDraft: {
       type: 'object',
       additionalProperties: false,
-      required: ['name', 'instrument', 'sessions', 'timeframes', 'rules', 'logicTree', 'riskPercent', 'minimumRR', 'notes'],
+      required: ['name', 'instrument', 'sessions', 'timeframes', 'rules', 'logicTree', 'riskPercent', 'minimumRR', 'direction', 'notes'],
       properties: {
         name: { type: ['string', 'null'] },
         instrument: { type: ['string', 'null'] },
@@ -257,6 +286,7 @@ export const strategyCopilotSchema = {
         },
         riskPercent: { type: ['number', 'null'] },
         minimumRR: { type: ['number', 'null'] },
+        direction: { type: ['string', 'null'], enum: ['LONG', 'SHORT', 'BOTH', null] },
         notes: { type: 'array', items: { type: 'string' } },
       },
     },
@@ -392,6 +422,9 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
   };
   nextDraft.riskPercent = riskMatch ? Number(riskMatch[1]) : currentDraft.riskPercent;
   nextDraft.minimumRR = rrMatch ? Number(rrMatch[1]) : currentDraft.minimumRR;
+  if (/\b(?:long only|buy only|only long|only buy)\b/i.test(rawMessage)) nextDraft.direction = 'LONG';
+  else if (/\b(?:short only|sell only|only short|only sell)\b/i.test(rawMessage)) nextDraft.direction = 'SHORT';
+  else if (/\b(?:both directions?|long and short|buy and sell)\b/i.test(rawMessage)) nextDraft.direction = 'BOTH';
 
   return nextDraft;
 }

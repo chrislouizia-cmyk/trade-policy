@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { buildStrategyCopilotInstructions, emptyStrategyCopilotDraft, ensureStrategyCopilotSession, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, strategyCopilotSchema } from '@/lib/strategy-copilot';
+import { buildStrategyCopilotInstructions, emptyStrategyCopilotDraft, ensureStrategyCopilotSession, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, strategyCopilotSchema, upsertStrategyCopilotSession } from '@/lib/strategy-copilot';
+import { mapCopilotReplyToCanonicalCreation } from '@/lib/strategy-copilot-creation';
+import type { CanonicalCreationDraft } from '@/lib/strategy-creation-contract';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +18,7 @@ export async function POST(request: Request) {
       sessionId?: string;
       message?: string;
       previousDraft?: Record<string, unknown>;
+      previousCanonicalDraft?: CanonicalCreationDraft;
     } | null;
 
     if (!body?.message) {
@@ -58,9 +61,17 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    const sessionId = body.sessionId || `strategy-copilot-${user.id}-${Date.now()}`;
+    const clientSessionId = body.sessionId?.trim() || crypto.randomUUID();
+    const sessionId = `strategy-copilot:${user.id}:${clientSessionId}`;
     const currentSession = ensureStrategyCopilotSession(sessionId);
-    const previousDraft = body.previousDraft ? mergeStrategyCopilotDraft(currentSession.draft, body.previousDraft as any) : currentSession.draft;
+    const browserDraft = body.previousDraft ? mergeStrategyCopilotDraft(emptyStrategyCopilotDraft(), body.previousDraft as any) : emptyStrategyCopilotDraft();
+    const previousDraft = currentSession.messages.length > 1 || hasGeneratedStrategyDraft(currentSession.draft)
+      ? currentSession.draft
+      : browserDraft;
+    const browserCanonicalDraft = body.previousCanonicalDraft && Array.isArray(body.previousCanonicalDraft.unresolvedInputs)
+      ? body.previousCanonicalDraft
+      : undefined;
+    const previousCanonicalDraft = currentSession.canonicalDraft ?? browserCanonicalDraft;
 
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -152,15 +163,26 @@ export async function POST(request: Request) {
     }
 
     const parsed = JSON.parse(text);
-    const normalized = normalizeStrategyCopilotReply(parsed, previousDraft);
-    const nextDraft = mergeStrategyCopilotDraft(previousDraft, normalized.strategyDraft);
-    const nextState = { ...currentSession, draft: nextDraft, updatedAt: Date.now() };
-    nextState.messages = [...nextState.messages, { role: 'user', text: body.message, createdAt: new Date().toISOString() }, { role: 'assistant', text: normalized.message, createdAt: new Date().toISOString() }];
+    const normalized = normalizeStrategyCopilotReply(parsed, previousDraft, { userMessage: body.message });
+    const nextDraft = mergeStrategyCopilotDraft(previousDraft, normalized.strategyDraft, { acceptNormalizedSensitiveChanges: true });
+    const canonical = mapCopilotReplyToCanonicalCreation({
+      userMessage: body.message,
+      reply: { ...normalized, strategyDraft: nextDraft },
+      previousDraft: previousCanonicalDraft,
+    });
+    upsertStrategyCopilotSession(sessionId, nextDraft, [
+      { role: 'user', text: body.message },
+      { role: 'assistant', text: normalized.message },
+    ], canonical.draft);
 
     return NextResponse.json({
-      sessionId,
+      sessionId: clientSessionId,
       ...normalized,
       strategyDraft: nextDraft,
+      canonicalDraft: canonical.draft,
+      canonicalAssessment: canonical.assessment,
+      modelUnresolvedQuestions: normalized.unresolvedQuestions,
+      unresolvedQuestions: canonical.assessment.clarifications.map((item) => item.question),
     });
   } catch (error) {
     console.error('Strategy copilot route failed', error);

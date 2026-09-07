@@ -35,6 +35,12 @@ export const VALUE_PROVENANCE = [
 export type ValueProvenance = (typeof VALUE_PROVENANCE)[number];
 export type CanonicalCreationIntent = 'CREATE' | 'EDIT';
 
+export type CanonicalUnresolvedInput = {
+  kind: 'QUESTION' | 'UNSUPPORTED_CONCEPT';
+  text: string;
+  source: 'COPILOT';
+};
+
 export const CANONICAL_CREATION_FIELDS = [
   'name',
   'instruments',
@@ -85,6 +91,7 @@ export type CanonicalCreationIssueCode =
   | 'UNKNOWN_RULE'
   | 'INVALID_RULE_TREE'
   | 'UNSUPPORTED_SESSION'
+  | 'UNRESOLVED_INPUT'
   | 'RULE_NORMALIZATION_FAILED'
   | 'NO_REQUIRED_EVIDENCE';
 
@@ -106,6 +113,7 @@ export type ClarificationCode =
   | 'MISSING_REQUIRED_EVIDENCE'
   | 'CONFIRM_VALUE_SOURCE'
   | 'RESOLVE_UNKNOWN_RULE'
+  | 'COPILOT_UNRESOLVED_INPUT'
   | 'REVIEW_INVALID_VALUE';
 
 export type CanonicalClarification = {
@@ -122,6 +130,8 @@ export type CanonicalCreationDraft = {
   confirmedSensitiveFields: CanonicalCreationField[];
   reviewConfirmed: boolean;
   state: CanonicalCreationState;
+  /** Non-executable Copilot questions/concepts retained for canonical clarification. */
+  unresolvedInputs: CanonicalUnresolvedInput[];
   /** Exact legacy rows are retained because custom session codes are not V2 presets. */
   legacySessionRows?: StrategySession[];
   /** Exact legacy rule rows are retained until ruleSelections are explicitly edited. */
@@ -225,6 +235,15 @@ function assessIssues(draft: CanonicalCreationDraft, missingFields: CanonicalCre
     issues.push({ code: 'MISSING_STRATEGY_ID', message: 'Editing requires the exact persisted Strategy identity.' });
   }
 
+  for (const unresolved of draft.unresolvedInputs) {
+    issues.push({
+      code: 'UNRESOLVED_INPUT',
+      message: unresolved.kind === 'UNSUPPORTED_CONCEPT'
+        ? `Unsupported concept remains descriptive and unresolved: ${unresolved.text}`
+        : unresolved.text,
+    });
+  }
+
   for (const field of populatedFields(values)) {
     if (!provenance[field]) {
       issues.push({ code: 'UNATTRIBUTED_VALUE', field, message: `${field} has a value without canonical provenance.` });
@@ -289,6 +308,9 @@ function clarificationForIssue(issue: CanonicalCreationIssue): CanonicalClarific
   }
   if (issue.code === 'NO_REQUIRED_EVIDENCE') {
     return { code: 'MISSING_REQUIRED_EVIDENCE', field: 'ruleSelections', question: 'Which supported rule must be satisfied before this strategy permits a trade?' };
+  }
+  if (issue.code === 'UNRESOLVED_INPUT') {
+    return { code: 'COPILOT_UNRESOLVED_INPUT', question: issue.message };
   }
   if (issue.code === 'INVALID_VALUE' || issue.code === 'INVALID_RULE_TREE' || issue.code === 'UNSUPPORTED_SESSION' || issue.code === 'RULE_NORMALIZATION_FAILED') {
     return { code: 'REVIEW_INVALID_VALUE', field: issue.field, question: issue.message };
@@ -360,6 +382,18 @@ export function createCanonicalCreationDraft({
     provenance: { ...provenance },
     confirmedSensitiveFields: [],
     reviewConfirmed: false,
+    unresolvedInputs: [],
+  });
+}
+
+export function setCanonicalCreationUnresolvedInputs(
+  draft: CanonicalCreationDraft,
+  unresolvedInputs: readonly CanonicalUnresolvedInput[],
+): CanonicalCreationDraft {
+  return withDerivedState({
+    ...draft,
+    unresolvedInputs: clone([...unresolvedInputs]),
+    reviewConfirmed: unresolvedInputs.length ? false : draft.reviewConfirmed,
   });
 }
 
@@ -418,6 +452,7 @@ export function canonicalCreationDraftFromPersistedStrategy(
     provenance,
     confirmedSensitiveFields: [],
     reviewConfirmed: false,
+    unresolvedInputs: [],
     legacySessionRows: clone(sessions),
     legacyRuleRows: clone(rules),
   });

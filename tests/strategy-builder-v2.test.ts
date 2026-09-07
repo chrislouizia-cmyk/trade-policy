@@ -578,7 +578,7 @@ test('copilot merge preserves previous draft and updates a single rule within th
   assert.equal(merged.minimumRR, 3);
 });
 
-test('copilot normalization rejects hallucinated rule IDs and keeps descriptive rules optional', () => {
+test('copilot normalization keeps hallucinated rule IDs unresolved and descriptive rules optional', () => {
   const previous: StrategyCopilotDraft = {
     sessions: ['London'],
     timeframes: ['M5'],
@@ -587,7 +587,7 @@ test('copilot normalization rejects hallucinated rule IDs and keeps descriptive 
     notes: [],
   };
 
-  assert.throws(() => normalizeStrategyCopilotReply({
+  const unresolved = normalizeStrategyCopilotReply({
     message: 'bad',
     intent: 'CREATE',
     strategyDraft: {
@@ -600,7 +600,9 @@ test('copilot normalization rejects hallucinated rule IDs and keeps descriptive 
     },
     changes: [],
     unresolvedQuestions: [],
-  }, previous), /unknown rule/i);
+  }, previous);
+  assert.equal(unresolved.strategyDraft.rules.some((rule) => rule.key === 'ghost-rule'), false);
+  assert.ok(unresolved.unresolvedQuestions.some((question) => /ghost-rule/i.test(question)));
 
   const reply = normalizeStrategyCopilotReply({
     message: 'Draft created',
@@ -668,8 +670,8 @@ test('valid AI draft accepts the canonical London gold example while preserving 
   assert.equal(reply.strategyDraft.riskPercent, 0.5);
 });
 
-test('unsupported methodology, detector, and instrument values fail closed', () => {
-  assert.throws(() => normalizeStrategyCopilotReply({
+test('unsupported methodology, detector, and instrument values remain unresolved and fail closed', () => {
+  const first = normalizeStrategyCopilotReply({
     message: 'unsupported',
     intent: 'CREATE',
     strategyDraft: {
@@ -685,9 +687,11 @@ test('unsupported methodology, detector, and instrument values fail closed', () 
     },
     changes: [],
     unresolvedQuestions: [],
-  }), /Unsupported methodology|Unsupported detector|Unsupported instrument/i);
+  });
+  assert.equal(first.strategyDraft.instrument, undefined);
+  assert.ok(first.unresolvedQuestions.some((question) => /Unsupported methodology|Unsupported detector|Unsupported instrument/i.test(question)));
 
-  assert.throws(() => normalizeStrategyCopilotReply({
+  const second = normalizeStrategyCopilotReply({
     message: 'unsupported',
     intent: 'CREATE',
     strategyDraft: {
@@ -701,7 +705,8 @@ test('unsupported methodology, detector, and instrument values fail closed', () 
     },
     changes: [],
     unresolvedQuestions: [],
-  }), /Unsupported methodology/i);
+  });
+  assert.ok(second.unresolvedQuestions.some((question) => /Unsupported methodology/i.test(question)));
 });
 
 test('AI draft cannot override risk settings and preserves prior valid values across turns', () => {
@@ -811,7 +816,7 @@ test('malformed AI payloads fail closed without mutating the prior draft', () =>
     unresolvedQuestions: [],
   }, previous), /no strategy draft/i);
 
-  assert.throws(() => normalizeStrategyCopilotReply({
+  const unknown = normalizeStrategyCopilotReply({
     message: 'bad',
     intent: 'CREATE',
     strategyDraft: {
@@ -822,7 +827,9 @@ test('malformed AI payloads fail closed without mutating the prior draft', () =>
     },
     changes: [],
     unresolvedQuestions: [],
-  }, previous), /unknown rule/i);
+  }, previous);
+  assert.equal(unknown.strategyDraft.rules.some((rule) => rule.key === 'ghost-rule'), false);
+  assert.ok(unknown.unresolvedQuestions.some((question) => /ghost-rule/i.test(question)));
 });
 
 test('legacy strategies remain unaffected by the AI draft normalization layer', () => {

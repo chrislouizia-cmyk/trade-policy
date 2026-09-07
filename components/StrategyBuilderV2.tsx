@@ -18,7 +18,16 @@ import {
 } from '@/lib/strategy-builder-v2';
 import { v2StateToPersistedStrategy, type StrategyBuilderV2State, type V2Persisted } from '@/lib/strategy-builder-v2-persistence';
 import { emptyStrategyCopilotDraft, type StrategyCopilotDraft } from '@/lib/strategy-copilot';
-import { validateStrategyName } from '@/lib/strategy-name';
+import { mapCopilotReplyToCanonicalCreation } from '@/lib/strategy-copilot-creation';
+import {
+  adaptCanonicalCreationDraftToV2Persistence,
+  assessCanonicalCreationDraft,
+  confirmCanonicalCreationDraft,
+  createCanonicalCreationDraft,
+  updateCanonicalCreationDraft,
+  type CanonicalCreationAssessment,
+  type CanonicalCreationDraft,
+} from '@/lib/strategy-creation-contract';
 import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
 import { useLocale } from '@/components/i18n/LocaleProvider';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
@@ -26,8 +35,6 @@ import { workspaceText } from '@/lib/i18n/workspace-copy';
 type CreationPath = 'visual' | 'copilot' | 'methodology' | 'blank';
 export type StrategyBuilderV2Mode='CREATE'|'EDIT';
 type StepKey = 1 | 2 | 3 | 4 | 5;
-const SESSION_CODES: Record<string, string> = { London: 'LONDON', 'New York': 'NEW_YORK', LONDON: 'LONDON', NEW_YORK: 'NEW_YORK' };
-
 const CREATION_MODE_SEQUENCE: CreationPath[] = ['visual', 'copilot', 'methodology', 'blank'];
 
 const STEP_LABELS: Record<StepKey, string> = {
@@ -63,6 +70,7 @@ export default function StrategyBuilderV2({
   onStateChange?: (state: StrategyBuilderV2State) => void;
 }) {
   const { locale } = useLocale();
+  const [copilotSessionId] = useState(() => crypto.randomUUID());
   const w = (text:string) => workspaceText(locale,text);
   const [path, setPath] = useState<CreationPath | null>(()=>mode==='EDIT'?'visual':null);
   const [step, setStep] = useState<StepKey>(1);
@@ -84,8 +92,10 @@ export default function StrategyBuilderV2({
   ]);
   const [copilotDraft, setCopilotDraft] = useState<StrategyCopilotDraft>(() => ({
     ...emptyStrategyCopilotDraft(),
-    name: 'Draft from description',
-    instrument: '',
+  }));
+  const [canonicalCopilotDraft, setCanonicalCopilotDraft] = useState<CanonicalCreationDraft>(() => createCanonicalCreationDraft({
+    intent: mode,
+    ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}),
   }));
   const [copilotRefinementInput, setCopilotRefinementInput] = useState('');
   const [copilotReviewVisible, setCopilotReviewVisible] = useState(false);
@@ -130,7 +140,7 @@ export default function StrategyBuilderV2({
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setApprovalConfirmed(false);
   }
   function initializeCopilotMode() {
-    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft({ ...emptyStrategyCopilotDraft(), name: 'Draft from description', instrument: '' }); setCopilotReviewVisible(false); setCopilotApproved(false); setCopilotRefinementInput('');
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft(emptyStrategyCopilotDraft()); setCanonicalCopilotDraft(createCanonicalCreationDraft({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}) })); setCopilotReviewVisible(false); setCopilotApproved(false); setCopilotRefinementInput('');
   }
   function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setApprovalConfirmed(false); }
   function initializeBlankMode() { initializeCopilotMode(); }
@@ -138,6 +148,35 @@ export default function StrategyBuilderV2({
 
   function currentState(overrides: Partial<StrategyBuilderV2State> = {}): StrategyBuilderV2State {
     return { name: strategyName, instruments: selectedInstruments, sessions, contextTimeframe: contextTimeframe || undefined, executionTimeframe: executionTimeframe || undefined, methodologyIds: selectedMethodologyIds, ruleSelections: canonicalRuleSelections, riskPercent, minimumRR, stopLogic: stopLogic || undefined, targetLogic: targetLogic || undefined, direction, ...overrides };
+  }
+
+  function acceptCopilotPayload(payload: any, userMessage: string) {
+    const nextDraft: StrategyCopilotDraft = payload.strategyDraft ?? copilotDraft;
+    const canonical: { draft: CanonicalCreationDraft; assessment: CanonicalCreationAssessment } = payload.canonicalDraft && payload.canonicalAssessment
+      ? { draft: payload.canonicalDraft, assessment: payload.canonicalAssessment }
+      : mapCopilotReplyToCanonicalCreation({
+          userMessage,
+          reply: {
+            message: payload.message ?? '', intent: payload.intent ?? 'NONE', strategyDraft: nextDraft,
+            changes: Array.isArray(payload.changes) ? payload.changes : [],
+            unresolvedQuestions: Array.isArray(payload.unresolvedQuestions) ? payload.unresolvedQuestions : [],
+          },
+          previousDraft: canonicalCopilotDraft,
+        });
+    const values = canonical.draft.values;
+    setCopilotDraft(nextDraft);
+    setCanonicalCopilotDraft(canonical.draft);
+    setStrategyName(values.name);
+    setSelectedInstruments(values.instruments);
+    setSessions(values.sessions);
+    setContextTimeframe(values.contextTimeframe ?? '');
+    setExecutionTimeframe(values.executionTimeframe ?? '');
+    setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({ methodologyIds: values.methodologyIds, ruleSelections: values.ruleSelections }));
+    setRiskPercent(values.riskPercent);
+    setMinimumRR(values.minimumRR);
+    if (values.direction) setDirection(values.direction);
+    setCopilotApproved(false);
+    return canonical.assessment;
   }
   useEffect(() => { onStateChange?.(currentState()); }, [strategyName, selectedInstruments, sessions, contextTimeframe, executionTimeframe, selectedMethodologyIds, canonicalRuleSelections, riskPercent, minimumRR, stopLogic, targetLogic, direction]);
 
@@ -205,26 +244,17 @@ export default function StrategyBuilderV2({
   }
 
   function buildCopilotApply() {
-    const nameError = validateStrategyName(strategyName); if (nameError) { setCopilotApplyError(nameError); return; }
-    if (!contextTimeframe || !executionTimeframe) { setCopilotApplyError('Choose both context and execution timeframes before applying this strategy.'); return; }
-    const draftRules: RuleSelection[] = copilotDraft.rules.length ? copilotDraft.rules : createDefaultRuleSelection();
-    const draftInstrument = copilotDraft.instrument && SUPPORTED_INSTRUMENT_SYMBOLS.includes(copilotDraft.instrument as any)
-      ? copilotDraft.instrument
-      : (selectedInstruments[0] ?? 'XAUUSD');
-    const draftSessions = copilotDraft.sessions.length ? copilotDraft.sessions : sessions;
-    const draftRisk = typeof copilotDraft.riskPercent === 'number' ? copilotDraft.riskPercent : riskPercent;
-    const draftMinimumRR = typeof copilotDraft.minimumRR === 'number' ? copilotDraft.minimumRR : minimumRR;
-
-    setSelectedInstruments([draftInstrument]);
-    setSessions(draftSessions.map((session) => session));
-    setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
-      methodologyIds: selectedMethodologyIds,
-      ruleSelections: draftRules,
-    }));
-    setRiskPercent(draftRisk);
-    setMinimumRR(draftMinimumRR);
-
-    setCopilotApplyError(''); onApply(v2StateToPersistedStrategy(profile, currentState({ name: strategyName.trim(), instruments: [draftInstrument], sessions: draftSessions.map((value) => SESSION_CODES[value] ?? value), ruleSelections: draftRules, riskPercent: draftRisk, minimumRR: draftMinimumRR, methodologyIds: ['strategy-copilot'] })));
+    const assessment = assessCanonicalCreationDraft(canonicalCopilotDraft);
+    if (!assessment.canPersist) {
+      setCopilotApplyError(assessment.clarifications[0]?.question ?? 'Review and confirm the canonical strategy draft before applying it.');
+      return;
+    }
+    try {
+      setCopilotApplyError('');
+      void onApply(adaptCanonicalCreationDraftToV2Persistence(profile, canonicalCopilotDraft).persisted);
+    } catch (error) {
+      setCopilotApplyError(error instanceof Error ? error.message : 'The canonical strategy draft could not be applied.');
+    }
   }
 
   function addCopilotTurn() {
@@ -523,30 +553,25 @@ export default function StrategyBuilderV2({
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    sessionId: 'strategy-builder-v2',
+                    sessionId: copilotSessionId,
                     message: copilotInput,
                     previousDraft: copilotDraft,
+                    previousCanonicalDraft: canonicalCopilotDraft,
                   }),
                 });
                 const payload = await response.json();
                 if (!response.ok) {
                   throw new Error(payload?.error || 'AI draft unavailable');
                 }
-                const nextDraft = payload.strategyDraft ?? copilotDraft;
-                setCopilotDraft(nextDraft);
-                setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
-                setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
-                setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
-                  methodologyIds: selectedMethodologyIds,
-                  ruleSelections: nextDraft.rules.length ? nextDraft.rules : canonicalRuleSelections,
-                }));
-                setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
-                setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
+                const assessment = acceptCopilotPayload(payload, copilotInput);
                 setCopilotConversation((current) => [
                   ...current,
                   { heading: 'Strategy Copilot', text: payload.message || 'Got it. I drafted the following strategy for review.' },
                   ...((Array.isArray(payload.changes) && payload.changes.length)
                     ? [{ heading: 'Changes detected', text: payload.changes.join(' • ') }]
+                    : []),
+                  ...(assessment.clarifications.length
+                    ? [{ heading: 'Clarification needed', text: assessment.clarifications.map((item) => item.question).join(' • ') }]
                     : []),
                 ]);
                 setCopilotRefinementInput('');
@@ -583,29 +608,24 @@ export default function StrategyBuilderV2({
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        sessionId: 'strategy-builder-v2',
+                        sessionId: copilotSessionId,
                         message: copilotRefinementInput,
                         previousDraft: copilotDraft,
+                        previousCanonicalDraft: canonicalCopilotDraft,
                       }),
                     });
                     const payload = await response.json();
                     if (!response.ok) {
                       throw new Error(payload?.error || 'AI refinement unavailable');
                     }
-                    const nextDraft = payload.strategyDraft ?? copilotDraft;
-                    setCopilotDraft(nextDraft);
-                    setSelectedInstruments(nextDraft.instrument ? [nextDraft.instrument] : selectedInstruments);
-                    setSessions(nextDraft.sessions.length ? nextDraft.sessions : sessions);
-                    setSelectedRuleSelections(reconcileRuleSelectionsWithMethodologies({
-                      methodologyIds: selectedMethodologyIds,
-                      ruleSelections: nextDraft.rules.length ? nextDraft.rules : canonicalRuleSelections,
-                    }));
-                    setRiskPercent(typeof nextDraft.riskPercent === 'number' ? nextDraft.riskPercent : riskPercent);
-                    setMinimumRR(typeof nextDraft.minimumRR === 'number' ? nextDraft.minimumRR : minimumRR);
+                    const assessment = acceptCopilotPayload(payload, copilotRefinementInput);
                     setCopilotConversation((current) => [
                       ...current,
                       { heading: 'You', text: copilotRefinementInput },
                       { heading: 'Strategy Copilot', text: payload.message || 'I updated the draft to reflect your refinement.' },
+                      ...(assessment.clarifications.length
+                        ? [{ heading: 'Clarification needed', text: assessment.clarifications.map((item) => item.question).join(' • ') }]
+                        : []),
                     ]);
                     setCopilotRefinementInput('');
                     setCopilotReviewVisible(true);
@@ -650,18 +670,33 @@ export default function StrategyBuilderV2({
 
           {copilotDraft.rules.length > 0 && (
             <div>
-              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{setStrategyName(event.target.value);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
-              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>setContextTimeframe(event.target.value)}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>setExecutionTimeframe(event.target.value)}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
+              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{const name=event.target.value;setStrategyName(name);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{name},{name:'EXPLICIT'}));setCopilotApproved(false);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
+              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>{const value=event.target.value;setContextTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{contextTimeframe:value||undefined},{contextTimeframe:'EXPLICIT'}));setCopilotApproved(false);}}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>{const value=event.target.value;setExecutionTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{executionTimeframe:value||undefined},{executionTimeframe:'EXPLICIT'}));setCopilotApproved(false);}}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
               <div className="button-row">
                 <button type="button" onClick={() => setPath('copilot')}>{w('Back')}</button>
-                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved} onClick={() => {
+                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || !copilotApproved || canonicalCopilotDraft.state !== 'CONFIRMED'} onClick={() => {
                   if (!copilotApproved) return;
                   buildCopilotApply();
                 }}>{w('Approve & Apply')}</button>
               </div>
               <label className="check-row">
-                <input type="checkbox" checked={copilotApproved} onChange={(event) => setCopilotApproved(event.target.checked)} />
+                <input type="checkbox" checked={copilotApproved} onChange={(event) => {
+                  if (!event.target.checked) {
+                    setCopilotApproved(false);
+                    setCanonicalCopilotDraft((current) => updateCanonicalCreationDraft(current, {}));
+                    return;
+                  }
+                  try {
+                    const confirmed = confirmCanonicalCreationDraft(canonicalCopilotDraft);
+                    setCanonicalCopilotDraft(confirmed);
+                    setCopilotApproved(true);
+                    setCopilotApplyError('');
+                  } catch (error) {
+                    setCopilotApproved(false);
+                    setCopilotApplyError(error instanceof Error ? error.message : 'Resolve the required clarification before approval.');
+                  }
+                }} />
                 <span>{w('I review and explicitly approve this draft before applying it to the deterministic engine.')}</span>
               </label>
             </div>
