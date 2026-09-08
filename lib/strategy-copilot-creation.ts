@@ -15,7 +15,12 @@ import {
   type ValueProvenance,
 } from './strategy-creation-contract.ts';
 import type { StrategyBuilderV2State } from './strategy-builder-v2-persistence.ts';
-import type { StrategyCopilotDraft, StrategyCopilotReply } from './strategy-copilot.ts';
+import {
+  extractExplicitMinimumRR,
+  extractExplicitRiskPercent,
+  type StrategyCopilotDraft,
+  type StrategyCopilotReply,
+} from './strategy-copilot.ts';
 
 export type CopilotCanonicalCreationResult = {
   draft: CanonicalCreationDraft;
@@ -132,8 +137,8 @@ function fieldProvenance(
   if (field === 'contextTimeframe') return timeframes.contextExplicit ? 'EXPLICIT' : 'INFERRED';
   if (field === 'executionTimeframe') return timeframes.executionExplicit ? 'EXPLICIT' : 'INFERRED';
   if (field === 'ruleSelections' || field === 'ruleTree') return rulesWereExplicit(message, draft, previous) ? 'EXPLICIT' : 'INFERRED';
-  if (field === 'riskPercent') return /(?:risk[^.\n%]{0,30}[0-9]+(?:\.[0-9]+)?\s*%|[0-9]+(?:\.[0-9]+)?\s*%[^.\n]{0,20}risk)/i.test(message) ? 'EXPLICIT' : 'INFERRED';
-  if (field === 'minimumRR') return /(?:minimum\s+)?(?:rr|risk[- ]to[- ]reward|risk reward)[^.\n]{0,24}(?:1\s*:\s*)?[0-9]+(?:\.[0-9]+)?/i.test(message) ? 'EXPLICIT' : 'INFERRED';
+  if (field === 'riskPercent') return extractExplicitRiskPercent(message) !== undefined ? 'EXPLICIT' : 'INFERRED';
+  if (field === 'minimumRR') return extractExplicitMinimumRR(message) !== undefined ? 'EXPLICIT' : 'INFERRED';
   if (field === 'direction') return /\b(?:long|short|buy|sell|both directions?)\b/i.test(message) ? 'EXPLICIT' : 'INFERRED';
   return 'INFERRED';
 }
@@ -143,6 +148,8 @@ function canonicalValues(reply: StrategyCopilotReply, message: string, previous?
   const timeframes = resolveTimeframeRoles(message, draft, previous);
   const rules = draft.rules.length ? structuredClone(draft.rules) : previous?.values.ruleSelections ?? [];
   const usableName = draft.name && draft.name !== 'Draft from description' ? draft.name : previous?.values.name;
+  const explicitRiskPercent = extractExplicitRiskPercent(message);
+  const explicitMinimumRR = extractExplicitMinimumRR(message);
 
   return {
     ...(usableName ? { name: usableName } : {}),
@@ -152,8 +159,20 @@ function canonicalValues(reply: StrategyCopilotReply, message: string, previous?
     ...(timeframes.executionTimeframe ? { executionTimeframe: timeframes.executionTimeframe } : {}),
     methodologyIds: previous?.values.methodologyIds ?? [],
     ...(rules.length ? { ruleSelections: rules, ruleTree: createPersistedV2RuleTree(rules) } : {}),
-    ...(typeof draft.riskPercent === 'number' ? { riskPercent: draft.riskPercent } : previous ? { riskPercent: previous.values.riskPercent } : {}),
-    ...(typeof draft.minimumRR === 'number' ? { minimumRR: draft.minimumRR } : previous ? { minimumRR: previous.values.minimumRR } : {}),
+    ...(explicitRiskPercent !== undefined
+      ? { riskPercent: explicitRiskPercent }
+      : typeof draft.riskPercent === 'number'
+        ? { riskPercent: draft.riskPercent }
+        : previous
+          ? { riskPercent: previous.values.riskPercent }
+          : {}),
+    ...(explicitMinimumRR !== undefined
+      ? { minimumRR: explicitMinimumRR }
+      : typeof draft.minimumRR === 'number'
+        ? { minimumRR: draft.minimumRR }
+        : previous
+          ? { minimumRR: previous.values.minimumRR }
+          : {}),
     ...(draft.direction ? { direction: draft.direction } : previous?.values.direction ? { direction: previous.values.direction } : {}),
   };
 }
@@ -225,9 +244,12 @@ export function mapCopilotReplyToCanonicalCreation({
 
   for (const field of Object.keys(values) as CanonicalCreationField[]) {
     const value = values[field as keyof StrategyBuilderV2State];
-    if (same(value, draft.values[field as keyof StrategyBuilderV2State])) continue;
+    const nextProvenance = fieldProvenance(field, userMessage, reply.strategyDraft, timeframes, previousDraft);
+    const sameValue = same(value, draft.values[field as keyof StrategyBuilderV2State]);
+    const repairsExplicitProvenance = nextProvenance === 'EXPLICIT' && draft.provenance[field] !== 'EXPLICIT';
+    if (sameValue && !repairsExplicitProvenance) continue;
     (patch as Record<string, unknown>)[field] = value;
-    provenance[field] = fieldProvenance(field, userMessage, reply.strategyDraft, timeframes, previousDraft);
+    provenance[field] = nextProvenance;
   }
 
   if (Object.keys(patch).length) draft = updateCanonicalCreationDraft(draft, patch, provenance);

@@ -167,6 +167,25 @@ test('a populated value without provenance is rejected as a silent default', () 
   assert.equal(assessment.state, 'NEEDS_CLARIFICATION');
   assert.ok(assessment.issues.some((issue) => issue.code === 'UNATTRIBUTED_VALUE' && issue.field === 'instruments'));
   assert.ok(assessment.clarifications.some((item) => item.code === 'CONFIRM_VALUE_SOURCE' && item.field === 'instruments'));
+  assert.doesNotMatch(
+    assessment.clarifications.map((item) => item.question).join(' '),
+    /riskPercent|minimumRR|ruleSelections|instruments/,
+  );
+});
+
+test('unattributed sensitive values are clarified in trader-facing language', () => {
+  const values = completeState();
+  const provenance = provenanceFor(values);
+  delete provenance.riskPercent;
+  const assessment = assessCanonicalCreationDraft(
+    createCanonicalCreationDraft({ intent: 'CREATE', values, provenance }),
+  );
+  const clarification = assessment.clarifications.find(
+    (item) => item.code === 'CONFIRM_VALUE_SOURCE' && item.field === 'riskPercent',
+  );
+
+  assert.match(clarification?.question ?? '', /maximum risk per trade/i);
+  assert.doesNotMatch(clarification?.question ?? '', /riskPercent/);
 });
 
 test('new unknown rules fail closed while DESCRIPTIVE rules never become mandatory evidence', () => {

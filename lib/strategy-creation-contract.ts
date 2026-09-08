@@ -299,9 +299,25 @@ function assessIssues(draft: CanonicalCreationDraft, missingFields: CanonicalCre
   return issues;
 }
 
+const creationFieldLabels: Partial<Record<CanonicalCreationField, string>> = {
+  name: 'strategy name',
+  instruments: 'market selection',
+  sessions: 'trading window',
+  contextTimeframe: 'context timeframe',
+  executionTimeframe: 'execution timeframe',
+  ruleSelections: 'trading conditions',
+  ruleTree: 'condition relationships',
+  riskPercent: 'maximum risk per trade',
+  minimumRR: 'minimum risk-to-reward ratio',
+  stopLogic: 'stop logic',
+  targetLogic: 'target logic',
+  direction: 'trade direction',
+};
+
 function clarificationForIssue(issue: CanonicalCreationIssue): CanonicalClarification | null {
   if (issue.code === 'UNATTRIBUTED_VALUE') {
-    return { code: 'CONFIRM_VALUE_SOURCE', field: issue.field, question: `Was ${issue.field} provided by the trader, inferred, explicitly accepted as a default, or loaded from a legacy strategy?` };
+    const label = issue.field ? creationFieldLabels[issue.field] ?? 'this strategy detail' : 'this strategy detail';
+    return { code: 'CONFIRM_VALUE_SOURCE', field: issue.field, question: `Please confirm whether the ${label} matches how you trade.` };
   }
   if (issue.code === 'UNKNOWN_RULE') {
     return { code: 'RESOLVE_UNKNOWN_RULE', field: 'ruleSelections', question: 'This rule is not supported by the canonical catalog. Should it remain a non-authoritative description or be replaced with a supported rule?' };

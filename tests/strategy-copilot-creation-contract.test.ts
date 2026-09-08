@@ -10,7 +10,14 @@ import {
   isCopilotClarificationAnswered,
   mapCopilotReplyToCanonicalCreation,
 } from '../lib/strategy-copilot-creation.ts';
-import { mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotReply } from '../lib/strategy-copilot.ts';
+import {
+  emptyStrategyCopilotDraft,
+  extractExplicitMinimumRR,
+  extractExplicitRiskPercent,
+  mergeStrategyCopilotDraft,
+  normalizeStrategyCopilotReply,
+  type StrategyCopilotReply,
+} from '../lib/strategy-copilot.ts';
 
 const rule = (key = 'liquidity-sweep', overrides: Record<string, unknown> = {}) => ({
   key,
@@ -58,6 +65,58 @@ test('direct trader statements map to EXPLICIT canonical provenance', () => {
   }
   assert.equal(mapped.assessment.state, 'READY_FOR_REVIEW');
   assert.equal(mapped.assessment.canPersist, false);
+});
+
+test('natural-language risk and RR survive when the model omits both values', () => {
+  const riskStatement = 'I risk a maximum of 0.5% of the account per trade. My minimum risk-to-reward ratio is 1:2.';
+  const omitted = reply({
+    strategyDraft: {
+      ...reply().strategyDraft,
+      riskPercent: undefined,
+      minimumRR: undefined,
+    },
+  });
+
+  assert.equal(extractExplicitRiskPercent(riskStatement), 0.5);
+  assert.equal(extractExplicitMinimumRR(riskStatement), 2);
+
+  const normalized = normalizeStrategyCopilotReply(omitted, emptyStrategyCopilotDraft(), {
+    userMessage: riskStatement,
+  });
+  assert.equal(normalized.strategyDraft.riskPercent, 0.5);
+  assert.equal(normalized.strategyDraft.minimumRR, 2);
+
+  const mapped = mapCopilotReplyToCanonicalCreation({
+    userMessage: `${completePrompt} ${riskStatement}`,
+    reply: omitted,
+  });
+  assert.equal(mapped.draft.values.riskPercent, 0.5);
+  assert.equal(mapped.draft.values.minimumRR, 2);
+  assert.equal(mapped.draft.provenance.riskPercent, 'EXPLICIT');
+  assert.equal(mapped.draft.provenance.minimumRR, 'EXPLICIT');
+  assert.equal(mapped.assessment.missingFields.includes('riskPercent'), false);
+  assert.equal(mapped.assessment.missingFields.includes('minimumRR'), false);
+});
+
+test('an explicit answer repairs sensitive provenance even when its value is unchanged', () => {
+  const inferred = mapCopilotReplyToCanonicalCreation({
+    userMessage: 'Build a conservative London strategy for me.',
+    reply: reply(),
+  });
+  assert.equal(inferred.draft.values.riskPercent, 0.5);
+  assert.equal(inferred.draft.provenance.riskPercent, 'INFERRED');
+
+  const repaired = mapCopilotReplyToCanonicalCreation({
+    userMessage: 'Yes, my maximum risk per trade is 0.5%.',
+    reply: reply(),
+    previousDraft: inferred.draft,
+  });
+  assert.equal(repaired.draft.values.riskPercent, 0.5);
+  assert.equal(repaired.draft.provenance.riskPercent, 'EXPLICIT');
+  assert.equal(
+    repaired.assessment.issues.some((issue) => issue.code === 'UNATTRIBUTED_VALUE' && issue.field === 'riskPercent'),
+    false,
+  );
 });
 
 test('Copilot deductions remain INFERRED and sensitive values require trader confirmation', () => {

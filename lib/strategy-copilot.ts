@@ -164,6 +164,38 @@ export function rejectUnsupportedStrategyCopilotFields(draft: Record<string, unk
   return unsupported;
 }
 
+function decimalNumber(value: string): number {
+  return Number(value.replace(',', '.'));
+}
+
+export function extractExplicitRiskPercent(message: string): number | undefined {
+  const patterns = [
+    /\b(?:risk|risking|riesgo|arriesgo)[^.\n%]{0,45}?([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /\b([0-9]+(?:[.,][0-9]+)?)\s*%[^.\n]{0,30}?\b(?:per trade|each trade|por (?:cada )?operaci[oó]n)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (!match?.[1]) continue;
+    const value = decimalNumber(match[1]);
+    if (Number.isFinite(value) && value > 0 && value <= 10) return value;
+  }
+  return undefined;
+}
+
+export function extractExplicitMinimumRR(message: string): number | undefined {
+  const patterns = [
+    /\b(?:minimum\s+)?(?:rr|r\s*:\s*r|risk[- ]to[- ]reward(?:\s+ratio)?|risk reward|riesgo[- ]beneficio)[^.\n]{0,35}?(?:1\s*:\s*)?([0-9]+(?:[.,][0-9]+)?)/i,
+    /\b(?:minimum|min(?:imum)?\.?|m[ií]nimo(?:\s+de)?)\s+(?:is\s+|of\s+|es\s+)?(?:1\s*:\s*)?([0-9]+(?:[.,][0-9]+)?)\s*r\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (!match?.[1]) continue;
+    const value = decimalNumber(match[1]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return undefined;
+}
+
 export function normalizeStrategyCopilotReply(
   value: unknown,
   previous: StrategyCopilotDraft = emptyStrategyCopilotDraft(),
@@ -212,12 +244,14 @@ export function normalizeStrategyCopilotReply(
     ? draft.timeframes.filter((item): item is string => typeof item === 'string' && timeframes.has(item))
     : previous.timeframes;
 
-  const explicitlyChangesRisk = /(?:risk[^.\n%]{0,30}[0-9]+(?:\.[0-9]+)?\s*%|[0-9]+(?:\.[0-9]+)?\s*%[^.\n]{0,20}risk)/i.test(context.userMessage ?? '');
-  const explicitlyChangesRR = /(?:minimum\s+)?(?:rr|risk[- ]to[- ]reward|risk reward)[^.\n]{0,24}(?:1\s*:\s*)?[0-9]+(?:\.[0-9]+)?/i.test(context.userMessage ?? '');
+  const explicitRisk = extractExplicitRiskPercent(context.userMessage ?? '');
+  const explicitRR = extractExplicitMinimumRR(context.userMessage ?? '');
+  const explicitlyChangesRisk = explicitRisk !== undefined;
+  const explicitlyChangesRR = explicitRR !== undefined;
   const validRisk = typeof draft.riskPercent === 'number' && Number.isFinite(draft.riskPercent) && draft.riskPercent > 0 && draft.riskPercent <= 10 ? draft.riskPercent : undefined;
   const validRR = typeof draft.minimumRR === 'number' && Number.isFinite(draft.minimumRR) && draft.minimumRR > 0 ? draft.minimumRR : undefined;
-  const risk = typeof previous.riskPercent === 'number' && !explicitlyChangesRisk ? previous.riskPercent : validRisk ?? previous.riskPercent;
-  const rr = typeof previous.minimumRR === 'number' && !explicitlyChangesRR ? previous.minimumRR : validRR ?? previous.minimumRR;
+  const risk = explicitlyChangesRisk ? explicitRisk : typeof previous.riskPercent === 'number' ? previous.riskPercent : validRisk;
+  const rr = explicitlyChangesRR ? explicitRR : typeof previous.minimumRR === 'number' ? previous.minimumRR : validRR;
 
   const rawLogicTree = draft.logicTree && typeof draft.logicTree === 'object' ? (draft.logicTree as Record<string, unknown>) : null;
   const next: StrategyCopilotDraft = {
@@ -411,8 +445,8 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
   }
 
   const explicitTimeframes = extractMentionedTimeframes(rawMessage);
-  const riskMatch = rawMessage.match(/maximum risk per trade is\s*([0-9]+(?:\.[0-9]+)?)\s*%?/i);
-  const rrMatch = rawMessage.match(/minimum risk-to-reward ratio is\s*(?:1\s*:\s*)?([0-9]+(?:\.[0-9]+)?)/i);
+  const explicitRisk = extractExplicitRiskPercent(rawMessage);
+  const explicitRR = extractExplicitMinimumRR(rawMessage);
 
   nextDraft.rules = rules;
   nextDraft.timeframes = explicitTimeframes.length ? explicitTimeframes : currentDraft.timeframes.length ? currentDraft.timeframes : ['M5'];
@@ -420,8 +454,8 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
     logic: anyRequested ? 'ALL' : 'ALL',
     children: rules.map((rule) => rule.key),
   };
-  nextDraft.riskPercent = riskMatch ? Number(riskMatch[1]) : currentDraft.riskPercent;
-  nextDraft.minimumRR = rrMatch ? Number(rrMatch[1]) : currentDraft.minimumRR;
+  nextDraft.riskPercent = explicitRisk ?? currentDraft.riskPercent;
+  nextDraft.minimumRR = explicitRR ?? currentDraft.minimumRR;
   if (/\b(?:long only|buy only|only long|only buy)\b/i.test(rawMessage)) nextDraft.direction = 'LONG';
   else if (/\b(?:short only|sell only|only short|only sell)\b/i.test(rawMessage)) nextDraft.direction = 'SHORT';
   else if (/\b(?:both directions?|long and short|buy and sell)\b/i.test(rawMessage)) nextDraft.direction = 'BOTH';
