@@ -60,7 +60,7 @@ test('Analyze narrative hierarchy is responsive and moves the answer before the 
   const css=source('app/trade-police.css');
   const validator=source('components/TradeValidator.tsx');
 
-  assert.match(validator,/className="card primary-workspace-surface decision-report-workspace narrative-workspace"/);
+  assert.match(validator,/className="card primary-workspace-surface decision-report-workspace narrative-workspace validate-decision-details"/);
   assert.match(validator,/>Why\?</);
   assert.match(validator,/>What is missing\?</);
   assert.match(validator,/>What should I do next\?</);
