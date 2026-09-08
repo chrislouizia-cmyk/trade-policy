@@ -58,7 +58,7 @@ function toneForVerdict(verdict: string | null) {
 }
 
 function tabHref(view: (typeof views)[number]) {
-  return view === 'all' ? '/history' : `/history?view=${view}`;
+  return view === 'trades' ? '/history' : `/history?view=${view}`;
 }
 
 function TradeJournalRow({ item, c, locale }: { item: HistoryTradeItem; c: ScreenCopy['history']; locale: Locale }) {
@@ -142,7 +142,7 @@ function JournalRow({ item, c, locale }: { item: HistoryJournalItem; c: ScreenCo
 
 export default async function HistoryPage({ searchParams }: { searchParams: Promise<Search> }) {
   const filters = await searchParams;
-  const selectedView = views.includes(filters.view as (typeof views)[number]) ? filters.view as (typeof views)[number] : 'all';
+  const selectedView = views.includes(filters.view as (typeof views)[number]) ? filters.view as (typeof views)[number] : 'trades';
   const s = await createClient();
   const { data: { user } } = await s.auth.getUser();
   if (!user) redirect('/client/login?next=/history');
@@ -202,15 +202,15 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
         </header>
 
         <nav className="history-view-tabs" aria-label="History record type">
-          <a href="/history" aria-current={selectedView === 'all' ? 'page' : undefined}>{c.allActivity} <span>{journal.all.length}</span></a>
-          <a href="/history?view=trades" aria-current={selectedView === 'trades' ? 'page' : undefined}>{c.trades} <span>{journal.trades.length}</span></a>
+          <a href="/history" aria-current={selectedView === 'trades' ? 'page' : undefined}>{c.trades} <span>{journal.trades.length}</span></a>
           <a href="/history?view=decisions" aria-current={selectedView === 'decisions' ? 'page' : undefined}>{c.decisions} <span>{journal.decisions.length}</span></a>
+          <a href="/history?view=all" aria-current={selectedView === 'all' ? 'page' : undefined}>{c.allActivity} <span>{journal.all.length}</span></a>
         </nav>
 
         <details className="history-filter-disclosure" open={hasFilters}>
           <summary><span>{c.filter}</span><small>{hasFilters ? c.activeFilters : c.filterHint}</small></summary>
           <form className="history-filter-bar history-journal-filters" method="get">
-            {selectedView !== 'all' ? <input type="hidden" name="view" value={selectedView} /> : null}
+            {selectedView !== 'trades' ? <input type="hidden" name="view" value={selectedView} /> : null}
             <label className="history-search-field"><span>{c.search}</span><input name="q" defaultValue={filters.q ?? ''} placeholder={c.searchPlaceholder} /></label>
             <label><span>{c.verdict}</span><select name="verdict" defaultValue={filters.verdict ?? ''}><option value="">{c.allVerdicts}</option>{verdicts.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
             <label><span>{c.status}</span><select name="status" defaultValue={filters.status ?? ''}><option value="">{c.allStatuses}</option><option value="OPEN">{c.open}</option><option value="CLOSED">{c.closed}</option></select></label>
