@@ -151,7 +151,7 @@ test('live quote cadence is lightweight and active candles evolve without full-h
   assert.equal(updated.at(-1)?.high, 101.4);
   assert.equal(updated.at(-1)?.low, 99.8);
   assert.equal(updated.at(-1)?.open, 100.5);
-  assert.equal(getLiveQuotePollingIntervalMs(), 1500);
+  assert.equal(getLiveQuotePollingIntervalMs(), 30_000);
   assert.notEqual(getPollingIntervalMs('H1'), getLiveQuotePollingIntervalMs());
   assert.equal(getCanonicalBucketStartMs(Date.parse('2025-01-03T01:30:00.000Z'), 'H1'), Date.parse('2025-01-03T01:00:00.000Z'));
   assert.equal(getCanonicalBucketStartIso('2025-01-03T01:30:00.000Z', 'H1'), '2025-01-03T01:00:00.000Z');
@@ -350,9 +350,9 @@ test('polling utilities auto-refresh on a timeframe-aware schedule and preserve 
   const merged = mergeIncomingCandles(previous, incoming);
   assert.deepEqual(merged.map((item) => item.datetime), ['2025-01-01T00:00:00.000Z', '2025-01-01T01:00:00.000Z', '2025-01-01T02:00:00.000Z', '2025-01-01T03:00:00.000Z']);
   assert.deepEqual(resolveCandlesFetchOutcomeFromHook(previous, { error: { message: 'Market feed timed out.' } }, false, true).candles, previous);
-  assert.equal(getPollingIntervalMs('M5'), 15_000);
-  assert.equal(getPollingIntervalMs('H1'), 60_000);
-  assert.equal(getPollingIntervalMs('D1'), 300_000);
+  assert.equal(getPollingIntervalMs('M5'), 300_000);
+  assert.equal(getPollingIntervalMs('H1'), 3_600_000);
+  assert.equal(getPollingIntervalMs('D1'), 86_400_000);
 
   const hook = fs.readFileSync('components/useMarketCandles.ts', 'utf8');
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
@@ -361,7 +361,8 @@ test('polling utilities auto-refresh on a timeframe-aware schedule and preserve 
   assert.match(hook, /fetchLatestQuote/);
   assert.match(hook, /\/api\/market\/quote\?/);
   assert.match(hook, /getLiveQuotePollingIntervalMs\(\)/);
-  assert.match(hook, /Math\.max\(300_000, getPollingIntervalMs\(timeframe\) \* 10\)/);
+  assert.match(hook, /response\.status === 429/);
+  assert.match(hook, /\}, getPollingIntervalMs\(timeframe\)\)/);
   assert.match(hook, /window\.clearInterval\(interval\)/);
   assert.match(chart, /initialVisibleRangeRef\.current = true;/);
   assert.match(chart, /if \(!initialVisibleRangeRef\.current\) \{\s*const range = getInitialVisibleLogicalRange\(candles\.length, timeframe\);\s*const timeScale = chartRef\.current\?\.timeScale\(\);\s*if \(timeScale\) \{\s*timeScale\.setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\);\s*\}\s*initialVisibleRangeRef\.current = true;\s*\}/s);

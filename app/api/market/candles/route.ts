@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const parsed = parseMarketCandleRequest(Object.fromEntries(url.searchParams));
     if (!parsed.ok) return apiError(parsed.code, parsed.message, 400, parsed.details);
     const { instrument, timeframe, from, to } = parsed.value;
-    await reserveTwelveDataCredits({requestKey:`candles:${user.id}:${instrument}:${timeframe}:${from}:${to}`,operation:'chart.candles',priority:'INTERACTIVE',credits:1});
+    await reserveTwelveDataCredits({requestKey:`candles:${user.id}:${instrument}:${timeframe}:${from}:${to}`,operation:'chart.candles',priority:'BACKGROUND',credits:1});
     const candles = await fetchSeriesRange(instrument, timeframe, from, to);
     return NextResponse.json({ instrument, timeframe, from, to, provider: 'Twelve Data', candles }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {

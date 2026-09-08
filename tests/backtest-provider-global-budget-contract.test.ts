@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const cache = fs.readFileSync('lib/server/backtest-historical-cache.ts', 'utf8');
-const migration = fs.readFileSync('supabase/migrations/096_coordinate_twelve_data_credits.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/098_coordinate_twelve_data_credits.sql', 'utf8');
 
 test('provider budget is database-coordinated across all serverless instances', () => {
   assert.doesNotMatch(cache, /__tradePoliceTwelveDataBudget/);

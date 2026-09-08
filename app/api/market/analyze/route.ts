@@ -63,9 +63,9 @@ export async function POST(req: Request) {
     }
     if(error instanceof MarketDataProviderError&&error.code==='RATE_LIMITED'){
       console.warn('[TWELVE_DATA_RATE_LIMITED]',{endpoint:'/api/market/analyze',retryAfterSeconds:error.retryAfterSeconds});
-      return apiError('MARKET_DATA_RATE_LIMITED','Market data reached its provider minute limit. Please retry in one minute.',429,{retryAfterSeconds:error.retryAfterSeconds});
+      return apiError('MARKET_DATA_RATE_LIMITED','Market data needs another moment. Trade Police will retry automatically.',429,{retryAfterSeconds:error.retryAfterSeconds??61});
     }
-    if(error instanceof ProviderCreditLimitError)return apiError('MARKET_DATA_CREDIT_WINDOW',error.message,429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt,reason:error.reservation.reason});
+    if(error instanceof ProviderCreditLimitError)return apiError('MARKET_DATA_CREDIT_WINDOW','Market data needs another moment. Trade Police will retry automatically.',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});
     if(supabase){await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}}));await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}}))}
     return publicApiError({message:'Market analysis unavailable.',code:'MARKET_ANALYSIS_UNAVAILABLE',internalCode:'LIVE_MARKET_ANALYSIS_FAILED',provider:'twelvedata',endpoint:'/api/market/analyze',error});
   }

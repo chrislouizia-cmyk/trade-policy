@@ -168,17 +168,21 @@ export function mergeIncomingCandles(previousCandles: readonly Candle[], incomin
 
 export function getPollingIntervalMs(timeframe: string): number {
   switch ((timeframe ?? '').toUpperCase()) {
-    case 'M5': return 15_000;
-    case 'M30': return 30_000;
-    case 'H1': return 60_000;
-    case 'H4': return 180_000;
-    case 'D1': return 300_000;
-    default: return 60_000;
+    case 'M1': return 60_000;
+    case 'M3': return 180_000;
+    case 'M5': return 300_000;
+    case 'M15': return 900_000;
+    case 'M30': return 1_800_000;
+    case 'H1': return 3_600_000;
+    case 'H2': return 7_200_000;
+    case 'H4': return 14_400_000;
+    case 'D1': return 86_400_000;
+    default: return 3_600_000;
   }
 }
 
 export function getLiveQuotePollingIntervalMs(): number {
-  return 1_500;
+  return 30_000;
 }
 
 export function useMarketCandles(instrument: string, timeframe: string) {
@@ -282,6 +286,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
       provider?: string;
       instrument?: string;
     } | null;
+    if (response.status === 429) return;
     if (!response.ok || payload == null || !Number.isFinite(Number(payload.price))) {
       if (token === liveQuoteSeqRef.current) {
         setError((current) => current || 'Live market price is currently unavailable.');
@@ -331,7 +336,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
       if (document.visibilityState === 'visible') {
         void fetchCandles(false, true);
       }
-    }, Math.max(300_000, getPollingIntervalMs(timeframe) * 10));
+    }, getPollingIntervalMs(timeframe));
     return () => window.clearInterval(lowFrequencyResync);
   }, [fetchCandles, timeframe]);
 

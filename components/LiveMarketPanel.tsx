@@ -14,6 +14,17 @@ const scanStages = [
   'Preparing your Decision Report',
 ];
 
+export function marketAnalysisRetryDelay(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return null;
+  const code = (error as { code?: unknown }).code;
+  if (code !== 'MARKET_DATA_RATE_LIMITED' && code !== 'MARKET_DATA_CREDIT_WINDOW') return null;
+  const details = (error as { details?: unknown }).details;
+  const requested = details && typeof details === 'object' ? Number((details as { retryAfterSeconds?: unknown }).retryAfterSeconds) : NaN;
+  return Number.isFinite(requested) ? Math.max(2, Math.min(65, Math.ceil(requested))) : 61;
+}
+
 export default function LiveMarketPanel({
   strategy,
   strategyRevisionId,
@@ -40,16 +51,27 @@ export default function LiveMarketPanel({
   const [loading, setLoading] = useState(false);
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
+  const [waitingForMarketData, setWaitingForMarketData] = useState(false);
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
   const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
   const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
   const analysisContextRef = useRef('');
+  const retryTimerRef = useRef<number | null>(null);
 
   useEffect(()=>{
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
     analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
     setAnalysis(null);
     setError('');
+    setWaitingForMarketData(false);
+    setLoading(false);
+    onLoadingChange?.(false);
   },[selectedInstrument,strategy.id,strategyRevisionId]);
+
+  useEffect(() => () => {
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!availableTimeframes.includes(chartTimeframe)) setChartTimeframe(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
@@ -74,20 +96,22 @@ export default function LiveMarketPanel({
     return () => window.clearInterval(timer);
   }, [loading]);
 
-  async function scan() {
+  async function scan(retryAttempt = 0) {
     if (!strategy.id || !strategyRevisionId) {
       setError('The selected strategy is still loading. Please wait a moment and try again.');
       return;
     }
     setLoading(true);
+    setWaitingForMarketData(false);
     onLoadingChange?.(true);
     setStageIndex(0);
     setError('');
     setAnalysis(null);
-    onReset?.();
+    if (retryAttempt === 0) onReset?.();
 
     const controller=new AbortController();
     const timeout=window.setTimeout(()=>controller.abort(),25_000);
+    let retryScheduled = false;
     try {
       const requestKey=crypto.randomUUID();
       const requestContextKey = `${strategy.id}:${strategyRevisionId}:${selectedInstrument}`;
@@ -106,6 +130,16 @@ export default function LiveMarketPanel({
       if(redirectExpiredSession(response,'/validate'))return;
 
       if (!response.ok) {
+        const retryDelay = marketAnalysisRetryDelay(result);
+        if (retryAttempt === 0 && retryDelay !== null) {
+          retryScheduled = true;
+          setWaitingForMarketData(true);
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null;
+            void scan(1);
+          }, retryDelay * 1_000);
+          return;
+        }
         setError(apiErrorMessage(result,'Market analysis is temporarily unavailable. Please try again shortly.'));
         return;
       }
@@ -128,8 +162,11 @@ export default function LiveMarketPanel({
       setError(error instanceof Error&&error.name==='AbortError'?'Market analysis timed out. Your trade data was not changed. Please try again.':'Market analysis is temporarily unavailable. Your trade data was not changed.');
     } finally {
       window.clearTimeout(timeout);
-      setLoading(false);
-      onLoadingChange?.(false);
+      if (!retryScheduled) {
+        setWaitingForMarketData(false);
+        setLoading(false);
+        onLoadingChange?.(false);
+      }
     }
   }
 
@@ -153,8 +190,8 @@ export default function LiveMarketPanel({
               {strategy.instruments.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
-          <button className="primary" data-market-check type="button" onClick={scan} disabled={loading || strategyLoading || !strategy.id || !strategyRevisionId}>
-            {strategyLoading ? 'Applying strategy…' : !strategy.id || !strategyRevisionId ? 'Loading strategy…' : loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
+          <button className="primary" data-market-check type="button" onClick={() => { void scan(); }} disabled={loading || strategyLoading || !strategy.id || !strategyRevisionId}>
+            {strategyLoading ? 'Applying strategy…' : !strategy.id || !strategyRevisionId ? 'Loading strategy…' : waitingForMarketData ? 'Waiting for fresh market data…' : loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
           </button>
         </div>
       </div>
@@ -165,7 +202,7 @@ export default function LiveMarketPanel({
             <span style={{ width: `${((stageIndex + 1) / scanStages.length) * 100}%` }} />
           </div>
           <div className="analysis-progress-stages" aria-hidden="true">{scanStages.map((stage,index)=><i className={index<stageIndex?'complete':index===stageIndex?'current':''} key={stage}/>)}</div>
-          <small>{scanStages[stageIndex]}</small>
+          <small>{waitingForMarketData ? 'Market data is refreshing. Trade Police will continue automatically.' : scanStages[stageIndex]}</small>
         </div>
       )}
 
@@ -182,7 +219,7 @@ export default function LiveMarketPanel({
       <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
       {analysis ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
-      {error && <div className="error analysis-error" role="alert"><strong>No decision was produced.</strong><p>{error}</p><small>Failed market-analysis attempts are released and do not consume monthly usage. Your selected instrument and trading rules are unchanged.</small><button type="button" onClick={scan}>Retry analysis</button></div>}
+      {error && <div className="error analysis-error" role="alert"><strong>Market check needs another moment.</strong><p>{error}</p><small>Nothing was changed or counted. Your selected instrument and trading rules are safe.</small><button type="button" onClick={() => { void scan(); }}>Try again</button></div>}
     </section>
   );
 }
