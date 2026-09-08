@@ -111,7 +111,9 @@ test('an explicit timeframe choice resolves a repeated required-versus-informati
     userMessage: completePrompt,
     reply: reply({ unresolvedQuestions: [question] }),
   });
-  assert.equal(initial.assessment.state, 'NEEDS_CLARIFICATION');
+  assert.equal(initial.draft.unresolvedInputs.length, 0);
+  assert.equal(initial.assessment.state, 'READY_FOR_REVIEW');
+  assert.equal(initial.assessment.canReview, true);
 
   const resolved = mapCopilotReplyToCanonicalCreation({
     userMessage: 'Keep H1 informational only.',
@@ -123,14 +125,15 @@ test('an explicit timeframe choice resolves a repeated required-versus-informati
   assert.equal(resolved.assessment.canReview, true);
 });
 
-test('an unrelated refinement cannot silently dismiss a pending clarification', () => {
-  const question = 'Do you want the H1 confirmation to be a required structural filter, or should H1 remain informational only?';
-  assert.equal(isCopilotClarificationAnswered('Keep risk at 0.5%.', question), false);
-  assert.equal(isCopilotClarificationAnswered('Keep M15 informational only.', question), false);
+test('an unrelated refinement cannot silently dismiss a genuinely unrepresented clarification', () => {
+  const timeframeQuestion = 'Do you want the H1 confirmation to be a required structural filter, or should H1 remain informational only?';
+  const unresolvedQuestion = 'Do you accept the discretionary override?';
+  assert.equal(isCopilotClarificationAnswered('Keep risk at 0.5%.', timeframeQuestion), false);
+  assert.equal(isCopilotClarificationAnswered('Keep M15 informational only.', timeframeQuestion), false);
 
   const mapped = mapCopilotReplyToCanonicalCreation({
     userMessage: 'Keep risk at 0.5%.',
-    reply: reply({ unresolvedQuestions: [question] }),
+    reply: reply({ unresolvedQuestions: [unresolvedQuestion] }),
   });
   assert.ok(mapped.draft.unresolvedInputs.some((item) => item.kind === 'QUESTION'));
   assert.equal(mapped.assessment.canReview, false);

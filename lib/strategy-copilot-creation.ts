@@ -185,7 +185,7 @@ export function isCopilotClarificationAnswered(userMessage: string, question: st
 
 function unresolvedInputs(message: string, reply: StrategyCopilotReply): CanonicalUnresolvedInput[] {
   const parsed = parseCopilotPrompt(message);
-  const canonicalFieldQuestion = /\b(?:name|call|instrument|symbol|market|session|context|macro|timeframe|entry|execution|rule|condition|risk|reward|rr)\b/i;
+  const canonicalFieldQuestion = /\b(?:name|call|instrument|symbol|market|session|context|macro|timeframe|entry|execution|rule|condition|confirmation|filter|informational|risk|reward|rr)\b/i;
   const values: CanonicalUnresolvedInput[] = [
     ...parsed.unknownConcepts.map((text) => ({ kind: 'UNSUPPORTED_CONCEPT' as const, text, source: 'COPILOT' as const })),
     ...reply.unresolvedQuestions.flatMap((text) => {
