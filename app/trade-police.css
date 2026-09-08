@@ -2324,6 +2324,7 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 /* Validate decision terminal: one aligned, responsive information hierarchy. */
 .validate-page-flow{width:min(100%,1400px);margin-inline:auto;gap:16px}
 .validate-next-step{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 18px}.validate-next-step h2,.validate-next-step p{margin:0}.validate-next-step>p{max-width:680px;color:var(--muted);line-height:1.5}
+.validate-supporting-evidence{border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.02);overflow:hidden}.validate-supporting-evidence>summary{cursor:pointer;padding:15px 18px;font-weight:800}.validate-supporting-evidence-content{display:grid;gap:16px;padding:0 12px 12px}
 .validate-workspace-grid,.validate-workspace-grid[data-workspace-mode="full-width"]{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;width:100%}
 .validate-workspace-grid>.activation-walkthrough,.validate-workspace-grid>.decision-hero,.validate-workspace-grid>.market-context-strip,.validate-workspace-grid>.playbook-evaluation,.validate-workspace-grid>.trade-workspace,.validate-workspace-grid>.decision-workspace-column{grid-column:1;min-width:0}
 .decision-workspace-column,.decision-workspace-sticky{display:contents}

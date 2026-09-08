@@ -629,8 +629,6 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
     {analysis&&<div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
-    {analysis&&<MarketContextStrip analysis={analysis}/>}
-    {analysis&&<PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">{w('STEP 2 · REVIEW TRADE DETAILS')}</h2>
@@ -657,6 +655,14 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
         {manualRules.length>0&&<section className="workspace-section manual-confirmation-summary"><div><h3>{w('Manual confirmations')}</h3><strong>{pendingManualRules.length} pending</strong></div>{pendingManualRules.length?<ul>{pendingManualRules.map(rule=><li key={rule.ruleKey}>{ruleLabel(rule.ruleKey,rule.label)}</li>)}</ul>:<p className="success">All manual confirmations have an answer.</p>}<button type="button" onClick={()=>setShowManualConfirmations(true)}>{pendingManualRules.length?'Complete manual confirmations':'Review confirmations'}</button></section>}
         <section className="workspace-section confirmation-section"><h3>{w('Trade-specific check')}</h3><label className="check-row"><input name="highImpactNews" type="checkbox" checked={!!autoChecks.highImpactNews} onChange={e=>setAutoChecks(v=>({...v,highImpactNews:e.target.checked}))}/><span>High-impact news conflict<small>Confirm only for this proposed trade.</small></span></label></section>
       </form>
+
+    <details className="validate-supporting-evidence">
+      <summary>What Trade Police checked</summary>
+      <div className="validate-supporting-evidence-content">
+        <MarketContextStrip analysis={analysis}/>
+        <PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>
+      </div>
+    </details>
 
     {workspaceLayout.showDecisionColumn&&<aside className="decision-workspace-column">
       <div className="decision-workspace-sticky">
