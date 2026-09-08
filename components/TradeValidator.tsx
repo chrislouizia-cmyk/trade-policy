@@ -31,6 +31,7 @@ import { activePositionOverlayFromTrade, activatePositionOverlay, assessPosition
 import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
+import {deriveValidateExperienceState} from '@/lib/validate-experience-state';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -39,27 +40,6 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['retestConfirmed','Retest / rejection confirmed'], ['highImpactNews','High-impact news conflict']
 ];
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
-
-function getAnalysisStatusLabel(status: ChartAnalysis['status'] | undefined) {
-  switch (status) {
-    case 'VALID_ANALYSIS':
-      return 'Valid analysis';
-    case 'NO_RELEVANT_EVIDENCE':
-      return 'No setup detected';
-    case 'STRATEGY_UNSUPPORTED':
-      return 'Strategy rules not supported by live analysis';
-    case 'STRATEGY_INCOMPLETE':
-      return 'Strategy configuration incomplete';
-    case 'INSUFFICIENT_DATA':
-      return 'Insufficient market data';
-    case 'ANALYSIS_FAILED':
-      return 'Analysis unavailable';
-    case 'DATA_UNAVAILABLE':
-      return 'Market data unavailable';
-    default:
-      return 'Analysis pending';
-  }
-}
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
 type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string; authorizationEligibility?: TradeAuthorizationEligibility };
@@ -549,7 +529,6 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   const optionalMissing=narrative?.missingEvidence.filter(item=>!item.mandatory)??[];
   const workspaceLayout = useMemo(() => getDecisionWorkspaceLayoutState({ analysis, explanation, narrative }), [analysis, explanation, narrative]);
   const isValidAnalysis = analysis?.status === 'VALID_ANALYSIS';
-  const analysisStatusLabel = getAnalysisStatusLabel(analysis?.status);
   const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
   const authorizationEligibility = result?.authorizationEligibility ?? null;
   const hasExecutableSetup = Boolean(explanation && analysis?.status === 'VALID_ANALYSIS' && analysis?.candidates?.length);
@@ -560,6 +539,40 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   const chartPositionOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:persistedActiveOverlay??positionOverlay;
   const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY' && geometryAssessment.valid && positionOverlay?.status === 'PROPOSED';
   const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
+  const pendingRequiredManualRules = manualRules.filter(
+    (rule) => rule.mandatory && (manualEvidence[rule.ruleKey] ?? 'PENDING') === 'PENDING',
+  ).length;
+  const validateExperience = useMemo(() => deriveValidateExperienceState({
+    strategyReady: Boolean(strategy.id && activeStrategyRevisionId),
+    analyzing,
+    analysisStatus: analysis?.status ?? null,
+    hasAnalysis: Boolean(analysis),
+    hasExecutableSetup,
+    hasValidGeometry: geometryAssessment.valid,
+    pendingRequiredConfirmations: pendingRequiredManualRules,
+    finalResult: result ? { verdict: result.verdict } : null,
+    authorizationEligibility: authorizationEligibility ? {
+      allowed: authorizationEligibility.allowed,
+      state: authorizationEligibility.state,
+      reasonCode: authorizationEligibility.reasonCode,
+    } : null,
+    activating: savingTrade && (tradeActionMode === 'ACTIVATE' || tradeActionMode === 'OVERRIDE'),
+    activeTradeCreated: positionOverlay?.status === 'ACTIVE',
+    overrideEligible: result?.overrideEligible === true,
+  }), [
+    activeStrategyRevisionId,
+    analysis,
+    analyzing,
+    authorizationEligibility,
+    geometryAssessment.valid,
+    hasExecutableSetup,
+    pendingRequiredManualRules,
+    positionOverlay?.status,
+    result,
+    savingTrade,
+    strategy.id,
+    tradeActionMode,
+  ]);
   const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
   const activationUiState = useMemo(() => resolveTradeActivationUiState({
     authorizationEligibility,
@@ -589,16 +602,16 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     readinessPercent={analysis?.setupReadiness?.percentage ?? null}
     pendingCount={analysis?.setupReadiness?.required.pending ?? 0}
     violationsCount={result ? violatedCount : analysis?.setupReadiness?.required.failed ?? 0}
-    decisionStatus={result ? 'Final risk checked' : analysisStatusLabel}
+    decisionStatus={validateExperience.label}
     finalized={Boolean(result)}
     finalRiskCheckAvailable={!result && isValidAnalysis}
     finalRiskCheckBusy={loading}
-    finalRiskCheckDisabled={reviewActive}
+    finalRiskCheckDisabled={reviewActive || !validateExperience.canRunFinalRiskCheck}
     authorizationError={error}
     onMarkMissed={result?()=>setTradeActionMode('MISSED'):undefined}
     onViewHistory={()=>{window.location.href='/history'}}
   /> : null;
-  return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
+  return <div className="validate-page-flow" data-validate-state={validateExperience.state}><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
     <section className="card selected-validation-strategy" aria-live="polite">
@@ -616,6 +629,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">{w('STEP 2 · REVIEW TRADE DETAILS')}</h2>
+        <p className="muted" data-validate-status><strong>{validateExperience.label}.</strong> {validateExperience.guidance}</p>
         <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Strategy for this check:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
         <section className="workspace-section"><h3>{w('Instrument and Direction')}</h3>
         <div className="grid grid-2">
