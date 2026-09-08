@@ -335,6 +335,7 @@ export type ChartAnalysis = {
   summary: string;
   aiCommentary?: AICommentary;
   manualConfirmations?: ManualConfirmation[];
+  marketSeries?: Record<string,Array<{datetime:string;open:number;high:number;low:number;close:number;volume?:number}>>;
 };
 export type TradeOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' | 'PARTIAL';
 export type PostTradeAnalysis = {

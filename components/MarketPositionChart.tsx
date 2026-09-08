@@ -9,7 +9,8 @@ import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverl
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
 import { buildDisplayChartData, deriveDisplayChartTime } from './chartDisplayTime';
 
-type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void };
+type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
+const EMPTY_CANDLES:readonly Candle[]=[];
 
 type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
 type TooltipState = { x: number; y: number; candle: Candle; candleIndex: number };
@@ -62,7 +63,7 @@ export function getTimeframeSeconds(timeframe: string): number {
   }
 }
 
-export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick }: Props) {
+export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick,seedCandles=EMPTY_CANDLES,seedProvider=null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -78,7 +79,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const clickRef = useRef(onOverlayClick);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument, timeframe);
+  const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument,timeframe,{seedCandles,seedProvider,automaticLoad:false});
   const instrumentMeta = getSupportedInstrument(instrument);
   const priceScaleConfig = useMemo(() => getInstrumentPriceScaleConfig(instrument), [instrument]);
   const isInitialLoad = loading && candles.length === 0;

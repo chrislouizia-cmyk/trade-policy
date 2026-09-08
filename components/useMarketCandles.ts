@@ -180,12 +180,14 @@ export function getPollingIntervalMs(timeframe: string): number {
   }
 }
 
-export function useMarketCandles(instrument: string, timeframe: string) {
+export function useMarketCandles(instrument: string, timeframe: string, options?: {seedCandles?: readonly Candle[];seedProvider?: string|null;automaticLoad?: boolean}) {
+  const seedCandles=options?.seedCandles??[];
+  const automaticLoad=options?.automaticLoad??false;
   const [range, setRange] = useState(() => candleRangeForTimeframe(timeframe));
   const [candles, setCandles] = useState<Candle[]>([]);
   const candlesRef = useRef<Candle[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const inFlightRef = useRef(false);
@@ -197,6 +199,14 @@ export function useMarketCandles(instrument: string, timeframe: string) {
   useEffect(() => {
     setRange(candleRangeForTimeframe(timeframe));
   }, [timeframe]);
+
+  useEffect(() => {
+    const completed=filterCompletedCandles(seedCandles,Date.now());
+    setCandles(completed);
+    setProvider(completed.length?options?.seedProvider??null:null);
+    setError('');
+    setLoading(false);
+  },[seedCandles,options?.seedProvider]);
 
   const fetchCandles = useCallback(async (manualRefresh = false, backgroundRefresh = false) => {
     if (inFlightRef.current) return;
@@ -266,31 +276,8 @@ export function useMarketCandles(instrument: string, timeframe: string) {
   }, [fetchCandles, loading, refreshing]);
 
   useEffect(() => {
-    void fetchCandles(false, false);
-  }, [fetchCandles]);
-
-  useEffect(() => {
-    const onWindowActivity = () => {
-      if (document.visibilityState === 'visible') {
-        void fetchCandles(false, true);
-      }
-    };
-    window.addEventListener('focus', onWindowActivity);
-    document.addEventListener('visibilitychange', onWindowActivity);
-    return () => {
-      window.removeEventListener('focus', onWindowActivity);
-      document.removeEventListener('visibilitychange', onWindowActivity);
-    };
-  }, [fetchCandles]);
-
-  useEffect(() => {
-    const lowFrequencyResync = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchCandles(false, true);
-      }
-    }, getPollingIntervalMs(timeframe));
-    return () => window.clearInterval(lowFrequencyResync);
-  }, [fetchCandles, timeframe]);
+    if(automaticLoad)void fetchCandles(false,false);
+  },[automaticLoad,fetchCandles]);
 
   return { candles, provider, loading, refreshing, error, range, refetch, summary: deriveMarketSummary(candles, instrument, provider) };
 }

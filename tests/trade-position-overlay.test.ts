@@ -337,7 +337,7 @@ test('successful retry clears chart error state and remains candle-only', () => 
   assert.doesNotMatch(hook, /\/api\/market\/analyze/);
 });
 
-test('polling utilities auto-refresh on a timeframe-aware schedule and preserve last good candles on background failure', () => {
+test('candle utilities preserve last good data without autonomous provider polling', () => {
   const previous = [
     { datetime: '2025-01-01T00:00:00.000Z', open: 1, high: 2, low: 0.8, close: 1.7, volume: 10 },
     { datetime: '2025-01-01T01:00:00.000Z', open: 1.7, high: 1.9, low: 1.4, close: 1.5, volume: 8 },
@@ -359,8 +359,9 @@ test('polling utilities auto-refresh on a timeframe-aware schedule and preserve 
   assert.match(hook, /backgroundRefresh \? mergeIncomingCandles\(previousCandles, completedCandles\) : completedCandles/);
   assert.doesNotMatch(hook, /fetchLatestQuote/);
   assert.doesNotMatch(hook, /\/api\/market\/quote\?/);
-  assert.match(hook, /\}, getPollingIntervalMs\(timeframe\)\)/);
-  assert.match(hook, /window\.clearInterval\(lowFrequencyResync\)/);
+  assert.doesNotMatch(hook, /window\.setInterval/);
+  assert.doesNotMatch(hook, /visibilitychange/);
+  assert.doesNotMatch(hook, /addEventListener\('focus'/);
   assert.match(chart, /initialVisibleRangeRef\.current = true;/);
   assert.match(chart, /if \(!initialVisibleRangeRef\.current\) \{\s*const range = getInitialVisibleLogicalRange\(candles\.length, timeframe\);\s*const timeScale = chartRef\.current\?\.timeScale\(\);\s*if \(timeScale\) \{\s*timeScale\.setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\);\s*\}\s*initialVisibleRangeRef\.current = true;\s*\}/s);
 });

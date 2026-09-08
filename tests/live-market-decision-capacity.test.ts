@@ -18,15 +18,27 @@ test('the display chart cannot consume capacity reserved for a live decision', (
   const candles = read('app/api/market/candles/route.ts');
   const quote = read('app/api/market/quote/route.ts');
   const hook = read('components/useMarketCandles.ts');
-  assert.match(candles, /priority:'BACKGROUND'/);
+  assert.match(candles, /priority:'INTERACTIVE'/);
   assert.match(quote, /priority: 'BACKGROUND'/);
   assert.match(quote, /reserveTwelveDataCredits/);
-  assert.match(hook, /case 'M5': return 300_000/);
-  assert.match(hook, /case 'H1': return 3_600_000/);
+  assert.match(hook, /seedCandles/);
+  assert.match(hook, /automaticLoad/);
+  assert.doesNotMatch(hook, /window\.setInterval/);
+  assert.doesNotMatch(hook, /visibilitychange/);
+  assert.doesNotMatch(hook, /addEventListener\('focus'/);
   assert.doesNotMatch(hook, /setInterval[\s\S]*fetchLatestQuote/);
   assert.doesNotMatch(hook, /onWindowActivity[\s\S]*fetchLatestQuote/);
-  assert.match(hook, /document\.visibilityState === 'visible'/);
   assert.match(hook, /const activeRange = candleRangeForTimeframe\(timeframe\)/);
+});
+
+test('one explicit market check reuses the acquired series for the chart', () => {
+  const route = read('app/api/market/analyze/route.ts');
+  const panel = read('components/LiveMarketPanel.tsx');
+  const chart = read('components/MarketPositionChart.tsx');
+  assert.match(route, /marketSeries:series/);
+  assert.match(panel, /analysis\?\.marketSeries\?\.\[chartTimeframe\]/);
+  assert.match(chart, /seedCandles/);
+  assert.match(chart, /automaticLoad:false/);
 });
 
 test('a temporary credit-window collision retries once without exposing provider internals', () => {
@@ -49,4 +61,6 @@ test('HQ credit telemetry is recent enough to explain the current rolling window
   assert.match(health, /rolling minute/);
   assert.match(health, /TWELVE_DATA_DAILY_LIMIT/);
   assert.match(health, /Daily market-data capacity is resting/);
+  assert.match(health, /Credit telemetry partially available/);
+  assert.match(health, /console\.error\('\[TWELVE_DATA_CREDIT_TELEMETRY\]'/);
 });

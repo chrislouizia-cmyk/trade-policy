@@ -217,7 +217,7 @@ export default function LiveMarketPanel({
         </div>
         <strong>{selectedInstrument}</strong>
       </div>
-      <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+      <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis?.marketSeries?.[chartTimeframe]} seedProvider={analysis?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
       {analysis ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
       {error && <div className="error analysis-error" role="alert"><strong>Market check needs another moment.</strong><p>{error}</p><small>Nothing was changed or counted. Your selected instrument and trading rules are safe.</small><button type="button" onClick={() => { void scan(); }}>Try again</button></div>}
