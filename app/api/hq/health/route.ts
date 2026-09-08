@@ -6,7 +6,7 @@ import {gmailOAuthConfigured} from '@/lib/server/gmail-delivery';
 
 export const runtime='nodejs';
 type Status='operational'|'degraded'|'unavailable'|'not_configured'|'not_monitored';
-type Service={status:Status;latencyMs?:number;message:string;budget?:{minuteUsed:number;minuteLimit:number;dailyUsed:number;dailyLimit:number;dailyResetsAt:string;recentOperations:{operation:string;credits:number}[]}};type OperationalStatus='HEALTHY'|'DEGRADED'|'UNAVAILABLE';type OperationalCheck={status:OperationalStatus;count?:number;counts?:Record<string,number>;message:string};
+type Service={status:Status;latencyMs?:number;message:string;budget?:{minuteUsed:number;minuteLimit:number;dailyUsed:number;dailyLimit:number;dailyResetsAt:string;recentOperations:{operation:string;credits:number}[];providerObservation?:{creditsUsed:number;creditsLeft:number;observedAt:string}}};type OperationalStatus='HEALTHY'|'DEGRADED'|'UNAVAILABLE';type OperationalCheck={status:OperationalStatus;count?:number;counts?:Record<string,number>;message:string};
 let cached:{expires:number;payload:{checkedAt:string;services:Record<string,Service>;privateBeta:Record<string,OperationalCheck>}}|null=null;
 const CACHE_MS=10_000,DEGRADED_MS=2_000,TIMEOUT_MS=5_000;
 
@@ -27,20 +27,23 @@ export async function GET(){
   else try{
     const admin=createAdminClient(),day=new Date();day.setUTCHours(0,0,0,0);
     const rollingMinuteStart=new Date(Date.now()-60_000).toISOString(),dailyResetsAt=new Date(day.getTime()+86_400_000).toISOString();
-    const [minuteEventResult,dayResult,eventResult,dailyLimitResult]=await Promise.all([
-      admin.from('provider_credit_events').select('credits').eq('provider','twelvedata').eq('allowed',true).gte('created_at',rollingMinuteStart),
-      admin.from('provider_credit_windows').select('credits_used').eq('provider','twelvedata').eq('window_kind','DAY').eq('window_start',day.toISOString()).maybeSingle(),
-      admin.from('provider_credit_events').select('operation,credits').eq('provider','twelvedata').eq('allowed',true).gte('created_at',day.toISOString()).order('created_at',{ascending:false}).limit(250),
+    const [minuteEventResult,dayResult,eventResult,dailyLimitResult,providerObservationResult]=await Promise.all([
+      admin.from('provider_credit_events').select('credits,actual_credits,settlement_status').eq('provider','twelvedata').eq('allowed',true).gte('created_at',rollingMinuteStart),
+      admin.from('provider_credit_events').select('credits,actual_credits,settlement_status').eq('provider','twelvedata').eq('allowed',true).gte('created_at',day.toISOString()),
+      admin.from('provider_credit_events').select('operation,credits,actual_credits,settlement_status').eq('provider','twelvedata').eq('allowed',true).gte('created_at',day.toISOString()).order('created_at',{ascending:false}).limit(250),
       admin.from('system_incidents').select('id').eq('provider','twelvedata').eq('internal_code','TWELVE_DATA_DAILY_LIMIT').is('resolved_at',null).gte('created_at',day.toISOString()).limit(1),
+      admin.from('provider_credit_events').select('provider_credits_used,provider_credits_left,settled_at').eq('provider','twelvedata').not('provider_credits_used','is',null).order('settled_at',{ascending:false}).limit(1).maybeSingle(),
     ]);
-    const telemetryErrors=[minuteEventResult.error,dayResult.error,eventResult.error,dailyLimitResult.error].filter(Boolean);
+    const telemetryErrors=[minuteEventResult.error,dayResult.error,eventResult.error,dailyLimitResult.error,providerObservationResult.error].filter(Boolean);
     if(telemetryErrors.length)console.error('[TWELVE_DATA_CREDIT_TELEMETRY]',telemetryErrors.map(error=>({code:error?.code,message:error?.message})));
-    const minuteUsed=(minuteEventResult.data??[]).reduce((sum,row)=>sum+Number(row.credits),0);
-    const dailyUsed=Number(dayResult.data?.credits_used??0),providerDailyResting=Boolean(dailyLimitResult.data?.length),totals=new Map<string,number>();
-    for(const row of eventResult.data??[])totals.set(row.operation,(totals.get(row.operation)??0)+Number(row.credits));
+    const counted=(row:{credits:number;actual_credits:number|null;settlement_status:string})=>row.settlement_status==='CONSUMED'?Number(row.actual_credits??row.credits):row.settlement_status==='PENDING'?Number(row.credits):0;
+    const minuteUsed=(minuteEventResult.data??[]).reduce((sum,row)=>sum+counted(row),0);
+    const dailyUsed=(dayResult.data??[]).reduce((sum,row)=>sum+counted(row),0),providerDailyResting=Boolean(dailyLimitResult.data?.length),totals=new Map<string,number>();
+    for(const row of eventResult.data??[]){const credits=counted(row);totals.set(row.operation,(totals.get(row.operation)??0)+credits)}
     const recentOperations=[...totals].map(([operation,credits])=>({operation,credits})).sort((a,b)=>b.credits-a.credits).slice(0,5);
     const partial=telemetryErrors.length>0;
-    services.twelveData={status:providerDailyResting||dailyUsed>=800||partial?'degraded':'operational',message:providerDailyResting?`Daily market-data capacity is resting until ${dailyResetsAt}`:partial?`Credit telemetry partially available · ${minuteUsed}/8 rolling minute · ${dailyUsed}/800 today`:`Credit coordinator active · ${minuteUsed}/8 rolling minute · ${dailyUsed}/800 today`,budget:{minuteUsed,minuteLimit:8,dailyUsed,dailyLimit:800,dailyResetsAt,recentOperations}};
+    const observed=providerObservationResult.data?.provider_credits_used!=null&&providerObservationResult.data?.provider_credits_left!=null?{creditsUsed:Number(providerObservationResult.data.provider_credits_used),creditsLeft:Number(providerObservationResult.data.provider_credits_left),observedAt:String(providerObservationResult.data.settled_at)}:undefined;
+    services.twelveData={status:providerDailyResting||dailyUsed>=800||partial?'degraded':'operational',message:providerDailyResting?`Provider daily capacity is resting until ${dailyResetsAt}`:partial?`Trade Police ledger partially available · ${minuteUsed}/8 rolling minute · ${dailyUsed}/800 today`:`Trade Police coordinated · ${minuteUsed}/8 rolling minute · ${dailyUsed}/800 today${observed?` · provider last reported ${observed.creditsUsed} used / ${observed.creditsLeft} left`:''}`,budget:{minuteUsed,minuteLimit:8,dailyUsed,dailyLimit:800,dailyResetsAt,recentOperations,providerObservation:observed}};
   }catch(error){console.error('[TWELVE_DATA_CREDIT_TELEMETRY]',error);services.twelveData={status:'degraded',message:'Provider configured; credit telemetry unavailable'}}
   if(!process.env.OPENAI_API_KEY)services.openAI={status:'not_configured',message:'API key is not configured'};
   else try{const check=await timed(async signal=>{const response=await fetch('https://api.openai.com/v1/models',{signal,headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},cache:'no-store'});if(!response.ok)throw new Error('Provider rejected probe');return true});services.openAI=success(check.latencyMs,'Authenticated API available')}catch(error){services.openAI=unavailable(error)}

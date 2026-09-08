@@ -6,7 +6,8 @@ import { strategyFromSnapshot } from '@/lib/server/backtest-executor';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
 import type { Candle } from '@/lib/market-analysis';
-import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {extractProviderCreditTelemetry} from '@/lib/market-data';
 
 const PROVIDER = 'Twelve Data';
 const PROVIDER_CALL_BUDGET = 8;
@@ -82,7 +83,7 @@ async function fetchChunk(instrument: string, timeframe: string, startMs: number
   }
 
   const minutes = FRAME_MINUTES[timeframe]!;
-  return payload.values.map((row: any) => {
+  return {telemetry:extractProviderCreditTelemetry(response),value:payload.values.map((row: any) => {
     const opened = Date.parse(`${String(row.datetime).replace(' ', 'T')}Z`);
     return {
       provider: PROVIDER,
@@ -96,7 +97,7 @@ async function fetchChunk(instrument: string, timeframe: string, startMs: number
       close: Number(row.close),
       volume: row.volume == null ? null : Number(row.volume),
     };
-  }).filter((row: any) => [row.open, row.high, row.low, row.close].every(Number.isFinite));
+  }).filter((row: any) => [row.open, row.high, row.low, row.close].every(Number.isFinite))};
 }
 
 async function getRange(admin: AdminClient, instrument: string, timeframe: string) {
@@ -235,8 +236,8 @@ export async function prepareHistoricalBacktestData(
       }
 
       try {
-        await reserveTwelveDataCredits({requestKey:`backtest:${run.id}:${timeframe}:${chunkStart}:${chunkEnd}`,operation:'backtest.historical',priority:'BACKGROUND',credits:1});
-        const rows = await fetchChunk(run.instrument, timeframe, chunkStart, chunkEnd);
+        const requestKey=`backtest:${run.id}:${timeframe}:${chunkStart}:${chunkEnd}`;
+        const rows = await withTwelveDataCredits({requestKey,operation:'backtest.historical',priority:'BACKGROUND',credits:1},()=>fetchChunk(run.instrument,timeframe,chunkStart,chunkEnd));
         requestsUsed += 1;
         await saveCandles(admin, rows);
 

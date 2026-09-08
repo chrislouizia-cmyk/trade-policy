@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { parseMarketCandleRequest } from '@/lib/market-candle-request';
-import { fetchSeriesRange, MarketDataProviderError } from '@/lib/market-data';
+import { fetchSeriesRangeWithTelemetry, MarketDataProviderError } from '@/lib/market-data';
 import { apiError, publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
-import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +16,8 @@ export async function GET(request: Request) {
     const parsed = parseMarketCandleRequest(Object.fromEntries(url.searchParams));
     if (!parsed.ok) return apiError(parsed.code, parsed.message, 400, parsed.details);
     const { instrument, timeframe, from, to } = parsed.value;
-    await reserveTwelveDataCredits({requestKey:`candles:${user.id}:${instrument}:${timeframe}:${from}:${to}`,operation:'chart.candles',priority:'INTERACTIVE',credits:1});
-    const candles = await fetchSeriesRange(instrument, timeframe, from, to);
+    const requestKey=`candles:${user.id}:${instrument}:${timeframe}:${from}:${to}`;
+    const candles = await withTwelveDataCredits({requestKey,operation:'chart.candles',priority:'INTERACTIVE',credits:1},()=>fetchSeriesRangeWithTelemetry(instrument,timeframe,from,to));
     return NextResponse.json({ instrument, timeframe, from, to, provider: 'Twelve Data', candles }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     if(error instanceof ProviderCreditLimitError)return apiError(error.reservation.retryAfterSeconds>65?'MARKET_DATA_DAILY_REST':'MARKET_DATA_CREDIT_WINDOW',error.reservation.retryAfterSeconds>65?"Market data has reached today's safe capacity. It will return after the daily refresh.":'Market data is refreshing. Please try again in a moment.',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});

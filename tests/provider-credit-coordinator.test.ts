@@ -5,6 +5,7 @@ import test from 'node:test';
 const migration=fs.readFileSync('supabase/migrations/098_coordinate_twelve_data_credits.sql','utf8');
 const rollingMigration=fs.readFileSync('supabase/migrations/099_align_provider_rolling_credit_window.sql','utf8');
 const protectedCapacityMigration=fs.readFileSync('supabase/migrations/100_protect_daily_live_market_capacity.sql','utf8');
+const reconciliationMigration=fs.readFileSync('supabase/migrations/101_reconcile_twelve_data_credit_usage.sql','utf8');
 const coordinator=fs.readFileSync('lib/server/provider-credit-coordinator.ts','utf8');
 const market=fs.readFileSync('lib/market-data.ts','utf8');
 const analyze=fs.readFileSync('app/api/market/analyze/route.ts','utf8');
@@ -26,16 +27,16 @@ test('provider reservations are atomic, global, UTC-windowed, and service-role o
 test('live operations reserve the complete request before parallel provider calls',()=>{
   assert.match(analyze,/credits:timeframes\.length/);
   assert.match(analyze,/priority:'LIVE'/);
-  assert.match(analyze,/reserveTwelveDataCredits[\s\S]*Promise\.all\(timeframes\.map/);
+  assert.match(analyze,/withTwelveDataCredits[\s\S]*Promise\.all\(timeframes\.map/);
   assert.match(reanalyze,/credits:timeframes\.length\+1/);
-  assert.match(reanalyze,/credits:timeframes\.length\+1[\s\S]*fetchPrice\(trade\.instrument\)/);
+  assert.match(reanalyze,/credits:timeframes\.length\+1[\s\S]*fetchPriceWithTelemetry\(trade\.instrument\)/);
 });
 
 test('server entry points pass through the coordinator without contaminating shared market utilities',()=>{
   assert.doesNotMatch(market,/provider-credit-coordinator/);
-  assert.match(fs.readFileSync('app/api/market/candles/route.ts','utf8'),/reserveTwelveDataCredits/);
-  assert.match(fs.readFileSync('app/api/market/quote/route.ts','utf8'),/reserveTwelveDataCredits/);
-  assert.match(fs.readFileSync('app/api/trades/price/route.ts','utf8'),/reserveTwelveDataCredits/);
+  assert.match(fs.readFileSync('app/api/market/candles/route.ts','utf8'),/withTwelveDataCredits/);
+  assert.match(fs.readFileSync('app/api/market/quote/route.ts','utf8'),/withTwelveDataCredits/);
+  assert.match(fs.readFileSync('app/api/trades/price/route.ts','utf8'),/withTwelveDataCredits/);
   assert.match(coordinator,/p_minute_limit:8,p_daily_limit:800/);
 });
 
@@ -49,7 +50,19 @@ test('background backtests preserve live capacity and retry without losing the r
 
 test('health reads coordinator telemetry without spending a provider credit',()=>{
   assert.doesNotMatch(health,/api\.twelvedata\.com/);
-  assert.match(health,/provider_credit_windows/);
+  assert.match(health,/provider_credit_events/);
   assert.match(health,/rolling minute/);
   assert.match(health,/recentOperations/);
+});
+
+test('reservations settle to provider-confirmed usage or are released',()=>{
+  assert.match(reconciliationMigration,/settlement_status.*PENDING/);
+  assert.match(reconciliationMigration,/settlement_status='CONSUMED'/);
+  assert.match(reconciliationMigration,/then 'RELEASED'/);
+  assert.match(reconciliationMigration,/created_at>v_now-interval '2 minutes'/);
+  assert.match(coordinator,/settle_provider_credits/);
+  assert.match(coordinator,/telemetry\.requestCredits\?\?input\.credits/);
+  assert.match(market,/api-credits-used/);
+  assert.match(market,/api-credits-left/);
+  assert.match(market,/api-credits-request/);
 });

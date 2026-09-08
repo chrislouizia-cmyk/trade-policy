@@ -20,7 +20,7 @@ test('the display chart cannot consume capacity reserved for a live decision', (
   const hook = read('components/useMarketCandles.ts');
   assert.match(candles, /priority:'INTERACTIVE'/);
   assert.match(quote, /priority: 'BACKGROUND'/);
-  assert.match(quote, /reserveTwelveDataCredits/);
+  assert.match(quote, /withTwelveDataCredits/);
   assert.match(hook, /seedCandles/);
   assert.match(hook, /automaticLoad/);
   assert.doesNotMatch(hook, /window\.setInterval/);
@@ -60,7 +60,7 @@ test('HQ credit telemetry is recent enough to explain the current rolling window
   assert.match(health, /CACHE_MS=10_000/);
   assert.match(health, /rolling minute/);
   assert.match(health, /TWELVE_DATA_DAILY_LIMIT/);
-  assert.match(health, /Daily market-data capacity is resting/);
-  assert.match(health, /Credit telemetry partially available/);
+  assert.match(health, /Provider daily capacity is resting/);
+  assert.match(health, /Trade Police ledger partially available/);
   assert.match(health, /console\.error\('\[TWELVE_DATA_CREDIT_TELEMETRY\]'/);
 });

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
-import { fetchPrice } from '@/lib/market-data';
-import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import { fetchPriceWithTelemetry } from '@/lib/market-data';
+import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 
 export async function POST(request: Request) {
   try {
@@ -12,8 +12,8 @@ export async function POST(request: Request) {
     const { tradeId } = await request.json();
     const { data: trade, error } = await supabase.from('active_trades').select('*').eq('id',tradeId).eq('user_id',user.id).single();
     if (error || !trade) return NextResponse.json({ error:'Active trade not found.' }, { status:404 });
-    await reserveTwelveDataCredits({requestKey:`trade-price:${user.id}:${trade.id}:${request.headers.get('idempotency-key')??Date.now()}`,operation:'active-trade.price',priority:'LIVE',credits:1});
-    const price = await fetchPrice(trade.instrument);
+    const requestKey=`trade-price:${user.id}:${trade.id}:${request.headers.get('idempotency-key')??Date.now()}`;
+    const price = await withTwelveDataCredits({requestKey,operation:'active-trade.price',priority:'LIVE',credits:1},()=>fetchPriceWithTelemetry(trade.instrument));
     const riskDistance = Math.abs(Number(trade.entry)-Number(trade.stop_loss));
     const signedMove = trade.direction === 'BUY' ? price-Number(trade.entry) : Number(trade.entry)-price;
     const currentR = riskDistance > 0 ? signedMove/riskDistance : 0;

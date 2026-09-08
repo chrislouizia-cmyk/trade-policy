@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { buildLiveAnalysis, MarketAnalysisError } from '@/lib/market-analysis';
-import { fetchSeries, MarketDataProviderError, providerSymbol } from '@/lib/market-data';
+import { fetchSeriesWithTelemetry, MarketDataProviderError, providerSymbol } from '@/lib/market-data';
 import { type ChartAnalysis, type Instrument } from '@/types/trade';
 import { loadActiveStrategy } from '@/lib/server/active-strategy';
 import { apiError, publicApiError } from '@/lib/server/public-error';
@@ -13,7 +13,7 @@ import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {strategyRevisionId} from '@/lib/historical-decisions/strategy-revision';
-import {reserveTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -38,8 +38,13 @@ export async function POST(req: Request) {
     const strategy = await loadActiveStrategy(supabase,user.id);
     if (!strategy.instruments.includes(instrument)) return apiError('INSTRUMENT_DISABLED','Instrument is disabled in this strategy.',400,{instrument});
     const timeframes = strategyTimeframes(strategy);
-    await reserveTwelveDataCredits({requestKey:`analysis:${user.id}:${requestKey}`,operation:'live.analysis',priority:'LIVE',credits:timeframes.length});
-    const values = await Promise.all(timeframes.map((timeframe) => fetchSeries(instrument, timeframe)));
+    const values = await withTwelveDataCredits({requestKey:`analysis:${user.id}:${requestKey}`,operation:'live.analysis',priority:'LIVE',credits:timeframes.length},async()=>{
+      const results=await Promise.all(timeframes.map((timeframe)=>fetchSeriesWithTelemetry(instrument,timeframe)));
+      return{value:results.map(result=>result.value),telemetry:{
+        creditsUsed:results.at(-1)?.telemetry.creditsUsed??null,creditsLeft:results.at(-1)?.telemetry.creditsLeft??null,
+        requestCredits:results.reduce((sum,result)=>sum+(result.telemetry.requestCredits??1),0),observedAt:new Date().toISOString(),
+      }};
+    });
     const series = Object.fromEntries(timeframes.map((timeframe, index) => [timeframe, values[index]]));
     const analysis = buildLiveAnalysis(instrument, strategy, series, 'Twelve Data',providerSymbol(instrument));
     const displayName = await getUserDisplayName(supabase, user);

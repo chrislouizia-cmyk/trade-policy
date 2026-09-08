@@ -7,7 +7,7 @@ const migration = fs.readFileSync('supabase/migrations/098_coordinate_twelve_dat
 
 test('provider budget is database-coordinated across all serverless instances', () => {
   assert.doesNotMatch(cache, /__tradePoliceTwelveDataBudget/);
-  assert.match(cache, /reserveTwelveDataCredits/);
+  assert.match(cache, /withTwelveDataCredits/);
   assert.match(migration, /pg_advisory_xact_lock/);
 });
 
