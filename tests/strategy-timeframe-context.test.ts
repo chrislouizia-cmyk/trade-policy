@@ -81,17 +81,16 @@ test('explicit strategy timeframe contract renders configured values and Not con
   assert.doesNotMatch(contextB, /macro D1|trigger M5|default|fallback/);
   assert.doesNotMatch(contextC, /macro D1|confirmation H1|trigger M5|default|fallback/);
 
-  assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadActiveStrategy\(supabase,user\.id\);/);
-  assert.doesNotMatch(marketAnalyzeRoute, /loadStrategyById\s*\(/);
+  assert.match(marketAnalyzeRoute, /strategy\s*=\s*await\s*loadStrategyById\(supabase,user\.id,body\.strategyId\);/);
   assert.match(marketAnalyzeRoute, /const timeframes = strategyTimeframes\(strategy\);/);
   assert.match(activeTradeReanalysisRoute, /import \{strategyTimeframes\} from '@\/lib\/strategy-timeframes';/);
   assert.match(activeTradeReanalysisRoute, /const timeframes=strategyTimeframes\(strategy\);/);
   assert.doesNotMatch(activeTradeReanalysisRoute, /policy\.timeframes\.trend,policy\.timeframes\.confirmation,policy\.timeframes\.entry/);
-  assert.match(marketAnalyzeRoute, /strategy_revision_id:strategyRevisionId\(strategy\)/);
-  assert.doesNotMatch(marketAnalyzeRoute, /body\.strategyRevisionId/);
+  assert.match(marketAnalyzeRoute, /strategy_revision_id:currentStrategyRevisionId/);
+  assert.match(marketAnalyzeRoute, /body\.strategyRevisionId!==currentStrategyRevisionId/);
   assert.doesNotMatch(marketAnalyzeRoute, /fixed.*timeframe|default.*timeframes|D1.*H4.*H1.*M20.*M5/);
   assert.match(tradeValidator, /<LiveMarketPanel\b[^>]*strategy=\{strategy\}[^>]*strategyRevisionId=\{activeStrategyRevisionId\}/);
-  assert.match(tradeValidator, /const \[activeStrategyRevisionId,setActiveStrategyRevisionId\]=useState<string\|null>\(null\);/);
+  assert.match(tradeValidator, /const \[activeStrategyRevisionId,setActiveStrategyRevisionId\]=useState<string\|null>\(initialStrategyRevisionId\);/);
   assert.match(tradeValidator, /setActiveStrategyRevisionId\(null\);/);
   assert.match(tradeValidator, /setActiveStrategyRevisionId\(nextRevision\);/);
   assert.match(tradeValidator, /setLastAnalysisInput\(null\)/);

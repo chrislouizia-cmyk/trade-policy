@@ -33,9 +33,8 @@ test('market context is a compact, honest five-timeframe strip', () => {
 });
 
 test('all decision actions remain connected to their existing flows', () => {
-  for (const action of ['Take trade', 'Take anyway', 'Mark as missed', 'Save setup', 'View full Decision Report']) assert.match(`${validator}\n${hero}`, new RegExp(action, 'i'));
-  assert.match(validator, /setTradeActionMode\('ACTIVATE'\)/);
-  assert.match(validator, /setTradeActionMode\('OVERRIDE'\)/);
+  for (const action of ['Take trade', 'Take anyway', 'Mark as missed', 'View History', 'View full Decision Report']) assert.match(`${validator}\n${hero}`, new RegExp(action, 'i'));
+  assert.match(validator, /setTradeActionMode\(activationUiState\.activationMode==='READY'\?'ACTIVATE':'OVERRIDE'\)/);
   assert.match(validator, /setTradeActionMode\('MISSED'\)/);
   assert.match(validator, /primaryActionDisabled=\{analyzing \|\| !analysis \|\| !activationUiState\.showCta/);
 });

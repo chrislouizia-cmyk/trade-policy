@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { buildLiveAnalysis, MarketAnalysisError } from '@/lib/market-analysis';
 import { fetchSeriesWithTelemetry, MarketDataProviderError, providerSymbol } from '@/lib/market-data';
 import { type ChartAnalysis, type Instrument } from '@/types/trade';
-import { loadActiveStrategy } from '@/lib/server/active-strategy';
+import { loadStrategyById } from '@/lib/server/active-strategy';
 import { apiError, publicApiError } from '@/lib/server/public-error';
 import { getUserDisplayName } from '@/lib/user-display-name';
 import { buildAICommentary } from '@/lib/ai-commentary';
@@ -32,10 +32,13 @@ export async function POST(req: Request) {
     const reservation=await reserveAnalysis(user.id,requestKey);
     if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED',`Your ${reservation.state.entitlements.monthlyAnalysisLimit ?? ''}-analysis cycle limit has been reached. Your analyses renew on ${reservation.state.usagePeriodEnd}. Upgrade to continue.`,429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage,periodStart:reservation.state.usagePeriodStart,renewsAt:reservation.state.usagePeriodEnd});
     usage={userId:user.id,requestKey};
-    const body=await req.json().catch(()=>null) as {instrument?:Instrument}|null;
+    const body=await req.json().catch(()=>null) as {instrument?:Instrument;strategyId?:string;strategyRevisionId?:string}|null;
     const instrument=body?.instrument;
     if (!instrument) return apiError('INSTRUMENT_REQUIRED','An instrument is required.',400);
-    const strategy = await loadActiveStrategy(supabase,user.id);
+    if(!body?.strategyId||!body.strategyRevisionId)return apiError('STRATEGY_CONTEXT_REQUIRED','The selected strategy and revision are required.',400);
+    const strategy = await loadStrategyById(supabase,user.id,body.strategyId);
+    const currentStrategyRevisionId=strategyRevisionId(strategy);
+    if(body.strategyRevisionId!==currentStrategyRevisionId)return apiError('STRATEGY_REVISION_CHANGED','The selected strategy changed. Reload it before checking the market.',409);
     if (!strategy.instruments.includes(instrument)) return apiError('INSTRUMENT_DISABLED','Instrument is disabled in this strategy.',400,{instrument});
     const timeframes = strategyTimeframes(strategy);
     const values = await withTwelveDataCredits({requestKey:`analysis:${user.id}:${requestKey}`,operation:'live.analysis',priority:'LIVE',credits:timeframes.length},async()=>{
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
     const deterministicCommentary = buildAICommentary(structuredAnalysis, strategy, displayName);
     const aiCommentary = await explainDeterministicAnalysis(structuredAnalysis, deterministicCommentary);
     const enrichedAnalysis = {...analysis, aiCommentary};
-    const {data:scan,error:scanError}=await createAdminClient().from('market_scans').insert({ user_id: user.id, server_created:true, instrument, strategy_profile_id: strategy.id || null, strategy_revision_id:strategyRevisionId(strategy), provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
+    const {data:scan,error:scanError}=await createAdminClient().from('market_scans').insert({ user_id: user.id, server_created:true, instrument, strategy_profile_id: strategy.id || null, strategy_revision_id:currentStrategyRevisionId, provider: 'twelvedata', timeframes, analysis: enrichedAnalysis }).select('id').single();
     if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
     await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}}));
     await bestEffort(()=>finalizeAnalysis(user.id,requestKey,true));

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { loadActiveStrategy } from '@/lib/server/active-strategy';
+import { loadStrategyById } from '@/lib/server/active-strategy';
 import { loadDailyTradeContext } from '@/lib/server/daily-trade-context';
 import { validateTradeWithStrategy } from '@/lib/server/decision-engine';
 import { buildDecisionNarrative } from '@/lib/intelligence/decision-narrative';
@@ -77,10 +77,11 @@ export async function POST(request: Request) {
       return apiError('INVALID_TRADE','Some trade values are invalid.',400,parsed.error.flatten());
     }
 
-    const strategy = await loadActiveStrategy(supabase, user.id);
     const {data:scan,error:scanError}=await supabase.from('market_scans').select('id,user_id,strategy_profile_id,strategy_revision_id,instrument,analysis,server_created').eq('id',parsed.data.analysisId).eq('user_id',user.id).maybeSingle();
     if(scanError||!scan||!scan.server_created)return apiError('ANALYSIS_NOT_FOUND','The verified market analysis could not be found. Run the market check again.',409);
-    if(scan.strategy_profile_id!==strategy.id||scan.strategy_revision_id!==strategyRevisionId(strategy)||scan.instrument!==parsed.data.instrument){await recordReportFailure({reasonCode:'STRATEGY_REVISION_MISMATCH',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis no longer matches the active trading rules. Run the market check again.',409)}
+    if(typeof scan.strategy_profile_id!=='string'||!scan.strategy_profile_id)return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis is missing its strategy identity. Run the market check again.',409);
+    const strategy = await loadStrategyById(supabase,user.id,scan.strategy_profile_id);
+    if(scan.strategy_profile_id!==strategy.id||scan.strategy_revision_id!==strategyRevisionId(strategy)||scan.instrument!==parsed.data.instrument){await recordReportFailure({reasonCode:'STRATEGY_REVISION_MISMATCH',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis no longer matches the selected trading rules. Run the market check again.',409)}
     const authoritativeAnalysis=scan.analysis as ChartAnalysis;
     if(!authoritativeAnalysis||!['VALID_ANALYSIS','NO_RELEVANT_EVIDENCE'].includes(authoritativeAnalysis.analysisStatus)||authoritativeAnalysis.instrument!==parsed.data.instrument)return apiError('ANALYSIS_NOT_VALID','A completed verified market analysis is required.',409);
     const dailyContext = await loadDailyTradeContext({
