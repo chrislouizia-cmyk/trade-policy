@@ -67,8 +67,7 @@ export function deriveMarketSummary(candles: readonly Candle[], instrument: stri
 }
 
 export function normalizeMarketCandlesError(value: unknown, fallback: string): string {
-  const payload = value && typeof value === 'object' && 'error' in value ? (value as { error?: unknown }).error ?? value : value;
-  const message = apiErrorMessage(payload, fallback);
+  const message = apiErrorMessage(value, fallback);
   if (typeof message === 'string' && message.trim()) return message;
   return fallback;
 }
@@ -181,10 +180,6 @@ export function getPollingIntervalMs(timeframe: string): number {
   }
 }
 
-export function getLiveQuotePollingIntervalMs(): number {
-  return 30_000;
-}
-
 export function useMarketCandles(instrument: string, timeframe: string) {
   const [range, setRange] = useState(() => candleRangeForTimeframe(timeframe));
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -194,7 +189,6 @@ export function useMarketCandles(instrument: string, timeframe: string) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const inFlightRef = useRef(false);
-  const liveQuoteSeqRef = useRef(0);
 
   useEffect(() => {
     candlesRef.current = candles;
@@ -275,52 +269,10 @@ export function useMarketCandles(instrument: string, timeframe: string) {
     void fetchCandles(false, false);
   }, [fetchCandles]);
 
-  const fetchLatestQuote = useCallback(async () => {
-    const token = ++liveQuoteSeqRef.current;
-    const response = await fetch(`/api/market/quote?instrument=${encodeURIComponent(instrument)}`, { cache: 'no-store' });
-    const payload = await readApiResponse(response) as {
-      price?: number | string;
-      providerEventTimeMs?: number | string | null;
-      providerTimestamp?: string | null;
-      timestamp?: number | string | null;
-      provider?: string;
-      instrument?: string;
-    } | null;
-    if (response.status === 429) return;
-    if (!response.ok || payload == null || !Number.isFinite(Number(payload.price))) {
-      if (token === liveQuoteSeqRef.current) {
-        setError((current) => current || 'Live market price is currently unavailable.');
-      }
-      return;
-    }
-    const price = Number(payload.price);
-    const providerEventTimeMs = Number(payload.providerEventTimeMs ?? payload.timestamp ?? NaN);
-    if (!Number.isFinite(providerEventTimeMs)) {
-      if (token === liveQuoteSeqRef.current) {
-        setError((current) => current || 'Live market price does not include a valid provider timestamp.');
-      }
-      return;
-    }
-    if (token !== liveQuoteSeqRef.current) return;
-    setCandles((current) => mergeLivePriceIntoCandles(current, price, timeframe, providerEventTimeMs));
-    setProvider((current) => current ?? payload.provider ?? null);
-    setError('');
-  }, [instrument, timeframe]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchLatestQuote();
-      }
-    }, getLiveQuotePollingIntervalMs());
-    return () => window.clearInterval(interval);
-  }, [fetchLatestQuote]);
-
   useEffect(() => {
     const onWindowActivity = () => {
       if (document.visibilityState === 'visible') {
         void fetchCandles(false, true);
-        void fetchLatestQuote();
       }
     };
     window.addEventListener('focus', onWindowActivity);
@@ -329,7 +281,7 @@ export function useMarketCandles(instrument: string, timeframe: string) {
       window.removeEventListener('focus', onWindowActivity);
       document.removeEventListener('visibilitychange', onWindowActivity);
     };
-  }, [fetchCandles, fetchLatestQuote]);
+  }, [fetchCandles]);
 
   useEffect(() => {
     const lowFrequencyResync = window.setInterval(() => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { candleRangeForTimeframe, getCanonicalBucketStartIso, getCanonicalBucketStartMs, getLiveQuotePollingIntervalMs, getPollingIntervalMs, mergeIncomingCandles, mergeLivePriceIntoCandles, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
+import { candleRangeForTimeframe, getCanonicalBucketStartIso, getCanonicalBucketStartMs, getPollingIntervalMs, mergeIncomingCandles, mergeLivePriceIntoCandles, normalizeMarketCandlesError as normalizeMarketCandlesErrorFromHook, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
 import { buildDisplayChartData, deriveDisplayChartTime } from '../components/chartDisplayTime.ts';
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
@@ -140,7 +140,7 @@ test('live polling uses a fresh range window and never reuses stale market times
   assert.equal(new Date(second.to).getTime() > new Date(first.to).getTime(), true);
 });
 
-test('live quote cadence is lightweight and active candles evolve without full-history refetches', () => {
+test('provider-timestamp candle merging remains deterministic without background quote polling', () => {
   const previous = [
     { datetime: '2025-01-03T00:00:00.000Z', open: 100, high: 101, low: 99.5, close: 100.5, volume: 10 },
     { datetime: '2025-01-03T01:00:00.000Z', open: 100.5, high: 101.2, low: 99.8, close: 100.9, volume: 8 },
@@ -151,8 +151,6 @@ test('live quote cadence is lightweight and active candles evolve without full-h
   assert.equal(updated.at(-1)?.high, 101.4);
   assert.equal(updated.at(-1)?.low, 99.8);
   assert.equal(updated.at(-1)?.open, 100.5);
-  assert.equal(getLiveQuotePollingIntervalMs(), 30_000);
-  assert.notEqual(getPollingIntervalMs('H1'), getLiveQuotePollingIntervalMs());
   assert.equal(getCanonicalBucketStartMs(Date.parse('2025-01-03T01:30:00.000Z'), 'H1'), Date.parse('2025-01-03T01:00:00.000Z'));
   assert.equal(getCanonicalBucketStartIso('2025-01-03T01:30:00.000Z', 'H1'), '2025-01-03T01:00:00.000Z');
 });
@@ -324,6 +322,7 @@ test('manual refresh failures keep prior candles, successful retries replace the
   assert.doesNotMatch(structured, /\[object Object\]/);
   assert.doesNotMatch(structured, /error: \{ message:/);
   assert.equal(normalizeMarketCandlesError({ message: 'API failed.' }, 'fallback'), 'API failed.');
+  assert.equal(normalizeMarketCandlesErrorFromHook({error:{message:'Market data is refreshing. Please try again in a moment.'}},'fallback'),'Market data is refreshing. Please try again in a moment.');
 });
 
 test('successful retry clears chart error state and remains candle-only', () => {
@@ -333,7 +332,7 @@ test('successful retry clears chart error state and remains candle-only', () => 
   assert.match(chart, /Retry/);
   assert.match(hook, /setError\(''\)/);
   assert.match(hook, /readApiResponse\(response\)/);
-  assert.match(hook, /apiErrorMessage\(payload, fallback\)/);
+  assert.match(hook, /apiErrorMessage\(value, fallback\)/);
   assert.doesNotMatch(chart, /\[object Object\]/);
   assert.doesNotMatch(hook, /\/api\/market\/analyze/);
 });
@@ -358,12 +357,10 @@ test('polling utilities auto-refresh on a timeframe-aware schedule and preserve 
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   assert.match(hook, /if \(inFlightRef\.current\) return;/);
   assert.match(hook, /backgroundRefresh \? mergeIncomingCandles\(previousCandles, completedCandles\) : completedCandles/);
-  assert.match(hook, /fetchLatestQuote/);
-  assert.match(hook, /\/api\/market\/quote\?/);
-  assert.match(hook, /getLiveQuotePollingIntervalMs\(\)/);
-  assert.match(hook, /response\.status === 429/);
+  assert.doesNotMatch(hook, /fetchLatestQuote/);
+  assert.doesNotMatch(hook, /\/api\/market\/quote\?/);
   assert.match(hook, /\}, getPollingIntervalMs\(timeframe\)\)/);
-  assert.match(hook, /window\.clearInterval\(interval\)/);
+  assert.match(hook, /window\.clearInterval\(lowFrequencyResync\)/);
   assert.match(chart, /initialVisibleRangeRef\.current = true;/);
   assert.match(chart, /if \(!initialVisibleRangeRef\.current\) \{\s*const range = getInitialVisibleLogicalRange\(candles\.length, timeframe\);\s*const timeScale = chartRef\.current\?\.timeScale\(\);\s*if \(timeScale\) \{\s*timeScale\.setVisibleLogicalRange\(\{ from: range\.from, to: range\.to \}\);\s*\}\s*initialVisibleRangeRef\.current = true;\s*\}/s);
 });

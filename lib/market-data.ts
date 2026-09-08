@@ -4,9 +4,20 @@ const MARKET_DATA_TIMEOUT_MS = 12_000;
 export class MarketDataProviderError extends Error{
   code:'RATE_LIMITED'|'PROVIDER_REJECTED'|'UNREACHABLE'|'TIMEOUT'|'INVALID_RESPONSE';
   retryAfterSeconds:number|null;
-  constructor(code:'RATE_LIMITED'|'PROVIDER_REJECTED'|'UNREACHABLE'|'TIMEOUT'|'INVALID_RESPONSE',message:string,retryAfterSeconds:number|null=null){super(message);this.name='MarketDataProviderError';this.code=code;this.retryAfterSeconds=retryAfterSeconds;}
+  limitScope:'MINUTE'|'DAILY'|null;
+  dailyResetsAt:string|null;
+  constructor(code:'RATE_LIMITED'|'PROVIDER_REJECTED'|'UNREACHABLE'|'TIMEOUT'|'INVALID_RESPONSE',message:string,retryAfterSeconds:number|null=null,limitScope:'MINUTE'|'DAILY'|null=null,dailyResetsAt:string|null=null){super(message);this.name='MarketDataProviderError';this.code=code;this.retryAfterSeconds=retryAfterSeconds;this.limitScope=limitScope;this.dailyResetsAt=dailyResetsAt;}
 }
 export const isTwelveDataRateLimit=(status:number,message:string)=>status===429||/api credit|credits|current minute|rate limit|too many requests/i.test(message);
+export const isTwelveDataDailyLimit=(message:string)=>/daily|per day|today|current day|for the day|day limit|until (?:the )?next day/i.test(message);
+
+export function twelveDataLimitWindow(message:string,now=new Date()):{scope:'MINUTE'|'DAILY';retryAfterSeconds:number;dailyResetsAt:string|null}{
+  if(isTwelveDataDailyLimit(message)){
+    const nextUtcDay=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1));
+    return{scope:'DAILY',retryAfterSeconds:Math.max(1,Math.ceil((nextUtcDay.getTime()-now.getTime())/1000)),dailyResetsAt:nextUtcDay.toISOString()};
+  }
+  return{scope:'MINUTE',retryAfterSeconds:60,dailyResetsAt:null};
+}
 
 export const MARKET_DATA_INTERVALS = Object.freeze({
   M1: '1min', M3: '3min', M5: '5min', M15: '15min', M30: '30min',
@@ -53,7 +64,10 @@ async function request(params: Record<string, string>) {
   }
   if (!response.ok || json.status === 'error' || json.code) {
     const message=String(json.message||'Market-data request failed.');
-    if(isTwelveDataRateLimit(response.status,message))throw new MarketDataProviderError('RATE_LIMITED',message,60);
+    if(isTwelveDataRateLimit(response.status,message)){
+      const limit=twelveDataLimitWindow(message);
+      throw new MarketDataProviderError('RATE_LIMITED',message,limit.retryAfterSeconds,limit.scope,limit.dailyResetsAt);
+    }
     throw new MarketDataProviderError('PROVIDER_REJECTED',message);
   }
   return json;

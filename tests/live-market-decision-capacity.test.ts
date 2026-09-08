@@ -5,12 +5,13 @@ import { readFileSync } from 'node:fs';
 const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
 test('the coordinator mirrors a rolling provider minute instead of a calendar-minute reset', () => {
-  const migration = read('supabase/migrations/099_align_provider_rolling_credit_window.sql');
+  const migration = read('supabase/migrations/100_protect_daily_live_market_capacity.sql');
   assert.match(migration, /v_now - interval '60 seconds'/);
   assert.match(migration, /sum\(credits\)/);
   assert.match(migration, /allowed is true/);
   assert.match(migration, /pg_advisory_xact_lock/);
-  assert.match(migration, /p_minute_limit-6/);
+  assert.match(migration, /p_minute_limit-7/);
+  assert.match(migration, /p_daily_limit-720/);
 });
 
 test('the display chart cannot consume capacity reserved for a live decision', () => {
@@ -22,8 +23,8 @@ test('the display chart cannot consume capacity reserved for a live decision', (
   assert.match(quote, /reserveTwelveDataCredits/);
   assert.match(hook, /case 'M5': return 300_000/);
   assert.match(hook, /case 'H1': return 3_600_000/);
-  assert.match(hook, /return 30_000/);
-  assert.match(hook, /response\.status === 429/);
+  assert.doesNotMatch(hook, /setInterval[\s\S]*fetchLatestQuote/);
+  assert.doesNotMatch(hook, /onWindowActivity[\s\S]*fetchLatestQuote/);
   assert.match(hook, /document\.visibilityState === 'visible'/);
   assert.match(hook, /const activeRange = candleRangeForTimeframe\(timeframe\)/);
 });
@@ -37,6 +38,8 @@ test('a temporary credit-window collision retries once without exposing provider
   assert.match(panel, /Market check needs another moment/);
   assert.doesNotMatch(panel, /No decision was produced/);
   assert.doesNotMatch(route, /provider minute limit|provider credit window/i);
+  assert.match(route, /MARKET_DATA_DAILY_REST/);
+  assert.match(panel, /requested>65/);
 });
 
 test('HQ credit telemetry is recent enough to explain the current rolling window', () => {
@@ -44,4 +47,6 @@ test('HQ credit telemetry is recent enough to explain the current rolling window
   assert.match(health, /Date\.now\(\)-60_000/);
   assert.match(health, /CACHE_MS=10_000/);
   assert.match(health, /rolling minute/);
+  assert.match(health, /TWELVE_DATA_DAILY_LIMIT/);
+  assert.match(health, /Daily market-data capacity is resting/);
 });

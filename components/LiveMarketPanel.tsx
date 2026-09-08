@@ -22,7 +22,8 @@ export function marketAnalysisRetryDelay(value: unknown): number | null {
   if (code !== 'MARKET_DATA_RATE_LIMITED' && code !== 'MARKET_DATA_CREDIT_WINDOW') return null;
   const details = (error as { details?: unknown }).details;
   const requested = details && typeof details === 'object' ? Number((details as { retryAfterSeconds?: unknown }).retryAfterSeconds) : NaN;
-  return Number.isFinite(requested) ? Math.max(2, Math.min(65, Math.ceil(requested))) : 61;
+  if(Number.isFinite(requested)&&requested>65)return null;
+  return Number.isFinite(requested) ? Math.max(2, Math.ceil(requested)) : 61;
 }
 
 export default function LiveMarketPanel({

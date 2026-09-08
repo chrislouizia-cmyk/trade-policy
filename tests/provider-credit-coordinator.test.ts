@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const migration=fs.readFileSync('supabase/migrations/098_coordinate_twelve_data_credits.sql','utf8');
 const rollingMigration=fs.readFileSync('supabase/migrations/099_align_provider_rolling_credit_window.sql','utf8');
+const protectedCapacityMigration=fs.readFileSync('supabase/migrations/100_protect_daily_live_market_capacity.sql','utf8');
 const coordinator=fs.readFileSync('lib/server/provider-credit-coordinator.ts','utf8');
 const market=fs.readFileSync('lib/market-data.ts','utf8');
 const analyze=fs.readFileSync('app/api/market/analyze/route.ts','utf8');
@@ -39,9 +40,9 @@ test('server entry points pass through the coordinator without contaminating sha
 });
 
 test('background backtests preserve live capacity and retry without losing the run',()=>{
-  assert.match(rollingMigration,/p_priority='BACKGROUND'.*p_minute_limit-6/);
-  assert.match(rollingMigration,/p_priority='BACKGROUND'.*p_daily_limit-40/);
   assert.match(rollingMigration,/v_now - interval '60 seconds'/);
+  assert.match(protectedCapacityMigration,/p_priority='BACKGROUND'.*p_minute_limit-7/);
+  assert.match(protectedCapacityMigration,/p_priority='BACKGROUND'.*p_daily_limit-720/);
   assert.match(backtest,/priority:'BACKGROUND'/);
   assert.match(backtest,/Historical data is paused to preserve live decision capacity/);
 });

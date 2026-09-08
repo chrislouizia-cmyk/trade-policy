@@ -62,10 +62,17 @@ export async function POST(req: Request) {
       return apiError(code,message,422,{analysisStatus:error.status});
     }
     if(error instanceof MarketDataProviderError&&error.code==='RATE_LIMITED'){
-      console.warn('[TWELVE_DATA_RATE_LIMITED]',{endpoint:'/api/market/analyze',retryAfterSeconds:error.retryAfterSeconds});
+      console.warn('[TWELVE_DATA_RATE_LIMITED]',{endpoint:'/api/market/analyze',limitScope:error.limitScope,retryAfterSeconds:error.retryAfterSeconds});
+      if(error.limitScope==='DAILY'){
+        await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_DATA_RESTING',p_internal_code:'TWELVE_DATA_DAILY_LIMIT',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:'Daily provider capacity exhausted.',p_metadata:{dailyResetsAt:error.dailyResetsAt}}));
+        return apiError('MARKET_DATA_DAILY_REST','Market data has reached today\'s safe capacity. Trade Police will be ready again after the daily refresh.',429,{retryAfterSeconds:error.retryAfterSeconds,dailyResetsAt:error.dailyResetsAt});
+      }
       return apiError('MARKET_DATA_RATE_LIMITED','Market data needs another moment. Trade Police will retry automatically.',429,{retryAfterSeconds:error.retryAfterSeconds??61});
     }
-    if(error instanceof ProviderCreditLimitError)return apiError('MARKET_DATA_CREDIT_WINDOW','Market data needs another moment. Trade Police will retry automatically.',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});
+    if(error instanceof ProviderCreditLimitError){
+      if(error.reservation.retryAfterSeconds>65)return apiError('MARKET_DATA_DAILY_REST','Market data has reached today\'s safe capacity. Trade Police will be ready again after the daily refresh.',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});
+      return apiError('MARKET_DATA_CREDIT_WINDOW','Market data needs another moment. Trade Police will retry automatically.',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});
+    }
     if(supabase){await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_success:false,p_duration_ms:Date.now()-startedAt,p_metadata:{}}));await bestEffort(()=>supabase!.rpc('log_system_incident',{p_public_code:'MARKET_ANALYSIS_UNAVAILABLE',p_internal_code:'LIVE_MARKET_ANALYSIS_FAILED',p_provider:'twelvedata',p_endpoint:'/api/market/analyze',p_severity:'WARNING',p_message:error instanceof Error?error.message:'Unknown market analysis failure',p_metadata:{}}))}
     return publicApiError({message:'Market analysis unavailable.',code:'MARKET_ANALYSIS_UNAVAILABLE',internalCode:'LIVE_MARKET_ANALYSIS_FAILED',provider:'twelvedata',endpoint:'/api/market/analyze',error});
   }
