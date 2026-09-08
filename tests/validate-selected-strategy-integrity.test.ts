@@ -10,10 +10,21 @@ const validate=read('app/api/validate/route.ts');
 
 test('server-selected strategy and canonical revision hydrate together without an active-strategy overwrite',()=>{
   assert.match(page,/initialStrategyRevisionId=\{strategyRevisionId\(strategy\)\}/);
+  assert.match(page,/initialSelectionMode=\{strategyId \? 'REQUESTED' : 'ACTIVE'\}/);
   assert.match(validator,/initialStrategyRevisionId:string/);
+  assert.match(validator,/initialSelectionMode:'ACTIVE'\|'REQUESTED'/);
   assert.match(validator,/useState<string\|null>\(initialStrategyRevisionId\)/);
   assert.doesNotMatch(validator,/useEffect\(\(\)=>\{ void loadStrategy\(\); void loadAccounts\(\); \},\[userId\]\)/);
   assert.match(validator,/useEffect\(\(\)=>\{ void loadAccounts\(\); \},\[userId\]\)/);
+});
+
+test('generic strategy refresh events cannot replace an explicitly requested strategy',()=>{
+  assert.match(validator,/if \(!nextStrategy\) return;/);
+  assert.match(validator,/setStrategySelectionMode\('ACTIVE'\)/);
+  assert.match(validator,/strategySelectionMode === 'REQUESTED'/);
+  assert.match(validator,/SAVED STRATEGY SELECTED FOR THIS CHECK/);
+  assert.match(validator,/Strategy for this check:/);
+  assert.doesNotMatch(validator,/<span>Active strategy:<\/span>/);
 });
 
 test('market check loads the requested owned strategy and rejects a stale revision',()=>{

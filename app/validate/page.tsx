@@ -25,5 +25,5 @@ export default async function ValidatePage({ searchParams }: { searchParams: Pro
     const heading = error instanceof StrategyNotFoundError ? c.notFound : error instanceof NoActiveStrategyError ? c.noActive : c.needsConfiguration;
     return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} /><div className="card empty-state"><h2>{heading}</h2><a className="button-link primary" href="/profile">{c.configure}</a></div></main>;
   }
-  return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} /></main>;
+  return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} initialSelectionMode={strategyId ? 'REQUESTED' : 'ACTIVE'} /></main>;
 }

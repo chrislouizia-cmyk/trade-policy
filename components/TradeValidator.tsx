@@ -122,7 +122,7 @@ function applyDefaultTradeFormValues(
   setValue('session', strategy.allowedSessions[0] ?? 'LONDON');
 }
 
-export default function TradeValidator({userId,displayName,initialStrategy,initialStrategyRevisionId}:{userId:string;displayName:string;initialStrategy:StrategyProfile;initialStrategyRevisionId:string}) {
+export default function TradeValidator({userId,displayName,initialStrategy,initialStrategyRevisionId,initialSelectionMode}:{userId:string;displayName:string;initialStrategy:StrategyProfile;initialStrategyRevisionId:string;initialSelectionMode:'ACTIVE'|'REQUESTED'}) {
   const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
   const [result,setResult]=useState<ValidationResult|null>(null);
   const [analysis,setAnalysis]=useState<ChartAnalysis|null>(null);
@@ -146,6 +146,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   const [activationSuccess,setActivationSuccess]=useState<string| null>(null);
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
   const [activeStrategyRevisionId,setActiveStrategyRevisionId]=useState<string|null>(initialStrategyRevisionId);
+  const [strategySelectionMode,setStrategySelectionMode]=useState<'ACTIVE'|'REQUESTED'>(initialSelectionMode);
   const [strategyApplying,setStrategyApplying]=useState(false);
   const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
   const [positionOverlay,setPositionOverlay]=useState<PositionOverlayModel|null>(null);
@@ -185,7 +186,13 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     const handler=(event: Event)=>{
       const detail = (event as CustomEvent<{ strategy?: StrategyProfile; strategyId?: string }>).detail;
       const nextStrategy = detail?.strategy ?? null;
+      // A save, archive, or list refresh also emits strategy-changed with only an id.
+      // It must not replace a strategy selected explicitly through /validate?strategy=….
+      // The active-strategy switcher includes the authoritative strategy payload after
+      // the user explicitly activates another strategy.
+      if (!nextStrategy) return;
       setStrategyApplying(true);
+      setStrategySelectionMode('ACTIVE');
       setActiveStrategyRevisionId(null);
       setAnalysis(null);
       setResult(null);
@@ -196,10 +203,8 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
       setFeedbackAnalysisId(null);
       setTypedMessage('');
       setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');
-      if (nextStrategy) {
-        setStrategy(nextStrategy);
-        setSelectedInstrument((current) => nextStrategy.instruments.includes(current) ? current : nextStrategy.instruments[0] || 'XAUUSD');
-      }
+      setStrategy(nextStrategy);
+      setSelectedInstrument((current) => nextStrategy.instruments.includes(current) ? current : nextStrategy.instruments[0] || 'XAUUSD');
       void loadStrategy();
     };
     window.addEventListener('trade-police:strategy-changed',handler);
@@ -596,6 +601,12 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
+    <section className="card selected-validation-strategy" aria-live="polite">
+      <p className="muted">{strategySelectionMode === 'REQUESTED' ? w('SAVED STRATEGY SELECTED FOR THIS CHECK') : w('ACTIVE STRATEGY')}</p>
+      <h2>{strategy.name}</h2>
+      <p>{strategySelectionMode === 'REQUESTED' ? w('This market check uses the strategy you just selected without changing your active strategy.') : w('This market check uses your active strategy.')}</p>
+    </section>
+
     <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
     <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
@@ -605,7 +616,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">{w('STEP 2 · REVIEW TRADE DETAILS')}</h2>
-        <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Active strategy:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
+        <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Strategy for this check:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
         <section className="workspace-section"><h3>{w('Instrument and Direction')}</h3>
         <div className="grid grid-2">
           <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>changeInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
