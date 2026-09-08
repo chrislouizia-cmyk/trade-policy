@@ -7,6 +7,7 @@ import {
   createCanonicalCreationDraft,
 } from '../lib/strategy-creation-contract.ts';
 import {
+  isCopilotClarificationAnswered,
   mapCopilotReplyToCanonicalCreation,
 } from '../lib/strategy-copilot-creation.ts';
 import { mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, type StrategyCopilotReply } from '../lib/strategy-copilot.ts';
@@ -99,6 +100,40 @@ test('canonical missing-field questions replace Copilot as the readiness source 
   assert.ok(mapped.assessment.clarifications.some((item) => item.code === 'MISSING_RISK_PERCENT'));
   assert.equal(mapped.assessment.clarifications.filter((item) => item.code === 'MISSING_RISK_PERCENT').length, 1);
   assert.equal(mapped.assessment.clarifications.some((item) => item.code === 'COPILOT_UNRESOLVED_INPUT'), false);
+});
+
+test('an explicit timeframe choice resolves a repeated required-versus-informational clarification', () => {
+  const question = 'Do you want the H1 confirmation to be a required structural filter, or should H1 remain informational only?';
+  assert.equal(isCopilotClarificationAnswered('Keep H1 informational only.', question), true);
+  assert.equal(isCopilotClarificationAnswered('H1 must be a required structural filter.', question), true);
+
+  const initial = mapCopilotReplyToCanonicalCreation({
+    userMessage: completePrompt,
+    reply: reply({ unresolvedQuestions: [question] }),
+  });
+  assert.equal(initial.assessment.state, 'NEEDS_CLARIFICATION');
+
+  const resolved = mapCopilotReplyToCanonicalCreation({
+    userMessage: 'Keep H1 informational only.',
+    reply: reply({ unresolvedQuestions: [question] }),
+    previousDraft: initial.draft,
+  });
+  assert.equal(resolved.draft.unresolvedInputs.length, 0);
+  assert.equal(resolved.assessment.state, 'READY_FOR_REVIEW');
+  assert.equal(resolved.assessment.canReview, true);
+});
+
+test('an unrelated refinement cannot silently dismiss a pending clarification', () => {
+  const question = 'Do you want the H1 confirmation to be a required structural filter, or should H1 remain informational only?';
+  assert.equal(isCopilotClarificationAnswered('Keep risk at 0.5%.', question), false);
+  assert.equal(isCopilotClarificationAnswered('Keep M15 informational only.', question), false);
+
+  const mapped = mapCopilotReplyToCanonicalCreation({
+    userMessage: 'Keep risk at 0.5%.',
+    reply: reply({ unresolvedQuestions: [question] }),
+  });
+  assert.ok(mapped.draft.unresolvedInputs.some((item) => item.kind === 'QUESTION'));
+  assert.equal(mapped.assessment.canReview, false);
 });
 
 test('unsupported concepts remain non-executable unresolved descriptions', () => {

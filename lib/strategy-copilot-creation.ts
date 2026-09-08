@@ -158,12 +158,38 @@ function canonicalValues(reply: StrategyCopilotReply, message: string, previous?
   };
 }
 
+const CLARIFICATION_TIMEFRAME = /\b(?:M1|M5|M15|M30|H1|H4|D1|W1)\b/gi;
+const REQUIRED_CHOICE = /\b(?:required|mandatory|must|structural(?:\s+filter)?|requerid[oa]|obligatori[oa])\b/i;
+const INFORMATIONAL_CHOICE = /\b(?:informational(?:\s+only)?|context(?:\s+only)?|reference(?:\s+only)?|not\s+(?:required|mandatory)|no\s+(?:es\s+)?(?:requerid[oa]|obligatori[oa])|solo\s+(?:informativ[oa]|contexto|referencia))\b/i;
+
+function timeframesIn(value: string): string[] {
+  return [...new Set((value.match(CLARIFICATION_TIMEFRAME) ?? []).map((item) => item.toUpperCase()))];
+}
+
+/**
+ * A repeated model question must not keep a canonical draft blocked after the
+ * trader has explicitly selected one of the alternatives it presented.
+ * This intentionally recognizes only the narrow required-vs-informational
+ * clarification used for timeframe filters; unrelated questions fail closed.
+ */
+export function isCopilotClarificationAnswered(userMessage: string, question: string): boolean {
+  const questionTimeframes = timeframesIn(question);
+  const answerTimeframes = timeframesIn(userMessage);
+  if (questionTimeframes.length === 0 || !questionTimeframes.some((item) => answerTimeframes.includes(item))) return false;
+
+  const questionOffersRequiredChoice = REQUIRED_CHOICE.test(question) && INFORMATIONAL_CHOICE.test(question);
+  if (!questionOffersRequiredChoice) return false;
+
+  return REQUIRED_CHOICE.test(userMessage) || INFORMATIONAL_CHOICE.test(userMessage);
+}
+
 function unresolvedInputs(message: string, reply: StrategyCopilotReply): CanonicalUnresolvedInput[] {
   const parsed = parseCopilotPrompt(message);
   const canonicalFieldQuestion = /\b(?:name|call|instrument|symbol|market|session|context|macro|timeframe|entry|execution|rule|condition|risk|reward|rr)\b/i;
   const values: CanonicalUnresolvedInput[] = [
     ...parsed.unknownConcepts.map((text) => ({ kind: 'UNSUPPORTED_CONCEPT' as const, text, source: 'COPILOT' as const })),
     ...reply.unresolvedQuestions.flatMap((text) => {
+      if (isCopilotClarificationAnswered(message, text)) return [];
       const unsupported = /unsupported|not (?:in|part of) the (?:supported|rule) catalog/i.test(text);
       if (!unsupported && canonicalFieldQuestion.test(text)) return [];
       return [{ kind: unsupported ? 'UNSUPPORTED_CONCEPT' as const : 'QUESTION' as const, text, source: 'COPILOT' as const }];
