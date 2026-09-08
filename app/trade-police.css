@@ -2182,6 +2182,11 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
   .conversation-prompt{grid-template-columns:42px minmax(0,1fr)}
   .conversation-prompt > .badge{grid-column:2;justify-self:start}
   .strategy-v2-panel{padding:14px}
+  .strategy-builder-v2,.strategy-v2-panel,.draft-review-panel{min-width:0}
+  .strategy-builder-v2 .grid-2{grid-template-columns:minmax(0,1fr)}
+  .strategy-builder-v2 .button-row{display:grid;grid-template-columns:minmax(0,1fr)}
+  .strategy-builder-v2 .button-row button,.strategy-builder-v2 .button-row .button-link{width:100%}
+  .draft-review-panel{overflow-wrap:anywhere}
   .rule-controls{grid-template-columns:1fr}
   .builder-step-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 }

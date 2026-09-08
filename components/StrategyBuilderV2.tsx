@@ -62,6 +62,13 @@ const capabilityTone: Record<Capability, string> = {
   DESCRIPTIVE: 'neutral',
 };
 
+const capabilityCopy: Record<Capability, string> = {
+  AUTOMATIC: 'Checked by Trade Police',
+  MANUAL: 'Confirmed by you',
+  EXTERNAL: 'Checked from connected data',
+  DESCRIPTIVE: 'Context only',
+};
+
 const defaultMethodologies = ['smc', 'support-resistance'];
 
 export default function StrategyBuilderV2({
@@ -98,7 +105,7 @@ export default function StrategyBuilderV2({
   const [targetLogic, setTargetLogic] = useState<string>(typeof initialState?.targetLogic === 'string' ? initialState.targetLogic : '');
   const [copilotInput, setCopilotInput] = useState('');
   const [copilotConversation, setCopilotConversation] = useState<Array<{ heading: string; text: string }>>([
-    { heading: 'Strategy Copilot', text: 'Tell me how you trade. I’ll turn it into a structured strategy draft you can review and refine.' },
+    { heading: 'Trade Police', text: 'Tell me how you trade. I’ll organize it so you can review and refine it.' },
   ]);
   const [copilotDraft, setCopilotDraft] = useState<StrategyCopilotDraft>(() => ({
     ...emptyStrategyCopilotDraft(),
@@ -341,6 +348,7 @@ export default function StrategyBuilderV2({
   const visualReviewDraft = canonicalDraftForVisibleV2Review({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}), values: currentState() });
   const visualReview = (() => { try { return buildCanonicalStrategyReview(profile, visualReviewDraft); } catch { return null; } })();
   const copilotReview = (() => { try { return buildCanonicalStrategyReview(profile, canonicalCopilotDraft); } catch { return null; } })();
+  const copilotAssessment = assessCanonicalCreationDraft(canonicalCopilotDraft);
   const visualReviewCurrent = Boolean(visualConfirmation && visualReview?.fingerprint === visualConfirmation.review.fingerprint);
   const copilotReviewCurrent = Boolean(copilotConfirmation && copilotReview?.fingerprint === copilotConfirmation.review.fingerprint);
 
@@ -582,12 +590,11 @@ export default function StrategyBuilderV2({
 
       {path === 'copilot' && (
         <div className="strategy-v2-panel">
-          <h3>{w('AI Strategy Copilot — Beta')}</h3>
-          <p className="muted">{w('Describe how you trade in plain language. Trade Police turns your description into a structured draft that you can review and modify before applying.')}</p>
-          <p className="muted small">{w('The deterministic trading engine remains authoritative. AI cannot activate or modify a strategy without your approval.')}</p>
-          <textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} />
+          <p className="eyebrow">{w('DESCRIBE YOUR STRATEGY')}</p>
+          <h3>{w('How do you trade?')}</h3>
+          <p className="muted">{w('Explain it in your own words. Trade Police will organize it and ask only for details that are still needed.')}</p>
+          <label>{w('Your trading approach')}<textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} placeholder={w('Describe what you trade, when you trade, what confirms an entry, and how you manage risk.')} /></label>
           <div className="button-row">
-            <button type="button" onClick={() => setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }])}>{w('Add note')}</button>
             <button type="button" className="primary" disabled={copilotBusy || !copilotInput.trim()} onClick={async () => {
               if (!copilotInput.trim()) return;
               setCopilotBusy(true);
@@ -607,43 +614,39 @@ export default function StrategyBuilderV2({
                 if (!response.ok) {
                   throw new Error(payload?.error || 'AI draft unavailable');
                 }
-                const assessment = acceptCopilotPayload(payload, copilotInput);
+                acceptCopilotPayload(payload, copilotInput);
                 setCopilotConversation((current) => [
                   ...current,
-                  { heading: 'Strategy Copilot', text: payload.message || 'Got it. I drafted the following strategy for review.' },
+                  { heading: 'Trade Police', text: payload.message || 'Got it. I organized your strategy for review.' },
                   ...((Array.isArray(payload.changes) && payload.changes.length)
                     ? [{ heading: 'Changes detected', text: payload.changes.join(' • ') }]
-                    : []),
-                  ...(assessment.clarifications.length
-                    ? [{ heading: 'Clarification needed', text: assessment.clarifications.map((item) => item.question).join(' • ') }]
                     : []),
                 ]);
                 setCopilotRefinementInput('');
                 setCopilotReviewVisible(true);
                 setCopilotConfirmation(null);
               } catch (error) {
-                setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The copilot is unavailable right now.' }]);
+                setCopilotConversation((current) => [...current, { heading: 'Trade Police', text: error instanceof Error ? error.message : 'I could not structure the strategy right now.' }]);
               } finally {
                 setCopilotBusy(false);
               }
-            }}>{w(copilotBusy ? 'Thinking…' : 'Generate structured draft')}</button>
+            }}>{w(copilotBusy ? 'Understanding your strategy…' : 'Help me structure it')}</button>
           </div>
           <div className="copilot-log">
             {copilotConversation.map((entry, index) => (
               <div key={`${entry.heading}-${index}`} className="copilot-message">
-                <strong>{entry.heading}</strong>
-                <p>{entry.text}</p>
+                <strong>{w(entry.heading)}</strong>
+                <p>{w(entry.text)}</p>
               </div>
             ))}
           </div>
 
-          {copilotDraft.rules.length > 0 && (
+          {copilotReviewVisible && (
             <div className="strategy-v2-panel">
-              <h4>{w('Refine your strategy')}</h4>
-              <p className="muted">{w('Add more detail to adjust the draft without restarting the flow.')}</p>
-              <textarea value={copilotRefinementInput} onChange={(event) => setCopilotRefinementInput(event.target.value)} rows={4} placeholder="Add XAUUSD, London and New York sessions, require a liquidity sweep, FVG minimum 8 points, and minimum risk of 0.5%." />
+              <h4>{w('Anything to correct or add?')}</h4>
+              <p className="muted">{w('Tell Trade Police what to change. You do not need to start over.')}</p>
+              <textarea value={copilotRefinementInput} onChange={(event) => setCopilotRefinementInput(event.target.value)} rows={4} placeholder={w('Example: Add another session, change my risk, or make a condition optional.')} />
               <div className="button-row">
-                <button type="button" onClick={() => setCopilotReviewVisible((current) => !current)}>{w(copilotReviewVisible ? 'Hide review' : 'Review draft')}</button>
                 <button type="button" className="primary" disabled={copilotBusy || !copilotRefinementInput.trim()} onClick={async () => {
                   if (!copilotRefinementInput.trim()) return;
                   setCopilotBusy(true);
@@ -662,70 +665,62 @@ export default function StrategyBuilderV2({
                     if (!response.ok) {
                       throw new Error(payload?.error || 'AI refinement unavailable');
                     }
-                    const assessment = acceptCopilotPayload(payload, copilotRefinementInput);
+                    acceptCopilotPayload(payload, copilotRefinementInput);
                     setCopilotConversation((current) => [
                       ...current,
                       { heading: 'You', text: copilotRefinementInput },
-                      { heading: 'Strategy Copilot', text: payload.message || 'I updated the draft to reflect your refinement.' },
-                      ...(assessment.clarifications.length
-                        ? [{ heading: 'Clarification needed', text: assessment.clarifications.map((item) => item.question).join(' • ') }]
-                        : []),
+                      { heading: 'Trade Police', text: payload.message || 'I updated what I understood from your strategy.' },
                     ]);
                     setCopilotRefinementInput('');
                     setCopilotReviewVisible(true);
                     setCopilotConfirmation(null);
                   } catch (error) {
-                    setCopilotConversation((current) => [...current, { heading: 'Strategy Copilot', text: error instanceof Error ? error.message : 'The draft could not be updated.' }]);
+                    setCopilotConversation((current) => [...current, { heading: 'Trade Police', text: error instanceof Error ? error.message : 'I could not update the strategy right now.' }]);
                   } finally {
                     setCopilotBusy(false);
                   }
-                }}>{w('Apply / Update Draft')}</button>
+                }}>{w('Update what Trade Police understood')}</button>
               </div>
             </div>
           )}
 
-          {copilotReviewVisible && copilotDraft.rules.length > 0 && (
+          {copilotReviewVisible && (
             <div className="draft-review-panel">
-              <h4>{w('Draft summary')}</h4>
+              <p className="eyebrow">{w('YOUR REVIEW')}</p>
+              <h4>{w('Review what Trade Police understood')}</h4>
+              <p className="muted">{w('Correct anything above first. Confirm only when this matches how you intend to trade.')}</p>
               <p><strong>{copilotReview?.operation === 'UPDATE' ? w('Update selected strategy') : w('Create new strategy')}</strong> · {copilotReview?.activationIntent === 'ACTIVATE' ? w('Save and activate') : w('Save without activation')}</p>
+              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{const name=event.target.value;setStrategyName(name);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{name},{name:'EXPLICIT'}));setCopilotConfirmation(null);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
+              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>{const value=event.target.value;setContextTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{contextTimeframe:value||undefined},{contextTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>{const value=event.target.value;setExecutionTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{executionTimeframe:value||undefined},{executionTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               <div className="grid grid-2">
-                <div><span className="muted">{w('Instrument')}</span><strong>{copilotDraft.instrument ?? w('Not set')}</strong></div>
-                <div><span className="muted">{w('Session')}</span><strong>{copilotDraft.sessions.join(' + ') || w('Not set')}</strong></div>
-                <div><span className="muted">{w('Risk')}</span><strong>{typeof copilotDraft.riskPercent === 'number' ? `${copilotDraft.riskPercent}%` : w('Not set')}</strong></div>
-                <div><span className="muted">{w('Minimum RR')}</span><strong>{typeof copilotDraft.minimumRR === 'number' ? `1:${copilotDraft.minimumRR}` : w('Not set')}</strong></div>
+                <div><span className="muted">{w('Markets')}</span><strong>{canonicalCopilotDraft.values.instruments.join(', ') || w('Not set')}</strong></div>
+                <div><span className="muted">{w('Direction')}</span><strong>{canonicalCopilotDraft.values.direction ? w(canonicalCopilotDraft.values.direction) : w('Not set')}</strong></div>
+                <div><span className="muted">{w('Sessions')}</span><strong>{canonicalCopilotDraft.values.sessions.join(' + ') || w('Not set')}</strong></div>
+                <div><span className="muted">{w('Risk per trade')}</span><strong>{canonicalCopilotDraft.values.riskPercent ? `${canonicalCopilotDraft.values.riskPercent}%` : w('Not set')}</strong></div>
+                <div><span className="muted">{w('Minimum RR')}</span><strong>{canonicalCopilotDraft.values.minimumRR ? `1:${canonicalCopilotDraft.values.minimumRR}` : w('Not set')}</strong></div>
+                {copilotReview?.stopLogic ? <div><span className="muted">{w('Stop logic')}</span><strong>{copilotReview.stopLogic}</strong></div> : null}
+                {copilotReview?.targetLogic ? <div><span className="muted">{w('Target logic')}</span><strong>{copilotReview.targetLogic}</strong></div> : null}
               </div>
+              {copilotAssessment.clarifications.length > 0 ? <div className="warning-box" role="status"><strong>{w('A few details are still needed')}</strong>{copilotAssessment.clarifications.map((item)=><p key={`${item.code}-${item.field??'general'}`}>{w(item.question)}</p>)}</div> : null}
+              <h4>{w('Trading conditions')}</h4>
               <div className="rule-list">
-                {copilotDraft.rules.map((rule) => (
+                {canonicalCopilotDraft.values.ruleSelections.map((rule) => (
                   <div key={rule.key} className="rule-row">
                     <div className="rule-main">
                       <strong>{w(rule.label)}</strong>
-                      <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{rule.requirement}</span>
+                      <span className={`capability-pill ${capabilityTone[rule.capability]}`}>{w(rule.requirement === 'REQUIRED' ? 'Required' : 'Optional')}</span>
                     </div>
                     <div className="rule-controls">
-                      <span>{rule.group}</span>
+                      <span>{w(rule.group === 'ALL' ? 'All required conditions must be met' : 'One of these alternatives may be enough')}</span>
                       <span>{rule.timeframe}</span>
-                      <span>{rule.capability}</span>
+                      <span>{w(capabilityCopy[rule.capability])}</span>
                     </div>
                   </div>
                 ))}
+                {canonicalCopilotDraft.values.ruleSelections.length === 0 ? <p className="muted">{w('No trading conditions understood yet.')}</p> : null}
               </div>
-              <p className="muted">{w('Logic')}: {copilotDraft.logicTree.children.length ? copilotDraft.logicTree.logic : 'ALL'}{copilotDraft.logicTree.children.length ? ` (${copilotDraft.logicTree.children.join(', ')})` : ''}</p>
-            </div>
-          )}
-
-          {copilotDraft.rules.length > 0 && (
-            <div>
-              <label>{w('Strategy name')}<input value={strategyName} onChange={event=>{const name=event.target.value;setStrategyName(name);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{name},{name:'EXPLICIT'}));setCopilotConfirmation(null);setCopilotApplyError('');}} placeholder={w('Name this strategy')} /></label>
-              <div className="grid grid-2"><label>{w('Context timeframe')}<select value={contextTimeframe} onChange={event=>{const value=event.target.value;setContextTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{contextTimeframe:value||undefined},{contextTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose context timeframe')}</option>{['H1','H4','D1','W1'].map(value=><option key={value}>{value}</option>)}</select></label><label>{w('Execution timeframe')}<select value={executionTimeframe} onChange={event=>{const value=event.target.value;setExecutionTimeframe(value);setCanonicalCopilotDraft(current=>updateCanonicalCreationDraft(current,{executionTimeframe:value||undefined},{executionTimeframe:'EXPLICIT'}));setCopilotConfirmation(null);}}><option value="">{w('Choose execution timeframe')}</option>{['M1','M5','M15','M30','H1','H4','D1'].map(value=><option key={value}>{value}</option>)}</select></label></div>
               {copilotApplyError && <p className="warning">{copilotApplyError}</p>}
-              <div className="button-row">
-                <button type="button" onClick={() => setPath('copilot')}>{w('Back')}</button>
-                <button type="button" className="primary" disabled={!copilotDraft.rules.length || copilotBusy || saving || !copilotReviewCurrent} onClick={() => {
-                  if (!copilotReviewCurrent) return;
-                  void buildCopilotApply();
-                }}>{w(copilotReview?.operation === 'UPDATE' ? 'Confirm & Update' : 'Confirm & Save')}</button>
-              </div>
-              <label className="check-row">
+              {copilotAssessment.canReview ? <label className="check-row">
                 <input type="checkbox" checked={copilotReviewCurrent} onChange={(event) => {
                   if (!event.target.checked) {
                     setCopilotConfirmation(null);
@@ -742,8 +737,15 @@ export default function StrategyBuilderV2({
                     setCopilotApplyError(error instanceof Error ? error.message : 'Resolve the required clarification before approval.');
                   }
                 }} />
-                <span>{w('I confirm this exact strategy, its rule relationships, risk, and activation intent.')}</span>
-              </label>
+                <span>{w('This matches how I trade, including the risk and whether it will be active.')}</span>
+              </label> : null}
+              <div className="button-row">
+                <button type="button" onClick={onCancel}>{w('Cancel')}</button>
+                <button type="button" className="primary" disabled={copilotBusy || saving || !copilotReviewCurrent} onClick={() => {
+                  if (!copilotReviewCurrent) return;
+                  void buildCopilotApply();
+                }}>{w(saving ? 'Saving…' : copilotReview?.operation === 'UPDATE' ? 'Save changes' : copilotReview?.activationIntent === 'ACTIVATE' ? 'Save and activate' : 'Save strategy')}</button>
+              </div>
             </div>
           )}
         </div>

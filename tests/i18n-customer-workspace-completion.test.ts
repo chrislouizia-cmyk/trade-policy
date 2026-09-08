@@ -39,5 +39,5 @@ test('strategy builder localizes the internal creation paths and steps',()=>{
   assert.match(builder,/w\('Start from a methodology'\)/);
   assert.match(builder,/w\('Start blank'\)/);
   assert.match(builder,/w\('Step 5 — Review & Activate'\)/);
-  assert.match(builder,/w\(copilotReview\?\.operation === 'UPDATE' \? 'Confirm & Update' : 'Confirm & Save'\)/);
+  assert.match(builder,/copilotReview\?\.operation === 'UPDATE' \? 'Save changes' : copilotReview\?\.activationIntent === 'ACTIVATE' \? 'Save and activate' : 'Save strategy'/);
 });
