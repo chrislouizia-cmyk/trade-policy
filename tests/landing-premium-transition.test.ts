@@ -37,3 +37,12 @@ test('public navigation does not wait on remote auth or expose the footer betwee
   assert.match(css,/\.app-document-content \{[\s\S]*min-height: calc\(100dvh - 42px\)/);
   assert.doesNotMatch(css,/\.app-document-content>main:not\(\.marketing-page\)\{animation:premium-page-enter/);
 });
+
+test('signed-in landing entry skips the login and onboarding redirect chain',()=>{
+  const page=read('app/page.tsx');
+  assert.match(page,/getSupabaseAuthCookieNames\(cookieStore\.getAll\(\)/);
+  assert.match(page,/const accountHref=hasSessionHint\?'\/dashboard':'\/client\/login'/);
+  assert.match(page,/const signupHref=hasSessionHint\?'\/dashboard':'\/client\/login\?mode=signup&next=\/onboarding'/);
+  assert.match(page,/href=\{accountHref\}/);
+  assert.match(page,/href=\{signupHref\}/);
+});
