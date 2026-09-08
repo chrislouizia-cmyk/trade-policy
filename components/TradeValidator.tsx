@@ -603,6 +603,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     pendingCount={analysis?.setupReadiness?.required.pending ?? 0}
     violationsCount={result ? violatedCount : analysis?.setupReadiness?.required.failed ?? 0}
     decisionStatus={validateExperience.label}
+    experienceGuidance={validateExperience.guidance}
     finalized={Boolean(result)}
     finalRiskCheckAvailable={!result && isValidAnalysis}
     finalRiskCheckBusy={loading}
@@ -614,22 +615,25 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   return <div className="validate-page-flow" data-validate-state={validateExperience.state}><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <section className="card selected-validation-strategy" aria-live="polite">
-      <p className="muted">{strategySelectionMode === 'REQUESTED' ? w('SAVED STRATEGY SELECTED FOR THIS CHECK') : w('ACTIVE STRATEGY')}</p>
+    {strategySelectionMode === 'REQUESTED'&&<section className="card selected-validation-strategy" aria-live="polite">
+      <p className="muted">{w('SAVED STRATEGY SELECTED FOR THIS CHECK')}</p>
       <h2>{strategy.name}</h2>
-      <p>{strategySelectionMode === 'REQUESTED' ? w('This market check uses the strategy you just selected without changing your active strategy.') : w('This market check uses your active strategy.')}</p>
-    </section>
+      <p>{w('This market check uses the strategy you just selected without changing your active strategy.')}</p>
+    </section>}
+
+    {!analysis&&<section className="card validate-next-step" data-validate-status aria-live="polite">
+      <div><p className="brand">NEXT STEP</p><h2>{validateExperience.label}</h2></div>
+      <p>{validateExperience.guidance}</p>
+    </section>}
 
     <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
-    <div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
-    {!analysis&&<section className="card activation-walkthrough" aria-labelledby="activation-walkthrough-title"><div className="section-title"><div><p className="muted">EDUCATIONAL WALKTHROUGH</p><h2 id="activation-walkthrough-title">Start with the first analysis flow</h2></div></div><ol className="activation-help-list"><li><strong>1. Run the live market read</strong><br/>This gives the engine a current market view so the decision can be grounded in evidence.</li><li><strong>2. Review the setup details</strong><br/>Check the suggested setup, the current readiness, and the evidence that matters for your rules.</li><li><strong>3. Use the next action</strong><br/>If the risk check is still waiting, finish the required confirmations and run the final check.</li></ol></section>}
+    {analysis&&<div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     {analysis&&<MarketContextStrip analysis={analysis}/>}
     {analysis&&<PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>}
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
         <h2 className="workspace-title">{w('STEP 2 · REVIEW TRADE DETAILS')}</h2>
-        <p className="muted" data-validate-status><strong>{validateExperience.label}.</strong> {validateExperience.guidance}</p>
         <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Strategy for this check:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
         <section className="workspace-section"><h3>{w('Instrument and Direction')}</h3>
         <div className="grid grid-2">
@@ -674,7 +678,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     </div>
       </div>
     </aside>}
-    </div>
+    </div>}
 
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
     <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>

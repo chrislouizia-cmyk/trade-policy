@@ -63,7 +63,8 @@ test('visible decision panel owns setup readiness without a duplicate live-panel
   assert.match(decisionHero, />Setup evidence</);
   assert.match(decisionHero, />Final risk controls</);
   assert.match(decisionHero, /readinessPercent/);
-  assert.match(decisionHero, /DECISION \/ SETUP READINESS/);
+  assert.match(decisionHero, /NEXT STEP · \{decisionStatus\}/);
+  assert.match(decisionHero, /experienceGuidance/);
 });
 
 test('Decision Report replaces Trade Reasoning in user-facing copy', () => {

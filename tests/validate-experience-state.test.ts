@@ -134,9 +134,10 @@ test('activation and confirmed ACTIVE lifecycle outrank prior decision states', 
 
 test('TradeValidator consumes the canonical presentation state without replacing decision authorities', () => {
   const source = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
+  const hero = readFileSync(new URL('../components/decision/DecisionHero.tsx', import.meta.url), 'utf8');
   assert.match(source, /deriveValidateExperienceState/);
   assert.match(source, /data-validate-state=\{validateExperience\.state\}/);
-  assert.match(source, /data-validate-status/);
+  assert.match(`${source}\n${hero}`, /data-validate-status/);
   assert.match(source, /validateExperience\.canRunFinalRiskCheck/);
   assert.match(source, /authorizationEligibility/);
   assert.match(source, /result\?\.verdict/);

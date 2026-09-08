@@ -29,6 +29,7 @@ type Props={
   pendingCount?:number;
   setupType?:string|null;
   decisionStatus?:string;
+  experienceGuidance?:string;
   finalized?:boolean;
   finalRiskCheckAvailable?:boolean;
   finalRiskCheckBusy?:boolean;
@@ -51,13 +52,13 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
   return 'Check again';
 }
 
-export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,setupType,decisionStatus='Preliminary market decision',finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
+export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
   const {locale}=useLocale();
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
   const displayDecision = displayVerdict === 'READY' ? 'READY' : displayVerdict.replaceAll('_',' ');
-  const instruction = displayVerdict === 'WAIT' ? 'Do not risk your money yet.' : displayVerdict === 'BLOCKED' ? 'This setup conflicts with a mandatory trading rule.' : displayVerdict === 'READY' ? (finalized ? 'Final risk controls permit this trade.' : 'Setup evidence is complete. Run the final risk check before entering the trade.') : explanation.headline;
+  const instruction = experienceGuidance ?? (displayVerdict === 'WAIT' ? 'Do not risk your money yet.' : displayVerdict === 'BLOCKED' ? 'This setup conflicts with a mandatory trading rule.' : displayVerdict === 'READY' ? (finalized ? 'Final risk controls permit this trade.' : 'Setup evidence is complete. Run the final risk check before entering the trade.') : explanation.headline);
   const readinessAllowed=!['DATA_UNAVAILABLE','MARKET_CLOSED'].includes(displayVerdict);
   const analysis={provider:explanation.dataStatus.provider,latestCandleTimestamp:explanation.dataStatus.lastVerifiedCandleAt,calculatedAt:explanation.dataStatus.calculationCompletedAt};
   const resolvedPrimaryLabel=primaryActionLabel ?? actionLabel(explanation, displayVerdict);
@@ -67,7 +68,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
     <div className="decision-system-state"><span aria-hidden="true">{icon[explanation.verdict]}</span><strong>{explanation.dataStatus.freshness.replaceAll('_',' ')}</strong><small>{explanation.dataStatus.provider}</small></div>
     <div className="decision-hero-primary">
       {instrument?<p className="decision-panel-instrument">{instrument}{direction?` · ${direction}`:''}{setupType?` · ${setupType}`:''}</p>:null}
-      <p className="brand">DECISION / SETUP READINESS</p>
+      <p className="brand" data-validate-status>NEXT STEP · {decisionStatus}</p>
       <div className="decision-hero-verdict-column"><h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Current decision: </span>{displayDecision}</h1></div>
       <div className="decision-hero-explanation-column"><h2>{instruction}</h2><p className="decision-primary-reason">{explanation.primaryReason}</p></div>
       {readinessAllowed&&<p className="required-rule-count"><strong>Setup evidence: {explanation.confirmedRequiredCount} of {explanation.totalRequiredCount}</strong> required rules confirmed</p>}
