@@ -92,6 +92,27 @@ export async function updateSession(
     request,
   });
 
+  const authCookieNames = request.cookies.getAll().map((cookie) => cookie.name).filter((name) => /^(sb-|sb_)/.test(name));
+
+  if (routingDecision.redirectTarget === 'portal') {
+    return redirectToOrigin(request, canonicalUrls.portal);
+  }
+
+  if (routingDecision.redirectTarget === 'hq') {
+    return redirectToOrigin(request, canonicalUrls.hq);
+  }
+
+  // Public visitors without a Supabase session cannot become authenticated by
+  // a remote probe. Avoiding that round trip keeps landing → auth navigation
+  // immediate while every request carrying a session cookie is still verified.
+  if(authCookieNames.length===0&&isPublic){
+    if(routingDecision.mode==='hq'&&isHQEntryPath(pathname)){
+      const destination=getHQEntryDestination({pathname,authenticated:false,pendingInvitation:false,workspaceRoute:null,accessError:request.nextUrl.searchParams.get('error')==='access'});
+      if(destination)return NextResponse.redirect(new URL(destination,canonicalUrls.hq));
+    }
+    return response;
+  }
+
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL;
 
@@ -182,7 +203,6 @@ export async function updateSession(
   }
 
   const recoveredParam = request.nextUrl.searchParams.get('recovered') === '1';
-  const authCookieNames = request.cookies.getAll().map((cookie) => cookie.name).filter((name) => /^(sb-|sb_)/.test(name));
   const authStateCategory = user ? 'valid' : isSupabaseAuthRateLimitError(authError) ? 'rate_limited' : shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered: recoveredParam }) ? 'stale' : 'missing';
 
   console.info('[AUTH_ROUTE_DIAGNOSTIC]', {
@@ -236,14 +256,6 @@ export async function updateSession(
     url.searchParams.set('next', '/dashboard');
 
     return NextResponse.redirect(url);
-  }
-
-  if (routingDecision.redirectTarget === 'portal') {
-    return redirectToOrigin(request, canonicalUrls.portal);
-  }
-
-  if (routingDecision.redirectTarget === 'hq') {
-    return redirectToOrigin(request, canonicalUrls.hq);
   }
 
   if (!isPublic) {

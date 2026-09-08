@@ -27,3 +27,13 @@ test('new visitors render signup without waiting for a remote auth check',()=>{
   assert.match(login,/return <LoginSurface copy=\{c\}/);
   assert.match(login,/priority\/>/);
 });
+
+test('public navigation does not wait on remote auth or expose the footer between screens',()=>{
+  const proxy=read('lib/supabase/proxy.ts');
+  const css=read('app/trade-police.css');
+  const noCookieFastPath=proxy.indexOf('authCookieNames.length===0&&isPublic');
+  const remoteAuth=proxy.indexOf('supabase.auth.getUser()');
+  assert.ok(noCookieFastPath>0&&noCookieFastPath<remoteAuth);
+  assert.match(css,/\.app-document-content \{[\s\S]*min-height: calc\(100dvh - 42px\)/);
+  assert.doesNotMatch(css,/\.app-document-content>main:not\(\.marketing-page\)\{animation:premium-page-enter/);
+});

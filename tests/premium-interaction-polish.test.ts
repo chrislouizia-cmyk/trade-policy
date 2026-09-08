@@ -35,7 +35,7 @@ test('keyboard navigation is discoverable and avoids typing fields',()=>{
 test('premium motion is lightweight, mobile-ready, and reduced-motion safe',()=>{
   const styles=read('app/trade-police.css');
   const polish=styles.slice(styles.indexOf('/* Premium interaction polish'));
-  assert.match(polish,/premium-page-enter \.22s/);
+  assert.doesNotMatch(polish,/\.app-document-content>main[^}]*opacity|\.app-document-content>main[^}]*premium-page-enter/);
   assert.match(polish,/@media\(max-width:760px\)/);
   assert.match(polish,/@media\(prefers-reduced-motion:reduce\)/);
   assert.match(polish,/animation:none!important/);
