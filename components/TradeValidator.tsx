@@ -28,7 +28,6 @@ import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
 import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
-import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
 import {deriveValidateExperienceState} from '@/lib/validate-experience-state';
@@ -474,8 +473,6 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     finally { setSavingTrade(false); closeTradeActionModal(); }
   }
 
-  const suggested=useMemo(()=>latestTradeActivity(history,'SUGGESTED'),[history]);
-  const executed=useMemo(()=>latestTradeActivity(history,'EXECUTED'),[history]);
   const hasActiveTrade=useMemo(()=>history.some(h=>h.source==='EXECUTED'&&h.status==='OPEN'),[history]);
   const threshold=strategy.aiBehavior?.confidenceThreshold ?? strategy.waitScore;
   const aiStatus=useMemo(()=>getAiDockStatus({analyzing,analysis,result,threshold}),[analysis,analyzing,result,threshold]);
@@ -692,11 +689,6 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
     <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>
 
-    <div className="card primary-workspace-surface recent-activity-card">
-      <h2 className="workspace-title">{w('RECENT ACTIVITY')}</h2>
-      <section className="workspace-section compact-history-card"><h3>{w('LAST 3 TRADES')}</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
-    </div>
-
 {tradeActionMode&&createPortal(<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)closeTradeActionModal();}}>
       <section ref={tradeActionModalRef} className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="trade-action-title">
         <header className="reasoning-modal-header"><div><p className="brand" id="trade-action-title">{w('TRADE ACTION')}</p><p className="reasoning-panel-copy">Choose whether this decision becomes an active trade or is recorded as missed.</p></div><button ref={tradeActionCloseRef} className="reasoning-modal-close" type="button" aria-label="Close trade action" onClick={closeTradeActionModal}>×</button></header>
@@ -719,8 +711,4 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     </div>,document.body)}
 
   </div>;
-}
-
-function History({title,emptyMessage,rows}:{title:string;emptyMessage:string;rows:SavedSetup[]}){
-  return <section className="trade-history-column"><h4>{title}</h4><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map((row,index)=><div className="trade-history-row" key={`${title}-${row.id}`}><strong>{index+1}. {row.instrument} {row.direction}</strong><small>Entry <time dateTime={row.createdAt}>{formatTradeActivityDateTime(row.createdAt)}</time>{row.closedAt?<> · Exit <time dateTime={row.closedAt}>{formatTradeActivityDateTime(row.closedAt)}</time></>:null}</small></div>)}</div></section>;
 }
