@@ -228,7 +228,7 @@ export function useMarketCandles(instrument: string, timeframe: string, options?
     const controller = new AbortController();
     const params = new URLSearchParams({ instrument, timeframe, from: activeRange.from, to: activeRange.to });
     try {
-      const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal,headers:{'Idempotency-Key':crypto.randomUUID()} });
       const payload = await readApiResponse(response) as { candles?: Candle[]; provider?: string; error?: unknown; message?: string } | null;
       if (!response.ok || !Array.isArray(payload?.candles)) {
         const outcome = resolveCandlesFetchOutcome(previousCandles, payload, manualRefresh, backgroundRefresh);

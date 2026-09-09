@@ -19,6 +19,13 @@ export const maxDuration = 60;
 
 async function bestEffort(work:()=>PromiseLike<unknown>){try{await work()}catch(error){console.error('Non-critical analysis telemetry failed',error)}}
 
+async function completedAnalysisReplay(userId:string,analysisId:string){
+  const {data,error}=await createAdminClient().from('market_scans').select('id,analysis').eq('id',analysisId).eq('user_id',userId).eq('server_created',true).maybeSingle();
+  if(error||!data?.analysis||typeof data.analysis!=='object')return null;
+  const analysis=data.analysis as ChartAnalysis;
+  return NextResponse.json({...analysis,analysisId:data.id,strategyApplied:{id:analysis.strategyId,name:(analysis as ChartAnalysis&{strategyName?:string}).strategyName??'Saved strategy'},replayed:true},{headers:{'Cache-Control':'no-store, max-age=0'}});
+}
+
 export async function POST(req: Request) {
   const startedAt=Date.now();
   let supabase: Awaited<ReturnType<typeof createClient>> | null=null;
@@ -30,6 +37,14 @@ export async function POST(req: Request) {
     const requestKey=req.headers.get('idempotency-key');
     if(!requestKey||requestKey.length>100)return apiError('IDEMPOTENCY_KEY_REQUIRED','A valid analysis request key is required.',400);
     const reservation=await reserveAnalysis(user.id,requestKey);
+    if(reservation.duplicate){
+      if(reservation.reservation.status==='COMPLETED'&&reservation.reservation.result_analysis_id){
+        const replay=await completedAnalysisReplay(user.id,String(reservation.reservation.result_analysis_id));
+        if(replay)return replay;
+      }
+      if(reservation.reservation.status==='RESERVED')return apiError('ANALYSIS_IN_PROGRESS','This market analysis request is already in progress.',409);
+      return apiError('ANALYSIS_REQUEST_REUSED','This analysis request was already completed or released. Start a new market check to request newer data.',409);
+    }
     if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED',`Your ${reservation.state.entitlements.monthlyAnalysisLimit ?? ''}-analysis cycle limit has been reached. Your analyses renew on ${reservation.state.usagePeriodEnd}. Upgrade to continue.`,429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage,periodStart:reservation.state.usagePeriodStart,renewsAt:reservation.state.usagePeriodEnd});
     usage={userId:user.id,requestKey};
     const body=await req.json().catch(()=>null) as {instrument?:Instrument;strategyId?:string;strategyRevisionId?:string}|null;
@@ -59,7 +74,7 @@ export async function POST(req: Request) {
     const {data:scan,error:scanError}=await createAdminClient().from('market_scans').insert({ user_id: user.id, server_created:true, instrument, strategy_profile_id: strategy.id || null, strategy_revision_id:currentStrategyRevisionId, provider: 'twelvedata', timeframes, analysis: persistedAnalysis }).select('id').single();
     if(scanError||!scan)throw scanError??new Error('Analysis record was not created.');
     await bestEffort(()=>supabase!.rpc('log_usage_event',{p_event_type:'MARKET_ANALYSIS',p_endpoint:'/api/market/analyze',p_instrument:instrument,p_success:true,p_duration_ms:Date.now()-startedAt,p_metadata:{provider:'twelvedata'}}));
-    await bestEffort(()=>finalizeAnalysis(user.id,requestKey,true));
+    await finalizeAnalysis(user.id,requestKey,true,scan.id);
     const diagnostics=process.env.NODE_ENV==='development'?{strategyId:analysis.strategyId,strategyName:strategy.name,evaluationSource:'TRADING_DNA_RUNTIME',strategySchemaVersion:analysis.strategySchemaVersion,methodologyIds:analysis.methodologyIds,instrument,providerSymbol:analysis.providerSymbol,timeframes,candleCounts:Object.fromEntries(timeframes.map((frame,index)=>[frame,values[index].length])),latestCandleTimestamp:analysis.latestCandleTimestamp,totalRequiredWeight:analysis.setupReadiness.totalRequiredWeight,passingRequiredWeight:analysis.setupReadiness.passingRequiredWeight,requiredCounts:analysis.setupReadiness.required,optionalCounts:analysis.setupReadiness.optional,readinessFormula:analysis.setupReadiness.formula,contributingRules:analysis.tradingDnaReport.conditions.map(condition=>({id:condition.ruleId,status:condition.status,weight:condition.weight,evidenceSource:analysis.setupReadiness.conditions.find(item=>item.label===condition.label)?.evidenceSource})),timeframeAligned:analysis.timeframeAligned,finalState:analysis.setupReadiness.state,finalConfidence:analysis.liveAnalysisConfidence,calculationTimestamp:analysis.calculatedAt,cache:'MISS'}:undefined;
     return NextResponse.json({...persistedAnalysis,analysisId:scan.id,strategyApplied:{id:strategy.id,name:strategy.name},diagnostics},{headers:{'Cache-Control':'no-store, max-age=0'}});
   } catch (error) {

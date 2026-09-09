@@ -26,6 +26,19 @@ test('provider reservations are atomic, global, UTC-windowed, and service-role o
   assert.match(migration,/grant execute on function[\s\S]*service_role/);
 });
 
+test('the latest coordinator migration rejects provider replays inside the global lock',()=>{
+  const replayMigration=fs.readFileSync('supabase/migrations/103_secure_marketplace_metrics_and_provider_replays.sql','utf8');
+  const lock=replayMigration.indexOf("pg_advisory_xact_lock(hashtextextended('provider-credit:'");
+  const lookup=replayMigration.indexOf('select * into v_existing');
+  const insert=replayMigration.indexOf('insert into public.provider_credit_events');
+  assert.ok(lock>=0&&lookup>lock&&insert>lookup);
+  assert.match(replayMigration,/'duplicate', true/);
+  assert.match(replayMigration,/'settlementStatus', v_existing\.settlement_status/);
+  assert.match(replayMigration,/settlement_status = 'CONSUMED'/);
+  assert.match(replayMigration,/settlement_status = 'PENDING' and created_at > v_now - interval '2 minutes'/);
+  assert.match(coordinator,/if\(reservation\.duplicate\)throw new ProviderRequestReplayError\(\)/);
+});
+
 test('live operations reserve the complete request before parallel provider calls',()=>{
   assert.match(analyze,/credits:timeframes\.length/);
   assert.match(analyze,/priority:'LIVE'/);

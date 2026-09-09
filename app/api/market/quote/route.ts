@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchPriceQuoteWithTelemetry } from '@/lib/market-data';
 import { apiError, publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
-import { ProviderCreditLimitError, withTwelveDataCredits } from '@/lib/server/provider-credit-coordinator';
+import { ProviderCreditLimitError, ProviderRequestReplayError, withTwelveDataCredits } from '@/lib/server/provider-credit-coordinator';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +11,14 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return apiError('UNAUTHORIZED', 'Unauthorized.', 401);
+    const idempotencyKey=request.headers.get('idempotency-key');
+    if(!idempotencyKey||idempotencyKey.length>100)return apiError('IDEMPOTENCY_KEY_REQUIRED','A valid market-data request key is required.',400);
 
     const url = new URL(request.url);
     const instrument = (url.searchParams.get('instrument') ?? '').trim().toUpperCase();
     if (!instrument) return apiError('INVALID_INSTRUMENT', 'instrument is required.', 400);
 
-    const requestKey=`quote:${user.id}:${instrument}:${request.headers.get('idempotency-key') ?? Date.now()}`;
+    const requestKey=`quote:${user.id}:${idempotencyKey}`;
     const { price, providerTimestamp, providerEventTimeMs, serverReceivedAt } = await withTwelveDataCredits({
       requestKey,
       operation: 'chart.quote',
@@ -35,6 +37,7 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) {
+    if (error instanceof ProviderRequestReplayError) return apiError(error.code,error.message,409);
     if (error instanceof ProviderCreditLimitError) {
       return apiError('MARKET_QUOTE_CREDIT_WINDOW', 'Live chart is waiting for fresh market data.', 429, {
         retryAfterSeconds: error.reservation.retryAfterSeconds,

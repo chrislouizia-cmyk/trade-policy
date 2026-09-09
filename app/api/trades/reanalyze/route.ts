@@ -8,7 +8,7 @@ import {validateTradeWithStrategy} from '@/lib/server/decision-engine';
 import {loadDailyTradeContext} from '@/lib/server/daily-trade-context';
 import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
-import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {withTwelveDataCredits,ProviderCreditLimitError,ProviderRequestReplayError} from '@/lib/server/provider-credit-coordinator';
 
 export const runtime='nodejs';export const maxDuration=60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
@@ -21,6 +21,8 @@ export async function POST(request:Request){
   try{
     const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();
     if(!user)return failure('Authentication is required.','UNAUTHORIZED',401);
+    const idempotencyKey=request.headers.get('idempotency-key');
+    if(!idempotencyKey||idempotencyKey.length>100)return failure('A valid market-data request key is required.','IDEMPOTENCY_KEY_REQUIRED',400);
     const parsed=requestSchema.safeParse(await request.json());
     if(!parsed.success)return failure('A valid active trade ID is required.','INVALID_TRADE_ID',400);
     const {data:trade,error:tradeError}=await supabase.from('active_trades').select('*').eq('id',parsed.data.tradeId).eq('user_id',user.id).eq('status','OPEN').maybeSingle();
@@ -36,7 +38,7 @@ export async function POST(request:Request){
     if(!policy.instruments.includes(trade.instrument))return failure(`${trade.instrument} is not enabled in the active strategy.`,'UNSUPPORTED_INSTRUMENT',400,{instrument:trade.instrument});
     const timeframes=strategyTimeframes(strategy);
     let values,currentPrice:number;
-    try{const result=await withTwelveDataCredits({requestKey:`reanalyze:${user.id}:${trade.id}:${request.headers.get('idempotency-key')??Date.now()}`,operation:'active-trade.reanalysis',priority:'LIVE',credits:timeframes.length+1},async()=>{const series=await Promise.all(timeframes.map(timeframe=>fetchSeriesWithTelemetry(trade.instrument,timeframe)));const price=await fetchPriceWithTelemetry(trade.instrument);const telemetry=[...series.map(item=>item.telemetry),price.telemetry];return{value:{values:series.map(item=>item.value),currentPrice:price.value},telemetry:{creditsUsed:telemetry.at(-1)?.creditsUsed??null,creditsLeft:telemetry.at(-1)?.creditsLeft??null,requestCredits:telemetry.reduce((sum,item)=>sum+(item.requestCredits??1),0),observedAt:new Date().toISOString()}};});values=result.values;currentPrice=result.currentPrice;}catch(error){if(error instanceof ProviderCreditLimitError)return failure(error.message,'MARKET_DATA_CREDIT_WINDOW',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});return failure(error instanceof Error?error.message:'Twelve Data could not return configured market data.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
+    try{const result=await withTwelveDataCredits({requestKey:`reanalyze:${user.id}:${trade.id}:${idempotencyKey}`,operation:'active-trade.reanalysis',priority:'LIVE',credits:timeframes.length+1},async()=>{const series=await Promise.all(timeframes.map(timeframe=>fetchSeriesWithTelemetry(trade.instrument,timeframe)));const price=await fetchPriceWithTelemetry(trade.instrument);const telemetry=[...series.map(item=>item.telemetry),price.telemetry];return{value:{values:series.map(item=>item.value),currentPrice:price.value},telemetry:{creditsUsed:telemetry.at(-1)?.creditsUsed??null,creditsLeft:telemetry.at(-1)?.creditsLeft??null,requestCredits:telemetry.reduce((sum,item)=>sum+(item.requestCredits??1),0),observedAt:new Date().toISOString()}};});values=result.values;currentPrice=result.currentPrice;}catch(error){if(error instanceof ProviderRequestReplayError)return failure(error.message,error.code,409);if(error instanceof ProviderCreditLimitError)return failure(error.message,'MARKET_DATA_CREDIT_WINDOW',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});return failure(error instanceof Error?error.message:'Twelve Data could not return configured market data.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
     if(values.some(candles=>candles.length<25))return failure('Twelve Data returned insufficient candles for deterministic analysis.','INSUFFICIENT_MARKET_DATA',422,{instrument:trade.instrument,timeframes});
     const analysis=buildLiveAnalysis(trade.instrument,strategy,Object.fromEntries(timeframes.map((timeframe,index)=>[timeframe,values[index]])),'Twelve Data');
     const {data:record}=trade.trade_record_id?await supabase.from('trade_records').select('session,rule_snapshot').eq('id',trade.trade_record_id).eq('user_id',user.id).maybeSingle():{data:null};

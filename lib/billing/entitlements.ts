@@ -176,7 +176,7 @@ export async function reserveAnalysis(
 
   const { data: existing, error: existingError } = await admin
     .from('analysis_usage')
-    .select('id,status')
+    .select('id,status,result_analysis_id')
     .eq('user_id', userId)
     .eq('request_key', requestKey)
     .maybeSingle();
@@ -207,10 +207,21 @@ export async function reserveAnalysis(
       period_start: periodKey,
       status: 'RESERVED',
     })
-    .select('id,status')
+    .select('id,status,result_analysis_id')
     .single();
 
   if (error) {
+    if (error.code === '23505') {
+      const { data: concurrent, error: concurrentError } = await admin
+        .from('analysis_usage')
+        .select('id,status,result_analysis_id')
+        .eq('user_id', userId)
+        .eq('request_key', requestKey)
+        .single();
+      if (!concurrentError && concurrent) {
+        return { allowed: concurrent.status !== 'FAILED', state, reservation: concurrent, duplicate: true };
+      }
+    }
     console.error('Billing usage reservation failed', {
       userId,
       requestKey,
@@ -265,6 +276,7 @@ export async function finalizeAnalysis(
   userId: string,
   requestKey: string,
   success: boolean,
+  resultAnalysisId: string | null = null,
 ) {
   const admin = createAdminClient();
 
@@ -273,6 +285,7 @@ export async function finalizeAnalysis(
     .update({
       status: success ? 'COMPLETED' : 'FAILED',
       completed_at: new Date().toISOString(),
+      result_analysis_id: success ? resultAnalysisId : null,
     })
     .eq('user_id', userId)
     .eq('request_key', requestKey)

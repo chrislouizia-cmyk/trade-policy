@@ -2,12 +2,17 @@ import {createAdminClient} from '../supabase/admin.ts';
 import {MarketDataProviderError,type ProviderCreditTelemetry,type ProviderResult} from '../market-data.ts';
 
 export type ProviderPriority='LIVE'|'INTERACTIVE'|'BACKGROUND';
-export type ProviderCreditReservation={allowed:boolean;reason?:string;minuteUsed:number;minuteRemaining:number;dailyUsed:number;dailyRemaining:number;retryAfterSeconds:number;dailyResetsAt:string};
+export type ProviderCreditReservation={allowed:boolean;reason?:string;minuteUsed:number;minuteRemaining:number;dailyUsed:number;dailyRemaining:number;retryAfterSeconds:number;dailyResetsAt:string;duplicate?:boolean;settlementStatus?:string};
 
 export class ProviderCreditLimitError extends Error{
   readonly code='PROVIDER_CREDIT_LIMIT';
   readonly reservation:ProviderCreditReservation;
   constructor(reservation:ProviderCreditReservation){super(reservation.reason==='DAILY_LIMIT'?'The market-data daily credit limit has been reached.':'Market data is waiting for the next provider credit window.');this.name='ProviderCreditLimitError';this.reservation=reservation;}
+}
+
+export class ProviderRequestReplayError extends Error{
+  readonly code='PROVIDER_REQUEST_REPLAY';
+  constructor(){super('This market-data request was already received. Start a new explicit refresh if you want newer data.');this.name='ProviderRequestReplayError';}
 }
 
 export async function reserveTwelveDataCredits(input:{requestKey?:string;operation:string;priority:ProviderPriority;credits:number}){
@@ -29,7 +34,8 @@ export async function settleTwelveDataCredits(input:{requestKey:string;actualCre
 }
 
 export async function withTwelveDataCredits<T>(input:{requestKey:string;operation:string;priority:ProviderPriority;credits:number},work:()=>Promise<ProviderResult<T>>):Promise<T>{
-  await reserveTwelveDataCredits(input);
+  const reservation=await reserveTwelveDataCredits(input);
+  if(reservation.duplicate)throw new ProviderRequestReplayError();
   try{
     const result=await work();
     await settleTwelveDataCredits({requestKey:input.requestKey,actualCredits:result.telemetry.requestCredits??input.credits,telemetry:result.telemetry});
