@@ -9,14 +9,14 @@ const market = read('components/LiveMarketPanel.tsx');
 
 test('Validate presents one progressive journey instead of a parallel tutorial and empty trade form', () => {
   assert.doesNotMatch(validator, /activation-walkthrough|EDUCATIONAL WALKTHROUGH|Start with the first analysis flow/);
-  assert.match(validator, /!analysis&&<section className="card validate-next-step"/);
+  assert.doesNotMatch(validator, /validate-next-step/);
   assert.match(validator, /analysis&&<div className="validate-workspace-grid"/);
   assert.match(market, /STEP 1 · CHECK CURRENT MARKET/);
   assert.match(validator, /STEP 2 · REVIEW TRADE DETAILS/);
 });
 
 test('the canonical state owns the one visible next-step instruction in each phase', () => {
-  assert.match(validator, /data-validate-status/);
+  assert.doesNotMatch(validator, /data-validate-status/);
   assert.match(validator, /validateExperience\.label/);
   assert.match(validator, /validateExperience\.guidance/);
   assert.match(validator, /experienceGuidance=\{validateExperience\.guidance\}/);

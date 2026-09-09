@@ -12,7 +12,7 @@ test('activation experience keeps onboarding guidance while Validate uses progre
   assert.match(checklist, /ACTIVATION CHECKLIST/i);
   assert.match(checklist, /Use starter rules/);
   assert.match(builder, /quickstart/i);
-  assert.match(validator, /validate-next-step/);
+  assert.doesNotMatch(validator, /validate-next-step/);
   assert.match(validator, /validateExperience\.guidance/);
   assert.doesNotMatch(validator, /EDUCATIONAL WALKTHROUGH/i);
 });

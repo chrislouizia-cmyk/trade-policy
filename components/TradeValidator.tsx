@@ -618,11 +618,6 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
       <p>{w('This market check uses the strategy you just selected without changing your active strategy.')}</p>
     </section>}
 
-    {!analysis&&<section className="card validate-next-step" data-validate-status aria-live="polite">
-      <div><p className="brand">NEXT STEP</p><h2>{validateExperience.label}</h2></div>
-      <p>{validateExperience.guidance}</p>
-    </section>}
-
     <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
     {analysis&&<div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
