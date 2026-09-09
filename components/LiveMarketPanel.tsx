@@ -5,6 +5,7 @@ import TradingViewChart from './TradingViewChart';
 import TradingViewReferenceChart from './TradingViewReferenceChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 import type { PositionOverlayModel } from '@/lib/position-geometry';
+import type {MarketChartSnapshot} from '@/lib/market-snapshot';
 
 import {strategyTimeframeContext, supportedMarketTimeframesForStrategy} from '@/lib/strategy-timeframes';
 import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
@@ -58,7 +59,7 @@ export default function LiveMarketPanel({
   const [stageIndex, setStageIndex] = useState(0);
   const [error, setError] = useState('');
   const [waitingForMarketData, setWaitingForMarketData] = useState(false);
-  const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
+  const [chartData, setChartData] = useState<MarketChartSnapshot['chart']|null>(null);
   const [snapshotCreatedAt,setSnapshotCreatedAt]=useState<string|null>(null);
   const [analysisSource,setAnalysisSource]=useState<'LIVE'|'SNAPSHOT'|null>(null);
   const [paintedChartKey,setPaintedChartKey]=useState<string|null>(null);
@@ -67,8 +68,6 @@ export default function LiveMarketPanel({
   const analysisContextRef = useRef('');
   const retryTimerRef = useRef<number | null>(null);
   const snapshotControllerRef=useRef<AbortController|null>(null);
-  const onApplyRef=useRef(onApply);
-  useEffect(()=>{onApplyRef.current=onApply},[onApply]);
 
   useEffect(()=>{
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -76,7 +75,7 @@ export default function LiveMarketPanel({
     snapshotControllerRef.current=null;
     retryTimerRef.current = null;
     analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
-    setAnalysis(null);
+    setChartData(null);
     setSnapshotCreatedAt(null);
     setAnalysisSource(null);
     setError('');
@@ -95,14 +94,13 @@ export default function LiveMarketPanel({
       .then(async response=>{
         if(response.status===204)return null;
         if(!response.ok)throw new Error('snapshot-unavailable');
-        return response.json() as Promise<{analysis:ChartAnalysis;snapshotCreatedAt:string}>;
+        return response.json() as Promise<MarketChartSnapshot>;
       })
       .then(snapshot=>{
         if(!snapshot||analysisContextRef.current!==requestContextKey)return;
-        setAnalysis(snapshot.analysis);
+        setChartData(snapshot.chart);
         setSnapshotCreatedAt(snapshot.snapshotCreatedAt);
         setAnalysisSource('SNAPSHOT');
-        onApplyRef.current(snapshot.analysis);
       })
       .catch(error=>{if(error instanceof Error&&error.name==='AbortError')return;});
     return()=>{controller.abort();if(snapshotControllerRef.current===controller)snapshotControllerRef.current=null};
@@ -147,6 +145,7 @@ export default function LiveMarketPanel({
     onLoadingChange?.(true);
     setStageIndex(0);
     setError('');
+    if(chartData){setAnalysisSource('SNAPSHOT');setSnapshotCreatedAt(chartData.calculatedAt)}
     if (retryAttempt === 0) onReset?.();
 
     const controller=new AbortController();
@@ -196,7 +195,7 @@ export default function LiveMarketPanel({
         return;
       }
 
-      setAnalysis(result as ChartAnalysis);
+      setChartData(result as ChartAnalysis);
       setSnapshotCreatedAt(null);
       setAnalysisSource('LIVE');
       onApply(result as ChartAnalysis);
@@ -215,9 +214,9 @@ export default function LiveMarketPanel({
   const strategyContextText = strategyLoading ? '' : strategyTimeframeContext(strategy);
   const activeTradeOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:null;
   const activeTradeGeometry=activeTradeOverlay?.acceptedGeometry??activeTradeOverlay?.currentGeometry??null;
-  const displayedCandles=analysis?.marketSeries?.[chartTimeframe]??null;
+  const displayedCandles=chartData?.marketSeries?.[chartTimeframe]??null;
   const chartDataKey=displayedCandles?.length
-    ? `${analysis?.analysisId??analysis?.calculatedAt??'analysis'}:${selectedInstrument}:${chartTimeframe}:${displayedCandles.length}:${displayedCandles[0]?.datetime??''}:${displayedCandles.at(-1)?.datetime??''}`
+    ? `${chartData?.analysisId??chartData?.calculatedAt??'analysis'}:${selectedInstrument}:${chartTimeframe}:${displayedCandles.length}:${displayedCandles[0]?.datetime??''}:${displayedCandles.at(-1)?.datetime??''}`
     : null;
   const analyzedChartReady=chartDataKey!==null&&paintedChartKey===chartDataKey;
 
@@ -240,7 +239,7 @@ export default function LiveMarketPanel({
             </select>
           </label>
           <button className="primary" data-market-check type="button" onClick={() => { void scan(); }} disabled={loading || strategyLoading || !strategy.id || !strategyRevisionId}>
-            {strategyLoading ? 'Applying strategy…' : !strategy.id || !strategyRevisionId ? 'Loading strategy…' : waitingForMarketData ? 'Waiting for fresh market data…' : loading ? scanStages[stageIndex] : analysis ? 'Refresh market check' : 'Check current market'}
+            {strategyLoading ? 'Applying strategy…' : !strategy.id || !strategyRevisionId ? 'Loading strategy…' : waitingForMarketData ? 'Waiting for fresh market data…' : loading ? scanStages[stageIndex] : analysisSource==='LIVE' ? 'Refresh market check' : 'Check current market'}
           </button>
         </div>
       </div>
@@ -265,13 +264,13 @@ export default function LiveMarketPanel({
         </div>
         <strong>{selectedInstrument}</strong>
       </div>
-      {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Last market check</strong><span>Restored from {new Date(snapshotCreatedAt).toLocaleString()}. Refresh only when you want a new decision.</span></div>:null}
+      {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Saved market data</strong><span>From {new Date(snapshotCreatedAt).toLocaleString()} · Check current market when you want a new Decision.</span></div>:null}
       <div className="market-chart-stage">
         <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartReady?'is-hidden':''}`} aria-hidden={analyzedChartReady} inert={analyzedChartReady?true:undefined}>
           <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
         </div>
         {displayedCandles?.length&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartReady?'is-ready':''}`} aria-hidden={!analyzedChartReady} inert={!analyzedChartReady?true:undefined}>
-          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={analysis?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={()=>setPaintedChartKey(chartDataKey)} />
+          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={chartData?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={()=>setPaintedChartKey(chartDataKey)} />
         </div>:null}
         {activeTradeOverlay&&activeTradeGeometry?<aside className={`market-active-trade-overlay direction-${activeTradeGeometry.direction.toLowerCase()}`} aria-label={`Active ${activeTradeGeometry.direction} trade on ${selectedInstrument}`}>
           <div className="market-active-trade-heading"><span>Active trade</span><strong>{activeTradeGeometry.direction} · {selectedInstrument}</strong></div>
@@ -284,7 +283,7 @@ export default function LiveMarketPanel({
           <a href="/active-trade">View active trade</a>
         </aside>:null}
       </div>
-      {analysis ? decisionContent : null}
+      {analysisSource==='LIVE' ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
       {error && <div className="error analysis-error" role="alert"><strong>Market check needs another moment.</strong><p>{error}</p><small>Nothing was changed or counted. Your selected instrument and trading rules are safe.</small><button type="button" onClick={() => { void scan(); }}>Try again</button></div>}
     </section>

@@ -1,6 +1,6 @@
 import {NextResponse} from 'next/server';
 import {createClient} from '@/lib/supabase/server';
-import {restoreMarketSnapshot,type MarketSnapshotRow} from '@/lib/market-snapshot';
+import {restoreMarketChartSnapshot,type MarketSnapshotRow} from '@/lib/market-snapshot';
 import {apiError} from '@/lib/server/public-error';
 
 export const runtime='nodejs';
@@ -21,7 +21,7 @@ export async function GET(request:Request){
     .eq('instrument',instrument).eq('server_created',true).order('created_at',{ascending:false}).limit(5);
   if(error)return apiError('MARKET_SNAPSHOT_UNAVAILABLE','The previous market check could not be restored.',503);
   const context={strategyId,strategyRevisionId,instrument};
-  const snapshot=(data as MarketSnapshotRow[]|null)?.map(row=>restoreMarketSnapshot(row,context)).find(Boolean)??null;
+  const snapshot=(data as MarketSnapshotRow[]|null)?.map(row=>restoreMarketChartSnapshot(row,context)).find(Boolean)??null;
   if(!snapshot)return new NextResponse(null,{status:204,headers:{'Cache-Control':'private, no-store, max-age=0'}});
   return NextResponse.json(snapshot,{headers:{'Cache-Control':'private, no-store, max-age=0'}});
 }

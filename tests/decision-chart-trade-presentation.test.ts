@@ -35,13 +35,16 @@ test('market analysis cannot replace a visible reference chart with an unpainted
   assert.match(chart,/series\.setData\([\s\S]*requestAnimationFrame\(\(\)=>dataReadyRef\.current\?\.\(\)\)/);
   assert.match(css,/\.market-chart-stage\{position:relative;isolation:isolate;min-width:0;height:clamp\(320px,39vw,430px\)/);
   assert.match(css,/\.market-chart-analysis-layer\{z-index:2;opacity:0;pointer-events:none\}\.market-chart-analysis-layer\.is-ready\{opacity:1;pointer-events:auto\}/);
+  assert.match(css,/\.market-position-chart-viewport\{position:relative;height:100%;min-height:0;overflow:hidden/);
   assert.match(css,/\.market-chart-layer \.market-position-chart-shell \.market-position-chart\{position:relative;inset:auto;height:100%;min-height:0\}/);
+  assert.match(css,/\.market-position-zone\.reward\{[^}]*background:rgba\(32,180,134,\.11\)/);
+  assert.match(css,/\.market-position-zone\.risk\{[^}]*background:rgba\(239,91,91,\.12\)/);
 });
 
 test('the authoritative decision remains directly below the chart in a compact hierarchy',()=>{
   const panel=read('components/LiveMarketPanel.tsx');
   const css=read('app/trade-police.css');
-  assert.ok(panel.indexOf('analysis ? decisionContent : null')>panel.indexOf('market-chart-stage'));
+  assert.ok(panel.indexOf("analysisSource==='LIVE' ? decisionContent : null")>panel.indexOf('market-chart-stage'));
   assert.match(css,/\.live-panel>\.decision-explanation-hero\{grid-template-columns:minmax\(0,1fr\) 210px;gap:8px 14px;margin-top:10px;padding:13px 15px/);
   assert.match(css,/\.live-panel>\.decision-explanation-hero \.required-rule-count\{display:none\}/);
   assert.match(css,/\.live-panel>\.decision-explanation-hero \.decision-panel-metrics>div\{padding:6px 8px\}/);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {restoreMarketSnapshot,type MarketSnapshotRow} from '../lib/market-snapshot.ts';
+import {restoreMarketChartSnapshot,restoreMarketSnapshot,type MarketSnapshotRow} from '../lib/market-snapshot.ts';
 import {getTradingViewInterval,getTradingViewSymbol} from '../lib/tradingview-reference.ts';
 
 const read=(file:string)=>readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
@@ -24,6 +24,15 @@ test('a market snapshot restores only an exact strategy revision and instrument'
 
 test('a legacy valid scan can restore its decision while TradingView supplies its missing candles',()=>{
   assert.equal(restoreMarketSnapshot({...row,analysis:{...analysis,marketSeries:undefined}},context)?.analysis.analysisId,'scan-1');
+  assert.equal(restoreMarketChartSnapshot({...row,analysis:{...analysis,marketSeries:undefined}},context),null);
+});
+
+test('chart restoration strips decision semantics and returns only reusable market data',()=>{
+  const restored=restoreMarketChartSnapshot(row,context);
+  assert.deepEqual(Object.keys(restored?.chart??{}).sort(),['analysisId','calculatedAt','instrument','marketSeries','provider']);
+  assert.equal(restored?.chart.marketSeries?.H1.length,1);
+  assert.equal('status' in (restored?.chart??{}),false);
+  assert.equal('setupReadiness' in (restored?.chart??{}),false);
 });
 
 test('an incomplete or internally mismatched scan fails closed',()=>{
@@ -48,7 +57,7 @@ test('the immediate reference chart maps supported markets without using the app
 test('snapshot restoration is read-only, exact-context and provider-free',()=>{
   const route=read('app/api/market/snapshot/route.ts');
   for(const filter of ["eq('user_id',user.id)","eq('strategy_profile_id',strategyId)","eq('strategy_revision_id',strategyRevisionId)","eq('instrument',instrument)"])assert.match(route,new RegExp(filter.replace(/[()'.]/g,'\\$&')));
-  assert.match(route,/restoreMarketSnapshot/);
+  assert.match(route,/restoreMarketChartSnapshot/);
   assert.match(route,/Cache-Control':'private, no-store/);
   assert.doesNotMatch(route,/fetchSeries|withTwelveDataCredits|reserveAnalysis|\.insert\(|\.update\(|\.delete\(/);
 });
@@ -60,12 +69,14 @@ test('explicit analyses persist the same reusable candle series returned to the 
   assert.match(route,/\.\.\.persistedAnalysis,analysisId:scan\.id/);
 });
 
-test('Decision opens with a chart and restores the last exact market check without triggering analysis',()=>{
+test('Decision opens with cached candles without restoring a stale decision',()=>{
   const panel=read('components/LiveMarketPanel.tsx');
   assert.match(panel,/TradingViewReferenceChart/);
   assert.match(panel,/\/api\/market\/snapshot\?/);
-  assert.match(panel,/Last market check/);
-  assert.match(panel,/setAnalysisSource\('SNAPSHOT'\)/);
+  assert.match(panel,/Saved market data/);
+  assert.match(panel,/setChartData\(snapshot\.chart\)/);
+  assert.doesNotMatch(panel,/onApplyRef\.current\(snapshot\.analysis\)/);
+  assert.match(panel,/analysisSource==='LIVE' \? decisionContent : null/);
   assert.match(panel,/snapshotControllerRef\.current\?\.abort\(\)/);
   assert.doesNotMatch(panel,/snapshot[\s\S]{0,300}void scan\(/);
   assert.doesNotMatch(panel,/setAnalysis\(null\);\s*if \(retryAttempt/);

@@ -16,6 +16,10 @@ export type MarketSnapshotRow={
 };
 
 export type RestoredMarketSnapshot={analysis:ChartAnalysis;snapshotCreatedAt:string};
+export type MarketChartSnapshot={
+  chart:Pick<ChartAnalysis,'analysisId'|'instrument'|'provider'|'calculatedAt'|'marketSeries'>;
+  snapshotCreatedAt:string;
+};
 
 const analysisStatuses=new Set<ChartAnalysis['status']>(['DATA_UNAVAILABLE','INSUFFICIENT_DATA','STRATEGY_UNSUPPORTED','STRATEGY_INCOMPLETE','ANALYSIS_FAILED','NO_RELEVANT_EVIDENCE','VALID_ANALYSIS']);
 const resultStatuses=new Set<ChartAnalysis['analysisStatus']>(['DATA_UNAVAILABLE','INSUFFICIENT_DATA','STRATEGY_UNSUPPORTED','STRATEGY_INCOMPLETE','ANALYSIS_FAILED','NO_RELEVANT_EVIDENCE','VALID_ANALYSIS']);
@@ -26,4 +30,20 @@ export function restoreMarketSnapshot(row:MarketSnapshotRow,context:MarketSnapsh
   const analysis=row.analysis as Partial<ChartAnalysis>;
   if(analysis.strategyId!==context.strategyId||analysis.instrument!==context.instrument||!analysisStatuses.has(analysis.status as ChartAnalysis['status'])||!resultStatuses.has(analysis.analysisStatus as ChartAnalysis['analysisStatus'])||typeof analysis.calculatedAt!=='string')return null;
   return {analysis:{...analysis,analysisId:row.id} as ChartAnalysis,snapshotCreatedAt:row.created_at};
+}
+
+export function restoreMarketChartSnapshot(row:MarketSnapshotRow,context:MarketSnapshotContext):MarketChartSnapshot|null{
+  const restored=restoreMarketSnapshot(row,context);
+  const marketSeries=restored?.analysis.marketSeries;
+  if(!restored||!marketSeries||!Object.values(marketSeries).some(series=>Array.isArray(series)&&series.length>0))return null;
+  return{
+    chart:{
+      analysisId:restored.analysis.analysisId,
+      instrument:restored.analysis.instrument,
+      provider:restored.analysis.provider,
+      calculatedAt:restored.analysis.calculatedAt,
+      marketSeries,
+    },
+    snapshotCreatedAt:restored.snapshotCreatedAt,
+  };
 }

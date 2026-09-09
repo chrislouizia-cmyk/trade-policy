@@ -36,7 +36,8 @@ test('one explicit market check reuses the acquired series for the chart', () =>
   const panel = read('components/LiveMarketPanel.tsx');
   const chart = read('components/MarketPositionChart.tsx');
   assert.match(route, /marketSeries:series/);
-  assert.match(panel, /analysis\?\.marketSeries\?\.\[chartTimeframe\]/);
+  assert.match(panel, /chartData\?\.marketSeries\?\.\[chartTimeframe\]/);
+  assert.match(panel, /setChartData\(result as ChartAnalysis\)/);
   assert.match(chart, /seedCandles/);
   assert.match(chart, /automaticLoad:false/);
 });

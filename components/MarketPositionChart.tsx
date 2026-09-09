@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BaselineSeries, CandlestickSeries, ColorType, createChart, LineStyle, type IChartApi, type ISeriesApi, type Time, type UTCTimestamp } from 'lightweight-charts';
+import { CandlestickSeries, ColorType, createChart, LineStyle, type IChartApi, type ISeriesApi, type Time, type UTCTimestamp } from 'lightweight-charts';
 
+import { buildChartPositionOverlayLayout, type ChartPositionOverlayLayout } from '@/lib/chart-position-overlay';
 import type { Candle } from '@/lib/market-analysis';
 import { getSupportedInstrument } from '@/lib/instrument-registry';
 import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverlayModel } from '@/lib/position-geometry';
@@ -68,7 +69,6 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const shellRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const overlaySeriesRef = useRef<ISeriesApi<'Baseline'>[]>([]);
   const candlesRef = useRef<Candle[]>([]);
   const entryPriceLineRef = useRef<PriceLine | null>(null);
   const stopLossPriceLineRef = useRef<PriceLine | null>(null);
@@ -79,6 +79,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const clickRef = useRef(onOverlayClick);
   const dataReadyRef = useRef(onDataReady);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [positionVisual, setPositionVisual] = useState<ChartPositionOverlayLayout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument,timeframe,{seedCandles,seedProvider,automaticLoad:false});
   const instrumentMeta = getSupportedInstrument(instrument);
@@ -175,7 +176,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       setTooltip({ x: param.point.x + 18, y: param.point.y + 18, candle, candleIndex: index });
     });
     chartRef.current = chart; candleSeriesRef.current = series;
-    return () => { chart.remove(); chartRef.current = null; candleSeriesRef.current = null; overlaySeriesRef.current = []; setTooltip(null); initialVisibleRangeRef.current = false; };
+    return () => { chart.remove(); chartRef.current = null; candleSeriesRef.current = null; setTooltip(null); setPositionVisual(null); initialVisibleRangeRef.current = false; };
   }, [instrument, priceScaleConfig.precision, priceScaleConfig.minMove]);
 
   useEffect(() => {
@@ -201,9 +202,6 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
     if (!chart || !candleSeries) return;
-    for (const series of overlaySeriesRef.current) chart.removeSeries(series);
-    overlaySeriesRef.current = [];
-
     const clearOwnedPriceLines = () => {
       [entryPriceLineRef.current, stopLossPriceLineRef.current, takeProfitPriceLineRef.current].forEach((line) => {
         if (line) {
@@ -221,23 +219,8 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     const assessment = assessPositionGeometry(geometry);
     const active = overlay.status === 'ACTIVE';
     const leftAnchor = overlay.status === 'PROPOSED' ? overlay.proposalCreatedAt ?? null : overlay.acceptedAt ?? null;
-    const rightAnchor = overlay.status === 'CLOSED' ? overlay.closedAt ?? null : candles.at(-1)?.datetime ?? null;
     const leftIndex = leftAnchor ? resolveLifecycleAnchorIndex(candles, leftAnchor) : null;
-    const rightIndex = rightAnchor ? resolveLifecycleAnchorIndex(candles, rightAnchor) : null;
-    if (leftIndex == null || (overlay.status === 'CLOSED' && rightIndex == null)) return;
-    const leftCandle = candles[Math.max(0, Math.min(leftIndex, candles.length - 1))];
-    const rightBoundaryIndex = overlay.status === 'CLOSED' ? (rightIndex ?? candles.length - 1) : candles.length - 1;
-    const rightCandle = candles[Math.max(0, Math.min(rightBoundaryIndex, candles.length - 1))];
-    if (!leftCandle || !rightCandle) return;
-    const leftTime = deriveDisplayChartTime(candles, leftIndex, timeframe);
-    const rightTime = deriveDisplayChartTime(candles, rightBoundaryIndex, timeframe);
-    const region = (value: number, color: string) => {
-      const series = chart.addSeries(BaselineSeries, { baseValue: { type: 'price', price: geometry.entry }, lineVisible: false, priceLineVisible: false, lastValueVisible: false, topFillColor1: color, topFillColor2: color, bottomFillColor1: color, bottomFillColor2: color });
-      series.setData([{ time: leftTime, value }, { time: rightTime, value }]);
-      overlaySeriesRef.current.push(series);
-    };
-    region(geometry.stopLoss, 'rgba(239,91,91,0.20)');
-    region(geometry.takeProfit, 'rgba(32,180,134,0.18)');
+    if (leftIndex == null) return;
     const status = active ? 'ACTIVE' : 'PROPOSED';
     entryPriceLineRef.current = candleSeries.createPriceLine({ price: geometry.entry, color: active ? '#f5f7fb' : '#f2c94c', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: `${status} ${geometry.direction} · Entry` });
     stopLossPriceLineRef.current = candleSeries.createPriceLine({ price: geometry.stopLoss, color: '#ef5b5b', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Stop Loss' });
@@ -251,6 +234,63 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       takeProfitPriceLineRef.current = null;
     };
   }, [candles, overlay]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    const container = containerRef.current;
+    if (!chart || !series || !container || !overlay || !candles.length) {
+      setPositionVisual(null);
+      return;
+    }
+
+    const geometry = overlay.acceptedGeometry ?? overlay.currentGeometry;
+    if (!assessPositionGeometry(geometry).valid) {
+      setPositionVisual(null);
+      return;
+    }
+    const leftAnchor = overlay.status === 'PROPOSED' ? overlay.proposalCreatedAt ?? null : overlay.acceptedAt ?? null;
+    const leftIndex = leftAnchor ? resolveLifecycleAnchorIndex(candles, leftAnchor) : null;
+    const rightIndex = overlay.status === 'CLOSED' && overlay.closedAt
+      ? resolveLifecycleAnchorIndex(candles, overlay.closedAt)
+      : null;
+    if (leftIndex == null || (overlay.status === 'CLOSED' && rightIndex == null)) {
+      setPositionVisual(null);
+      return;
+    }
+
+    const updatePositionVisual = () => {
+      const leftX = chart.timeScale().timeToCoordinate(deriveDisplayChartTime(candles, leftIndex, timeframe));
+      const rightX = rightIndex == null
+        ? null
+        : chart.timeScale().timeToCoordinate(deriveDisplayChartTime(candles, rightIndex, timeframe));
+      const entryY = series.priceToCoordinate(geometry.entry);
+      const stopY = series.priceToCoordinate(geometry.stopLoss);
+      const targetY = series.priceToCoordinate(geometry.takeProfit);
+      if (leftX == null || entryY == null || stopY == null || targetY == null) {
+        setPositionVisual(null);
+        return;
+      }
+      setPositionVisual(buildChartPositionOverlayLayout({
+        viewportWidth: container.clientWidth,
+        leftX,
+        rightX,
+        entryY,
+        stopY,
+        targetY,
+      }));
+    };
+
+    updatePositionVisual();
+    const timeScale = chart.timeScale();
+    timeScale.subscribeVisibleLogicalRangeChange(updatePositionVisual);
+    const resizeObserver = new ResizeObserver(updatePositionVisual);
+    resizeObserver.observe(container);
+    return () => {
+      timeScale.unsubscribeVisibleLogicalRangeChange(updatePositionVisual);
+      resizeObserver.disconnect();
+    };
+  }, [candles, overlay, timeframe]);
 
   const latest = header.latest;
   const change = header.change ?? null;
@@ -314,7 +354,14 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
         {refreshing ? <span className="chart-status-pill subtle">Refreshing</span> : <span className="chart-status-pill">{timeframe}</span>}
       </div>
     </div>
-    <div ref={containerRef} className="market-position-chart" role="img" aria-label={`${instrument} ${timeframe} candlestick chart`} />
+    <div className="market-position-chart-viewport">
+      <div ref={containerRef} className="market-position-chart" role="img" aria-label={`${instrument} ${timeframe} candlestick chart`} />
+      {positionVisual ? <div className={`market-position-tool direction-${overlay?.currentGeometry.direction.toLowerCase()}`} style={{ left: positionVisual.left, width: positionVisual.width }} aria-label={`${overlay?.status.toLowerCase()} ${overlay?.currentGeometry.direction.toLowerCase()} position`}>
+        <span className="market-position-zone reward" style={{ top: positionVisual.rewardTop, height: positionVisual.rewardHeight }}><em>Target</em></span>
+        <span className="market-position-zone risk" style={{ top: positionVisual.riskTop, height: positionVisual.riskHeight }}><em>Risk</em></span>
+        <span className="market-position-entry" style={{ top: positionVisual.entryY }}><em>Entry</em></span>
+      </div> : null}
+    </div>
     {tooltip && latest ? <div className="market-chart-tooltip" style={{ left: `${Math.min(Math.max(tooltip.x, 18), 420)}px`, top: `${Math.min(Math.max(tooltip.y, 18), 220)}px` }}>
       <strong>{new Date(tooltip.candle.datetime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
       <span>O {formatPrice(tooltip.candle.open, instrument)}</span>

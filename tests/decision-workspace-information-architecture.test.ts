@@ -56,7 +56,7 @@ test('technical evidence and historical report remain available but collapsed by
 test('one decision card owns preliminary, final and risk-check states directly below the chart', () => {
   const livePanel = read('components/LiveMarketPanel.tsx');
   const chartIndex = livePanel.indexOf('<TradingViewChart');
-  const decisionIndex = livePanel.indexOf('analysis ? decisionContent : null');
+  const decisionIndex = livePanel.indexOf("analysisSource==='LIVE' ? decisionContent : null");
   assert.ok(chartIndex >= 0, 'chart should render in the live panel');
   assert.ok(decisionIndex > chartIndex, 'the decision content must render after the chart in the component structure');
   assert.match(hero, /Run Final Risk Check/);

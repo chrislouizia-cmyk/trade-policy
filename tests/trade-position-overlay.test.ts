@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { candleRangeForTimeframe, getCanonicalBucketStartIso, getCanonicalBucketStartMs, getPollingIntervalMs, mergeIncomingCandles, mergeLivePriceIntoCandles, normalizeMarketCandlesError as normalizeMarketCandlesErrorFromHook, resolveCandlesFetchOutcome as resolveCandlesFetchOutcomeFromHook } from '../components/useMarketCandles.ts';
 import { buildDisplayChartData, deriveDisplayChartTime } from '../components/chartDisplayTime.ts';
+import { buildChartPositionOverlayLayout } from '../lib/chart-position-overlay.ts';
 import type { Candle } from '../lib/market-analysis.ts';
 import { parseMarketCandleRequest } from '../lib/market-candle-request.ts';
 import { extractProviderEventTimeMs, extractProviderPrice, normalizeProviderEventTimeMs, normalizeTwelveDataCandles } from '../lib/market-data.ts';
@@ -370,9 +371,32 @@ test('controlled chart owns candles, coordinates, overlays, clicks, and switchin
   const chart = fs.readFileSync('components/MarketPositionChart.tsx', 'utf8');
   const panel = fs.readFileSync('components/LiveMarketPanel.tsx', 'utf8');
   const legacy = fs.readFileSync('components/TradingViewChart.tsx', 'utf8');
-  assert.match(chart, /createChart/); assert.match(chart, /CandlestickSeries/); assert.match(chart, /BaselineSeries/);
+  assert.match(chart, /createChart/); assert.match(chart, /CandlestickSeries/); assert.doesNotMatch(chart, /BaselineSeries/);
+  assert.match(chart, /buildChartPositionOverlayLayout/); assert.match(chart, /market-position-zone reward/); assert.match(chart, /market-position-zone risk/);
   assert.match(chart, /priceToCoordinate/); assert.match(chart, /subscribeClick/); assert.match(chart, /time:/);
   assert.match(panel, /chartTimeframe/); assert.match(panel, /selectedInstrument/); assert.doesNotMatch(legacy, /iframe/);
+});
+
+test('position tool stays bounded to the candle viewport for BUY and SELL geometry', () => {
+  assert.deepEqual(buildChartPositionOverlayLayout({ viewportWidth: 1000, leftX: 420, entryY: 180, stopY: 240, targetY: 90 }), {
+    left: 420,
+    width: 506,
+    entryY: 180,
+    riskTop: 180,
+    riskHeight: 60,
+    rewardTop: 90,
+    rewardHeight: 90,
+  });
+  assert.deepEqual(buildChartPositionOverlayLayout({ viewportWidth: 1000, leftX: 360, rightX: 740, entryY: 170, stopY: 110, targetY: 260 }), {
+    left: 360,
+    width: 380,
+    entryY: 170,
+    riskTop: 110,
+    riskHeight: 60,
+    rewardTop: 170,
+    rewardHeight: 90,
+  });
+  assert.equal(buildChartPositionOverlayLayout({ viewportWidth: 500, leftX: 450, entryY: 100, stopY: 120, targetY: 70 }), null);
 });
 
 test('right-edge anchoring, future-candle filtering, and chart controls stay in the validate chart layer', () => {
