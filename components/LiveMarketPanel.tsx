@@ -27,6 +27,10 @@ export function marketAnalysisRetryDelay(value: unknown): number | null {
   return Number.isFinite(requested) ? Math.max(2, Math.ceil(requested)) : 61;
 }
 
+function displayOverlayPrice(value: number): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 5 });
+}
+
 export default function LiveMarketPanel({
   strategy,
   strategyRevisionId,
@@ -208,6 +212,8 @@ export default function LiveMarketPanel({
   }
 
   const strategyContextText = strategyLoading ? '' : strategyTimeframeContext(strategy);
+  const activeTradeOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:null;
+  const activeTradeGeometry=activeTradeOverlay?.acceptedGeometry??activeTradeOverlay?.currentGeometry??null;
 
   return (
     <section className="card live-panel">
@@ -254,11 +260,23 @@ export default function LiveMarketPanel({
         <strong>{selectedInstrument}</strong>
       </div>
       {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Last market check</strong><span>Restored from {new Date(snapshotCreatedAt).toLocaleString()}. Refresh only when you want a new decision.</span></div>:null}
-      {analysis?.marketSeries?.[chartTimeframe]?.length ? (
-        <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis.marketSeries[chartTimeframe]} seedProvider={analysis.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
-      ) : (
-        <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
-      )}
+      <div className="market-chart-stage">
+        {analysis?.marketSeries?.[chartTimeframe]?.length ? (
+          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis.marketSeries[chartTimeframe]} seedProvider={analysis.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+        ) : (
+          <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
+        )}
+        {activeTradeOverlay&&activeTradeGeometry?<aside className={`market-active-trade-overlay direction-${activeTradeGeometry.direction.toLowerCase()}`} aria-label={`Active ${activeTradeGeometry.direction} trade on ${selectedInstrument}`}>
+          <div className="market-active-trade-heading"><span>Active trade</span><strong>{activeTradeGeometry.direction} · {selectedInstrument}</strong></div>
+          <dl>
+            <div><dt>Entry</dt><dd>{displayOverlayPrice(activeTradeGeometry.entry)}</dd></div>
+            <div><dt>Stop</dt><dd>{displayOverlayPrice(activeTradeGeometry.stopLoss)}</dd></div>
+            <div><dt>Target</dt><dd>{displayOverlayPrice(activeTradeGeometry.takeProfit)}</dd></div>
+            <div><dt>Planned RR</dt><dd>{activeTradeOverlay.acceptedPlannedRR==null?'—':`1:${activeTradeOverlay.acceptedPlannedRR.toFixed(2)}`}</dd></div>
+          </dl>
+          <a href="/active-trade">View active trade</a>
+        </aside>:null}
+      </div>
       {analysis ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
       {error && <div className="error analysis-error" role="alert"><strong>Market check needs another moment.</strong><p>{error}</p><small>Nothing was changed or counted. Your selected instrument and trading rules are safe.</small><button type="button" onClick={() => { void scan(); }}>Try again</button></div>}
