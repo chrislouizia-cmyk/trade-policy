@@ -5,12 +5,16 @@ import test from 'node:test';
 const validator = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
 const hero = readFileSync(new URL('../components/decision/DecisionHero.tsx', import.meta.url), 'utf8');
 
-test('Validate ends with the decision lifecycle instead of duplicating History', () => {
-  assert.doesNotMatch(validator, /RECENT ACTIVITY/);
-  assert.doesNotMatch(validator, /LAST 3 TRADES/);
-  assert.doesNotMatch(validator, /function History\(/);
+test('Validate ends with a compact strategy-scoped activity preview instead of duplicating History', () => {
+  assert.match(validator, /STRATEGY ACTIVITY/);
+  assert.match(validator, /Recent setups · \{strategy\.name\}/);
+  assert.match(validator, /latestTradeActivity\(history,'SUGGESTED'\)/);
+  assert.match(validator, /latestTradeActivity\(history,'EXECUTED'\)/);
+  assert.match(validator, /\.eq\('strategy_profile_id',strategy\.id\)/);
+  assert.match(validator, /function StrategyTradeActivity\(/);
   assert.match(hero, /View History/);
   assert.match(validator, /window\.location\.href='\/history'/);
+  assert.match(validator, /href="\/history">View all history/);
 });
 
 test('removing the visible history preview preserves lifecycle state', () => {

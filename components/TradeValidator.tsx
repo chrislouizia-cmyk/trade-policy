@@ -28,6 +28,7 @@ import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
 import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
 import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
+import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
 import {deriveValidateExperienceState} from '@/lib/validate-experience-state';
@@ -159,7 +160,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
       window.removeEventListener('focus',refreshTradeState);
       document.removeEventListener('visibilitychange',refreshVisibleTradeState);
     };
-  },[userId]);
+  },[userId,strategy.id]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
     const handler=(event: Event)=>{
@@ -223,7 +224,8 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   const selectedAccount=useMemo(()=>accounts.find(account=>account.id===accountId)||null,[accounts,accountId]);
 
   async function loadHistory(){
-    const {data,error}=await createClient().from('trade_records').select('id,created_at,source,instrument,direction,setup_type,entry,stop_loss,take_profit,rr,result_r,status,outcome,score,chart_analysis,closed_at,post_analysis').eq('user_id',userId).order('created_at',{ascending:false}).limit(60);
+    if(!strategy.id){setHistory([]);return;}
+    const {data,error}=await createClient().from('trade_records').select('id,created_at,source,instrument,direction,setup_type,entry,stop_loss,take_profit,rr,result_r,status,outcome,score,chart_analysis,closed_at,post_analysis').eq('user_id',userId).eq('strategy_profile_id',strategy.id).order('created_at',{ascending:false}).limit(60);
     if(error){setError(`Database: ${error.message}`);return;}
     setHistory((data||[]).map((r:any)=>({id:r.id,createdAt:r.created_at,source:r.source,instrument:r.instrument,direction:r.direction,setupType:r.setup_type,entry:r.entry===null?null:Number(r.entry),stopLoss:r.stop_loss===null?null:Number(r.stop_loss),takeProfit:r.take_profit===null?null:Number(r.take_profit),rr:r.rr===null?null:Number(r.rr),resultR:r.result_r===null?null:Number(r.result_r),status:r.status,outcome:r.outcome,confidence:r.chart_analysis?.liveAnalysisConfidence==null?(r.score==null?null:Number(r.score)):Number(r.chart_analysis.liveAnalysisConfidence),closedAt:r.closed_at??null,postAnalysis:r.post_analysis})));
   }
@@ -473,6 +475,8 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     finally { setSavingTrade(false); closeTradeActionModal(); }
   }
 
+  const suggested=useMemo(()=>latestTradeActivity(history,'SUGGESTED'),[history]);
+  const executed=useMemo(()=>latestTradeActivity(history,'EXECUTED'),[history]);
   const hasActiveTrade=useMemo(()=>history.some(h=>h.source==='EXECUTED'&&h.status==='OPEN'),[history]);
   const threshold=strategy.aiBehavior?.confidenceThreshold ?? strategy.waitScore;
   const aiStatus=useMemo(()=>getAiDockStatus({analyzing,analysis,result,threshold}),[analysis,analyzing,result,threshold]);
@@ -620,6 +624,11 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
 
     <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
 
+    <section className="strategy-trade-activity" aria-labelledby="strategy-trade-activity-title">
+      <header><div><p className="brand">STRATEGY ACTIVITY</p><h2 id="strategy-trade-activity-title">Recent setups · {strategy.name}</h2></div><a href="/history">View all history</a></header>
+      <div className="last-trades-grid"><StrategyTradeActivity title="Proposed" emptyMessage="No proposed setups yet." rows={suggested}/><StrategyTradeActivity title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div>
+    </section>
+
     {analysis&&<div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
     <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
         <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
@@ -706,4 +715,8 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     </div>,document.body)}
 
   </div>;
+}
+
+function StrategyTradeActivity({title,emptyMessage,rows}:{title:string;emptyMessage:string;rows:SavedSetup[]}){
+  return <section className="trade-history-column"><h3>{title}</h3><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map(row=><div className="trade-history-row" key={`${title}-${row.id}`}><strong>{row.instrument} · {row.direction}</strong><small><time dateTime={row.createdAt}>{formatTradeActivityDateTime(row.createdAt)}</time>{row.rr==null?'':` · 1:${row.rr.toFixed(2)}`}{row.outcome?` · ${row.outcome}`:''}</small></div>)}</div></section>;
 }

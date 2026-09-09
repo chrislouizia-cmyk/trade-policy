@@ -20,11 +20,13 @@ export default async function AppHeader({
   displayName,
   description,
   userId,
+  decisionFocused = false,
 }: {
   eyebrow: string;
   displayName: string;
   description: string;
   userId: string;
+  decisionFocused?: boolean;
 }) {
   const supabase = await createClient();
   const { t } = await getServerTranslator();
@@ -33,7 +35,7 @@ export default async function AppHeader({
 
   return (
     <>
-      <header className="app-shell-header client-header">
+      <header className={`app-shell-header client-header ${decisionFocused ? 'decision-focused-header' : ''}`}>
         <div className="app-brand-row shell-brand-row">
           <Link href="/dashboard" className="app-brand" aria-label="Trade Police">
             <Image src="/brand/trade-police-logo.png" alt="Trade Police" width={220} height={46} className="brand-logo-wordmark brand-logo-header" />
