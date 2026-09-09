@@ -61,6 +61,7 @@ export default function LiveMarketPanel({
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
   const [snapshotCreatedAt,setSnapshotCreatedAt]=useState<string|null>(null);
   const [analysisSource,setAnalysisSource]=useState<'LIVE'|'SNAPSHOT'|null>(null);
+  const [paintedChartKey,setPaintedChartKey]=useState<string|null>(null);
   const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
   const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
   const analysisContextRef = useRef('');
@@ -214,6 +215,11 @@ export default function LiveMarketPanel({
   const strategyContextText = strategyLoading ? '' : strategyTimeframeContext(strategy);
   const activeTradeOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:null;
   const activeTradeGeometry=activeTradeOverlay?.acceptedGeometry??activeTradeOverlay?.currentGeometry??null;
+  const displayedCandles=analysis?.marketSeries?.[chartTimeframe]??null;
+  const chartDataKey=displayedCandles?.length
+    ? `${analysis?.analysisId??analysis?.calculatedAt??'analysis'}:${selectedInstrument}:${chartTimeframe}:${displayedCandles.length}:${displayedCandles[0]?.datetime??''}:${displayedCandles.at(-1)?.datetime??''}`
+    : null;
+  const analyzedChartReady=chartDataKey!==null&&paintedChartKey===chartDataKey;
 
   return (
     <section className="card live-panel">
@@ -261,11 +267,12 @@ export default function LiveMarketPanel({
       </div>
       {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Last market check</strong><span>Restored from {new Date(snapshotCreatedAt).toLocaleString()}. Refresh only when you want a new decision.</span></div>:null}
       <div className="market-chart-stage">
-        {analysis?.marketSeries?.[chartTimeframe]?.length ? (
-          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis.marketSeries[chartTimeframe]} seedProvider={analysis.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
-        ) : (
+        <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartReady?'is-hidden':''}`} aria-hidden={analyzedChartReady} inert={analyzedChartReady?true:undefined}>
           <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
-        )}
+        </div>
+        {displayedCandles?.length&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartReady?'is-ready':''}`} aria-hidden={!analyzedChartReady} inert={!analyzedChartReady?true:undefined}>
+          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={analysis?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={()=>setPaintedChartKey(chartDataKey)} />
+        </div>:null}
         {activeTradeOverlay&&activeTradeGeometry?<aside className={`market-active-trade-overlay direction-${activeTradeGeometry.direction.toLowerCase()}`} aria-label={`Active ${activeTradeGeometry.direction} trade on ${selectedInstrument}`}>
           <div className="market-active-trade-heading"><span>Active trade</span><strong>{activeTradeGeometry.direction} · {selectedInstrument}</strong></div>
           <dl>

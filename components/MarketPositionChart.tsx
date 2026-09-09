@@ -9,7 +9,7 @@ import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverl
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
 import { buildDisplayChartData, deriveDisplayChartTime } from './chartDisplayTime';
 
-type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
+type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; onDataReady?: () => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
 const EMPTY_CANDLES:readonly Candle[]=[];
 
 type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
@@ -63,7 +63,7 @@ export function getTimeframeSeconds(timeframe: string): number {
   }
 }
 
-export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick,seedCandles=EMPTY_CANDLES,seedProvider=null }: Props) {
+export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick,onDataReady,seedCandles=EMPTY_CANDLES,seedProvider=null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -77,6 +77,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const initialVisibleRangeRef = useRef(false);
   const overlayRef = useRef(overlay);
   const clickRef = useRef(onOverlayClick);
+  const dataReadyRef = useRef(onDataReady);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument,timeframe,{seedCandles,seedProvider,automaticLoad:false});
@@ -131,7 +132,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     }
   };
 
-  useEffect(() => { overlayRef.current = overlay; clickRef.current = onOverlayClick; }, [overlay, onOverlayClick]);
+  useEffect(() => { overlayRef.current = overlay; clickRef.current = onOverlayClick; dataReadyRef.current = onDataReady; }, [overlay, onOverlayClick, onDataReady]);
   useEffect(() => { candlesRef.current = candles; }, [candles]);
   useEffect(() => { initialVisibleRangeRef.current = false; }, [instrument, timeframe]);
   useEffect(() => {
@@ -192,6 +193,8 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       initialVisibleRangeRef.current = true;
     }
     setTooltip(null);
+    const readyFrame=window.requestAnimationFrame(()=>dataReadyRef.current?.());
+    return()=>window.cancelAnimationFrame(readyFrame);
   }, [candles, timeframe]);
 
   useEffect(() => {
