@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useState, useRef } from 'react';
 import TradingViewChart from './TradingViewChart';
+import TradingViewReferenceChart from './TradingViewReferenceChart';
 import type { Instrument, StrategyProfile, ChartAnalysis } from '@/types/trade';
 import type { PositionOverlayModel } from '@/lib/position-geometry';
 
@@ -54,21 +55,53 @@ export default function LiveMarketPanel({
   const [error, setError] = useState('');
   const [waitingForMarketData, setWaitingForMarketData] = useState(false);
   const [analysis, setAnalysis] = useState<ChartAnalysis|null>(null);
+  const [snapshotCreatedAt,setSnapshotCreatedAt]=useState<string|null>(null);
+  const [analysisSource,setAnalysisSource]=useState<'LIVE'|'SNAPSHOT'|null>(null);
   const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
   const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
   const analysisContextRef = useRef('');
   const retryTimerRef = useRef<number | null>(null);
+  const snapshotControllerRef=useRef<AbortController|null>(null);
+  const onApplyRef=useRef(onApply);
+  useEffect(()=>{onApplyRef.current=onApply},[onApply]);
 
   useEffect(()=>{
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+    snapshotControllerRef.current?.abort();
+    snapshotControllerRef.current=null;
     retryTimerRef.current = null;
     analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
     setAnalysis(null);
+    setSnapshotCreatedAt(null);
+    setAnalysisSource(null);
     setError('');
     setWaitingForMarketData(false);
     setLoading(false);
     onLoadingChange?.(false);
   },[selectedInstrument,strategy.id,strategyRevisionId]);
+
+  useEffect(()=>{
+    if(!strategy.id||!strategyRevisionId||strategyLoading)return;
+    const controller=new AbortController();
+    snapshotControllerRef.current=controller;
+    const requestContextKey=`${strategy.id}:${strategyRevisionId}:${selectedInstrument}`;
+    const params=new URLSearchParams({strategyId:strategy.id,strategyRevisionId,instrument:selectedInstrument});
+    void fetch(`/api/market/snapshot?${params.toString()}`,{signal:controller.signal,cache:'no-store'})
+      .then(async response=>{
+        if(response.status===204)return null;
+        if(!response.ok)throw new Error('snapshot-unavailable');
+        return response.json() as Promise<{analysis:ChartAnalysis;snapshotCreatedAt:string}>;
+      })
+      .then(snapshot=>{
+        if(!snapshot||analysisContextRef.current!==requestContextKey)return;
+        setAnalysis(snapshot.analysis);
+        setSnapshotCreatedAt(snapshot.snapshotCreatedAt);
+        setAnalysisSource('SNAPSHOT');
+        onApplyRef.current(snapshot.analysis);
+      })
+      .catch(error=>{if(error instanceof Error&&error.name==='AbortError')return;});
+    return()=>{controller.abort();if(snapshotControllerRef.current===controller)snapshotControllerRef.current=null};
+  },[selectedInstrument,strategy.id,strategyRevisionId,strategyLoading]);
 
   useEffect(() => () => {
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -103,11 +136,12 @@ export default function LiveMarketPanel({
       return;
     }
     setLoading(true);
+    snapshotControllerRef.current?.abort();
+    snapshotControllerRef.current=null;
     setWaitingForMarketData(false);
     onLoadingChange?.(true);
     setStageIndex(0);
     setError('');
-    setAnalysis(null);
     if (retryAttempt === 0) onReset?.();
 
     const controller=new AbortController();
@@ -158,6 +192,8 @@ export default function LiveMarketPanel({
       }
 
       setAnalysis(result as ChartAnalysis);
+      setSnapshotCreatedAt(null);
+      setAnalysisSource('LIVE');
       onApply(result as ChartAnalysis);
     } catch(error) {
       setError(error instanceof Error&&error.name==='AbortError'?'Market analysis timed out. Your trade data was not changed. Please try again.':'Market analysis is temporarily unavailable. Your trade data was not changed.');
@@ -217,7 +253,12 @@ export default function LiveMarketPanel({
         </div>
         <strong>{selectedInstrument}</strong>
       </div>
-      <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis?.marketSeries?.[chartTimeframe]} seedProvider={analysis?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+      {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Last market check</strong><span>Restored from {new Date(snapshotCreatedAt).toLocaleString()}. Refresh only when you want a new decision.</span></div>:null}
+      {analysis?.marketSeries?.[chartTimeframe]?.length ? (
+        <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={analysis.marketSeries[chartTimeframe]} seedProvider={analysis.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+      ) : (
+        <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
+      )}
       {analysis ? decisionContent : null}
       <details className="chart-source-note"><summary>What the chart contributes</summary><p>Trade Police evaluates completed market data against your saved trading rules. It does not use the chart image as the source of the verdict.</p></details>
       {error && <div className="error analysis-error" role="alert"><strong>Market check needs another moment.</strong><p>{error}</p><small>Nothing was changed or counted. Your selected instrument and trading rules are safe.</small><button type="button" onClick={() => { void scan(); }}>Try again</button></div>}
