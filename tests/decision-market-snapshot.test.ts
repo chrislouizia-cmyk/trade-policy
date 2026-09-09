@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {restoreMarketChartSnapshot,restoreMarketSnapshot,type MarketSnapshotRow} from '../lib/market-snapshot.ts';
+import {restoreMarketChartSnapshot,restoreMarketSnapshot,restoreReusableMarketChartSnapshot,type MarketSnapshotRow} from '../lib/market-snapshot.ts';
 import {getTradingViewInterval,getTradingViewSymbol} from '../lib/tradingview-reference.ts';
 
 const read=(file:string)=>readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
@@ -35,6 +35,13 @@ test('chart restoration strips decision semantics and returns only reusable mark
   assert.equal('setupReadiness' in (restored?.chart??{}),false);
 });
 
+test('saved candle data is reusable across strategy revisions without restoring their decisions',()=>{
+  const reusable=restoreReusableMarketChartSnapshot(row,'GBPUSD');
+  assert.equal(reusable?.chart.analysisId,'scan-1');
+  assert.equal(reusable?.chart.marketSeries?.H1.length,1);
+  assert.equal(restoreReusableMarketChartSnapshot(row,'EURUSD'),null);
+});
+
 test('an incomplete or internally mismatched scan fails closed',()=>{
   const {analysisStatus:_,...incomplete}=analysis;
   assert.equal(restoreMarketSnapshot({...row,analysis:incomplete},context),null);
@@ -54,10 +61,11 @@ test('the immediate reference chart maps supported markets without using the app
   assert.doesNotMatch(component,/\/api\/market|Twelve Data|useMarketCandles/);
 });
 
-test('snapshot restoration is read-only, exact-context and provider-free',()=>{
+test('snapshot restoration is read-only, user-and-instrument scoped and provider-free',()=>{
   const route=read('app/api/market/snapshot/route.ts');
-  for(const filter of ["eq('user_id',user.id)","eq('strategy_profile_id',strategyId)","eq('strategy_revision_id',strategyRevisionId)","eq('instrument',instrument)"])assert.match(route,new RegExp(filter.replace(/[()'.]/g,'\\$&')));
-  assert.match(route,/restoreMarketChartSnapshot/);
+  for(const filter of ["eq('user_id',user.id)","eq('instrument',instrument)"])assert.match(route,new RegExp(filter.replace(/[()'.]/g,'\\$&')));
+  assert.doesNotMatch(route,/eq\('strategy_profile_id'|eq\('strategy_revision_id'/);
+  assert.match(route,/restoreReusableMarketChartSnapshot/);
   assert.match(route,/Cache-Control':'private, no-store/);
   assert.doesNotMatch(route,/fetchSeries|withTwelveDataCredits|reserveAnalysis|\.insert\(|\.update\(|\.delete\(/);
 });
@@ -80,6 +88,8 @@ test('Decision opens with cached candles without restoring a stale decision',()=
   assert.match(panel,/snapshotControllerRef\.current\?\.abort\(\)/);
   assert.doesNotMatch(panel,/snapshot[\s\S]{0,300}void scan\(/);
   assert.doesNotMatch(panel,/setAnalysis\(null\);\s*if \(retryAttempt/);
+  assert.match(panel,/MINIMUM_DECISION_CHART_CANDLES=25/);
+  assert.match(panel,/hasCompleteChartSeries/);
 });
 
 test('BLOCKED presentation keeps the verdict and explanation in independent responsive rows',()=>{

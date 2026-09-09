@@ -29,10 +29,12 @@ test('market analysis cannot replace a visible reference chart with an unpainted
   const panel=read('components/LiveMarketPanel.tsx');
   const chart=read('components/MarketPositionChart.tsx');
   const css=read('app/trade-police.css');
-  assert.match(panel,/market-chart-reference-layer \$\{analyzedChartReady\?'is-hidden':''\}/);
-  assert.match(panel,/market-chart-analysis-layer \$\{analyzedChartReady\?'is-ready':''\}/);
-  assert.match(panel,/onDataReady=\{\(\)=>setPaintedChartKey\(chartDataKey\)\}/);
-  assert.match(chart,/series\.setData\([\s\S]*requestAnimationFrame\(\(\)=>dataReadyRef\.current\?\.\(\)\)/);
+  assert.match(panel,/market-chart-reference-layer \$\{analyzedChartVisible\?'is-hidden':''\}/);
+  assert.match(panel,/market-chart-analysis-layer \$\{analyzedChartVisible\?'is-ready':''\}/);
+  assert.match(panel,/setPaintedChartKey\(null\)/);
+  assert.match(panel,/analyzedChartVisible=hasCompleteChartSeries&&chartDataKey!==null&&paintedChartKey!==null/);
+  assert.match(panel,/onDataReady=\{\(renderedCandleCount\)=>\{if\(renderedCandleCount>=MINIMUM_DECISION_CHART_CANDLES\)setPaintedChartKey\(chartDataKey\)\}\}/);
+  assert.match(chart,/series\.setData\([\s\S]*dataReadyRef\.current\?\.\(data\.length\)/);
   assert.match(css,/\.market-chart-stage\{position:relative;isolation:isolate;min-width:0;height:clamp\(320px,39vw,430px\)/);
   assert.match(css,/\.market-chart-analysis-layer\{z-index:2;opacity:0;pointer-events:none\}\.market-chart-analysis-layer\.is-ready\{opacity:1;pointer-events:auto\}/);
   assert.match(css,/\.market-position-chart-viewport\{position:relative;height:100%;min-height:0;overflow:hidden/);

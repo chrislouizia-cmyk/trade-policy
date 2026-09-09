@@ -16,6 +16,8 @@ const scanStages = [
   'Preparing your Decision Report',
 ];
 
+export const MINIMUM_DECISION_CHART_CANDLES=25;
+
 export function marketAnalysisRetryDelay(value: unknown): number | null {
   if (!value || typeof value !== 'object') return null;
   const error = (value as { error?: unknown }).error;
@@ -76,6 +78,7 @@ export default function LiveMarketPanel({
     retryTimerRef.current = null;
     analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
     setChartData(null);
+    setPaintedChartKey(null);
     setSnapshotCreatedAt(null);
     setAnalysisSource(null);
     setError('');
@@ -218,7 +221,9 @@ export default function LiveMarketPanel({
   const chartDataKey=displayedCandles?.length
     ? `${chartData?.analysisId??chartData?.calculatedAt??'analysis'}:${selectedInstrument}:${chartTimeframe}:${displayedCandles.length}:${displayedCandles[0]?.datetime??''}:${displayedCandles.at(-1)?.datetime??''}`
     : null;
-  const analyzedChartReady=chartDataKey!==null&&paintedChartKey===chartDataKey;
+  const hasCompleteChartSeries=Boolean(displayedCandles&&displayedCandles.length>=MINIMUM_DECISION_CHART_CANDLES);
+  const analyzedChartReady=hasCompleteChartSeries&&chartDataKey!==null&&paintedChartKey===chartDataKey;
+  const analyzedChartVisible=hasCompleteChartSeries&&chartDataKey!==null&&paintedChartKey!==null;
 
   return (
     <section className="card live-panel">
@@ -266,11 +271,11 @@ export default function LiveMarketPanel({
       </div>
       {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Saved market data</strong><span>From {new Date(snapshotCreatedAt).toLocaleString()} · Check current market when you want a new Decision.</span></div>:null}
       <div className="market-chart-stage">
-        <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartReady?'is-hidden':''}`} aria-hidden={analyzedChartReady} inert={analyzedChartReady?true:undefined}>
+        <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartVisible?'is-hidden':''}`} aria-hidden={analyzedChartVisible} inert={analyzedChartVisible?true:undefined}>
           <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
         </div>
-        {displayedCandles?.length&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartReady?'is-ready':''}`} aria-hidden={!analyzedChartReady} inert={!analyzedChartReady?true:undefined}>
-          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={chartData?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={()=>setPaintedChartKey(chartDataKey)} />
+        {hasCompleteChartSeries&&displayedCandles&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartVisible?'is-ready':''}`} aria-hidden={!analyzedChartVisible} inert={!analyzedChartVisible?true:undefined} data-chart-current={analyzedChartReady}>
+          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={chartData?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={(renderedCandleCount)=>{if(renderedCandleCount>=MINIMUM_DECISION_CHART_CANDLES)setPaintedChartKey(chartDataKey)}} />
         </div>:null}
         {activeTradeOverlay&&activeTradeGeometry?<aside className={`market-active-trade-overlay direction-${activeTradeGeometry.direction.toLowerCase()}`} aria-label={`Active ${activeTradeGeometry.direction} trade on ${selectedInstrument}`}>
           <div className="market-active-trade-heading"><span>Active trade</span><strong>{activeTradeGeometry.direction} · {selectedInstrument}</strong></div>

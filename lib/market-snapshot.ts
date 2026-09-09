@@ -47,3 +47,20 @@ export function restoreMarketChartSnapshot(row:MarketSnapshotRow,context:MarketS
     snapshotCreatedAt:restored.snapshotCreatedAt,
   };
 }
+
+export function restoreReusableMarketChartSnapshot(row:MarketSnapshotRow,instrument:string):MarketChartSnapshot|null{
+  if(row.instrument!==instrument||!row.analysis||typeof row.analysis!=='object')return null;
+  const analysis=row.analysis as Partial<ChartAnalysis>;
+  const marketSeries=analysis.marketSeries;
+  if(analysis.instrument!==instrument||typeof analysis.calculatedAt!=='string'||!marketSeries||!Object.values(marketSeries).some(series=>Array.isArray(series)&&series.length>0))return null;
+  return{
+    chart:{
+      analysisId:row.id,
+      instrument,
+      provider:analysis.provider??'Saved market data',
+      calculatedAt:analysis.calculatedAt,
+      marketSeries,
+    },
+    snapshotCreatedAt:row.created_at,
+  };
+}

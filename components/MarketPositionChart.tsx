@@ -10,7 +10,7 @@ import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverl
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
 import { buildDisplayChartData, deriveDisplayChartTime } from './chartDisplayTime';
 
-type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; onDataReady?: () => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
+type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; onDataReady?: (candleCount:number) => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
 const EMPTY_CANDLES:readonly Candle[]=[];
 
 type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
@@ -194,7 +194,14 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
       initialVisibleRangeRef.current = true;
     }
     setTooltip(null);
-    const readyFrame=window.requestAnimationFrame(()=>dataReadyRef.current?.());
+    const readyFrame=window.requestAnimationFrame(()=>{
+      const timeScale=chartRef.current?.timeScale();
+      if(timeScale){
+        const range=getInitialVisibleLogicalRange(candles.length,timeframe);
+        timeScale.setVisibleLogicalRange({from:range.from,to:range.to});
+      }
+      dataReadyRef.current?.(data.length);
+    });
     return()=>window.cancelAnimationFrame(readyFrame);
   }, [candles, timeframe]);
 
