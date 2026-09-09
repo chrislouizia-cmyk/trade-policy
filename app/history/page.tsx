@@ -63,24 +63,35 @@ function tabHref(view: (typeof views)[number]) {
 
 function TradeJournalRow({ item, c, locale }: { item: HistoryTradeItem; c: ScreenCopy['history']; locale: Locale }) {
   const resultValue = item.status === 'CLOSED' ? item.resultR : item.currentR;
+  const lifecycleTime = item.status === 'CLOSED' && item.closedAt ? item.closedAt : item.openedAt;
+  const lifecycleLabel = item.status === 'CLOSED' ? c.closedAt : c.opened;
+  const outcomeLabel = item.status === 'OPEN' ? c.inProgress : label(item.outcome, c.notAvailable);
+
   return (
     <article className="history-row history-journal-row trade-journal-row">
       <div className={`history-timeline-marker ${item.status === 'OPEN' ? 'open' : 'closed'}`} aria-hidden="true"><span /></div>
-      <div className="history-row-main history-event-main">
-        <div className="history-row-head">
-          <div className="history-row-tags">
-            <span className="history-kind-tag">{c.trade}</span>
+
+      <div className="history-row-main history-event-main history-trade-primary">
+        <div className="history-trade-identity">
+          <div className="history-trade-market">
             <strong>{item.instrument}</strong>
-            <span className="history-direction-label">{item.direction}</span>
+            <span>{item.direction}</span>
           </div>
-          <div className="history-row-badges">
+
+          <div className="history-trade-result">
             {item.takenAgainstVerdict ? <span className="history-badge tone-danger">{c.override}</span> : null}
-            <span className={`history-badge tone-${item.status === 'OPEN' ? 'positive' : item.outcome === 'LOSS' ? 'danger' : 'neutral'}`}>{item.status}</span>
+            <span className={`history-badge tone-${item.status === 'OPEN' ? 'positive' : item.outcome === 'LOSS' ? 'danger' : 'neutral'}`}>{outcomeLabel}</span>
+            <strong className={resultValue !== null && resultValue < 0 ? 'metric-negative' : 'metric-positive'}>{formatR(resultValue, c.notRecorded)}</strong>
           </div>
         </div>
-        <div className="history-event-time"><time dateTime={item.openedAt}>{c.opened} {formatDateTime(item.openedAt, locale)}</time>{item.closedAt ? <time dateTime={item.closedAt}>{c.closedAt} {formatDateTime(item.closedAt, locale)}</time> : null}</div>
-        <h3>{item.strategyName}<span>{item.setupType ?? c.setupMissing}</span></h3>
-        <p>{item.originalVerdictReason ?? (item.status === 'OPEN' ? c.activeSupervision : c.completedLifecycle)}</p>
+
+        <div className="history-trade-context">
+          <h3>{item.strategyName}<span>{item.setupType ?? c.setupMissing}</span></h3>
+          <time dateTime={lifecycleTime}>{lifecycleLabel} {formatDateTime(lifecycleTime, locale)}</time>
+        </div>
+
+        <p className="history-trade-verdict-reason">{item.originalVerdictReason ?? (item.status === 'OPEN' ? c.activeSupervision : c.completedLifecycle)}</p>
+
         <details className="history-event-details">
           <summary>{c.tradeDetails} <span>{c.tradeDetailsHint}</span></summary>
           <div className="history-event-detail-grid">
@@ -90,15 +101,11 @@ function TradeJournalRow({ item, c, locale }: { item: HistoryTradeItem; c: Scree
             <div><span>{c.originalVerdict}</span><strong>{label(item.originalVerdict, c.notAvailable)}</strong></div>
             <div><span>{c.initialRR}</span><strong>{item.initialRR === null ? c.notRecorded : `${item.initialRR.toFixed(2)}R`}</strong></div>
             <div><span>{c.risk}</span><strong>{item.riskPercent === null ? c.notRecorded : `${item.riskPercent.toFixed(2)}%`}</strong></div>
+            <div><span>{c.opened}</span><strong>{formatDateTime(item.openedAt, locale)}</strong></div>
+            {item.closedAt ? <div><span>{c.closedAt}</span><strong>{formatDateTime(item.closedAt, locale)}</strong></div> : null}
           </div>
         </details>
       </div>
-
-      <aside className="history-event-outcome">
-        <span>{item.status === 'OPEN' ? c.currentR : c.realizedR}</span>
-        <strong className={resultValue !== null && resultValue < 0 ? 'metric-negative' : 'metric-positive'}>{formatR(resultValue, c.notRecorded)}</strong>
-        <small>{item.status === 'OPEN' ? c.inProgress : label(item.outcome, c.notAvailable)}</small>
-      </aside>
 
       <div className="history-row-action history-journal-actions history-event-actions">
         {item.sourceReportId ? <a href={`/history/${item.sourceReportId}`} className="button-link secondary">{c.openDecision}</a> : null}

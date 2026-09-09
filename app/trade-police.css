@@ -2456,3 +2456,22 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 .marketplace-candidate-details p{margin:0;color:var(--muted)}
 .marketplace-candidate-details ul{display:grid;gap:6px;margin:0;padding-left:20px;color:var(--muted)}
 @media(max-height:700px){.marketplace-create-modal{padding:16px}.marketplace-create-helper{font-size:12px}.marketplace-profile-option{padding:8px 10px}}
+
+
+/* History H2 — trade lifecycle hierarchy */
+.trade-journal-row{grid-template-columns:minmax(0,1fr) auto}
+.history-trade-primary{gap:10px}
+.history-trade-identity{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.history-trade-market{display:flex;align-items:baseline;gap:10px;min-width:0}
+.history-trade-market strong{font-size:19px;letter-spacing:-.025em}
+.history-trade-market span{color:var(--muted);font-size:11px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}
+.history-trade-result{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.history-trade-result>strong{font-size:24px;line-height:1;letter-spacing:-.045em}
+.history-trade-context{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.history-trade-context h3{margin:0!important}
+.history-trade-context time{color:var(--muted);font-size:10px;white-space:nowrap}
+.history-trade-verdict-reason{max-width:760px!important;margin:0!important;color:#c8d2e1!important;line-height:1.5!important}
+.trade-journal-row .history-event-details{margin-top:2px}
+.trade-journal-row .history-event-actions{align-self:center}
+@media(max-width:800px){.trade-journal-row{grid-template-columns:1fr}.trade-journal-row .history-event-actions{grid-column:auto}}
+@media(max-width:600px){.history-trade-identity,.history-trade-context{align-items:flex-start;flex-direction:column}.history-trade-result{justify-content:flex-start}.history-trade-context{gap:5px}}

@@ -29,3 +29,26 @@ test('H1 preserves canonical sources and lifecycle deduplication', () => {
   assert.match(page, /buildHistoryJournal/);
   assert.doesNotMatch(page, /from\('trade_records'\)/);
 });
+
+
+test('H2 prioritizes trade identity, outcome, R and lifecycle context without removing evidence', () => {
+  assert.match(page, /history-trade-identity/);
+  assert.match(page, /history-trade-market[\s\S]*item\.instrument[\s\S]*item\.direction/);
+  assert.match(page, /history-trade-result[\s\S]*outcomeLabel[\s\S]*formatR\(resultValue/);
+  assert.match(page, /const lifecycleTime = item\.status === 'CLOSED' && item\.closedAt \? item\.closedAt : item\.openedAt/);
+  assert.match(page, /history-trade-context[\s\S]*item\.strategyName[\s\S]*formatDateTime\(lifecycleTime, locale\)/);
+
+  assert.match(page, /c\.entry[\s\S]*formatPrice\(item\.entry\)/);
+  assert.match(page, /c\.stop[\s\S]*formatPrice\(item\.stopLoss\)/);
+  assert.match(page, /c\.target[\s\S]*formatPrice\(item\.takeProfit\)/);
+  assert.match(page, /c\.originalVerdict[\s\S]*item\.originalVerdict/);
+  assert.match(page, /c\.initialRR[\s\S]*item\.initialRR/);
+  assert.match(page, /c\.risk[\s\S]*item\.riskPercent/);
+  assert.match(page, /item\.sourceReportId[\s\S]*c\.openDecision/);
+  assert.match(page, /item\.status === 'OPEN'[\s\S]*href="\/active-trade"[\s\S]*c\.manageTrade/);
+});
+
+test('H2 keeps override visibility and removes the redundant separate outcome column', () => {
+  assert.match(page, /item\.takenAgainstVerdict[\s\S]*c\.override/);
+  assert.doesNotMatch(page, /<aside className="history-event-outcome">/);
+});
