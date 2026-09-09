@@ -52,3 +52,22 @@ test('H2 keeps override visibility and removes the redundant separate outcome co
   assert.match(page, /item\.takenAgainstVerdict[\s\S]*c\.override/);
   assert.doesNotMatch(page, /<aside className="history-event-outcome">/);
 });
+
+
+test('H3 reads canonical active-trade events into the historical lifecycle', () => {
+  assert.match(page, /from\('active_trade_events'\)/);
+  assert.match(page, /select\('id,trade_id,event_type,verdict,current_price,current_r,created_at'\)/);
+  assert.match(page, /buildHistoryJournal\([\s\S]*eventResult\.data/);
+  assert.match(page, /eventResult\.error/);
+});
+
+test('H3 renders decision, entry, real reanalysis events, close and result without inventing management', () => {
+  assert.match(page, /history-lifecycle-flow/);
+  assert.match(page, /item\.linkedDecision[\s\S]*item\.linkedDecision\.occurredAt/);
+  assert.match(page, /c\.entry[\s\S]*formatPrice\(item\.entry\)[\s\S]*item\.openedAt/);
+  assert.match(page, /item\.events\.filter\(\(event\) => event\.eventType === 'REANALYSIS'\)/);
+  assert.match(page, /event\.currentR/);
+  assert.match(page, /event\.currentPrice/);
+  assert.match(page, /item\.events\.find\(\(event\) => event\.eventType === 'CLOSED'\)/);
+  assert.match(page, /item\.status === 'OPEN' \? c\.currentR : c\.result/);
+});

@@ -2475,3 +2475,18 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 .trade-journal-row .history-event-actions{align-self:center}
 @media(max-width:800px){.trade-journal-row{grid-template-columns:1fr}.trade-journal-row .history-event-actions{grid-column:auto}}
 @media(max-width:600px){.history-trade-identity,.history-trade-context{align-items:flex-start;flex-direction:column}.history-trade-result{justify-content:flex-start}.history-trade-context{gap:5px}}
+
+
+/* History H3 — canonical lifecycle narrative */
+.history-lifecycle-flow{display:grid;gap:0;margin:12px 0 4px;padding:2px 0 2px 3px}
+.history-lifecycle-step{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr);gap:10px;padding:0 0 18px}
+.history-lifecycle-step:not(:last-child):before{content:"";position:absolute;left:5px;top:12px;bottom:0;width:1px;background:rgba(255,255,255,.1)}
+.history-lifecycle-dot{position:relative;z-index:1;width:11px;height:11px;margin-top:3px;border:2px solid rgba(142,171,240,.62);border-radius:999px;background:#111722}
+.history-lifecycle-step>div{display:grid;gap:3px;min-width:0}
+.history-lifecycle-step small{color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}
+.history-lifecycle-step strong{font-size:13px}
+.history-lifecycle-step time{color:var(--muted);font-size:10px}
+.history-lifecycle-step p{margin:0!important;color:var(--muted)!important;font-size:11px!important;line-height:1.45!important}
+.history-lifecycle-management .history-lifecycle-dot{border-style:dashed}
+.history-lifecycle-result .history-lifecycle-dot{background:rgba(125,161,241,.24)}
+.trade-journal-row .history-event-detail-grid{margin-top:10px;padding-top:12px;border-top:1px solid rgba(255,255,255,.065)}

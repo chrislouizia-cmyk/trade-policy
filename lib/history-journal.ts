@@ -15,6 +15,25 @@ export type HistoryDecisionRow = {
   snapshot_json: Record<string, unknown> | null;
 };
 
+export type HistoryTradeEventRow = {
+  id: string;
+  trade_id: string;
+  event_type: string;
+  verdict: string | null;
+  current_price: number | string | null;
+  current_r: number | string | null;
+  created_at: string;
+};
+
+export type HistoryTradeEventItem = {
+  id: string;
+  eventType: string;
+  verdict: string | null;
+  currentPrice: number | null;
+  currentR: number | null;
+  occurredAt: string;
+};
+
 export type HistoryTradeRow = {
   id: string;
   trade_record_id: string | null;
@@ -87,6 +106,7 @@ export type HistoryTradeItem = {
   overrideReason: string | null;
   sourceReportId: string | null;
   linkedDecision: HistoryDecisionItem | null;
+  events: HistoryTradeEventItem[];
 };
 
 export type HistoryJournalItem = HistoryDecisionItem | HistoryTradeItem;
@@ -146,7 +166,11 @@ function strategyName(row: HistoryTradeRow): string {
   return typeof snapshot.name === 'string' && snapshot.name.trim() ? snapshot.name : 'Strategy not saved';
 }
 
-function tradeItem(row: HistoryTradeRow, decisions: ReadonlyMap<string, HistoryDecisionItem>): HistoryTradeItem | null {
+function tradeItem(
+  row: HistoryTradeRow,
+  decisions: ReadonlyMap<string, HistoryDecisionItem>,
+  eventsByTrade: ReadonlyMap<string, HistoryTradeEventItem[]>,
+): HistoryTradeItem | null {
   if (!validDate(row.opened_at) || isTradeLifecycleSimulationRecord(row)) return null;
   const entry = finite(row.entry), stopLoss = finite(row.stop_loss), takeProfit = finite(row.take_profit);
   if (entry === null || stopLoss === null || takeProfit === null) return null;
@@ -178,6 +202,19 @@ function tradeItem(row: HistoryTradeRow, decisions: ReadonlyMap<string, HistoryD
     overrideReason: row.override_reason,
     sourceReportId: row.source_report_id,
     linkedDecision,
+    events: eventsByTrade.get(row.id) ?? [],
+  };
+}
+
+function tradeEventItem(row: HistoryTradeEventRow): HistoryTradeEventItem | null {
+  if (!validDate(row.created_at)) return null;
+  return {
+    id: row.id,
+    eventType: row.event_type,
+    verdict: row.verdict,
+    currentPrice: finite(row.current_price),
+    currentR: finite(row.current_r),
+    occurredAt: row.created_at,
   };
 }
 
@@ -185,10 +222,25 @@ function newestFirst<T extends { occurredAt: string }>(items: T[]): T[] {
   return items.sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
 }
 
-export function buildHistoryJournal(tradeRows: HistoryTradeRow[], decisionRows: HistoryDecisionRow[]) {
+export function buildHistoryJournal(
+  tradeRows: HistoryTradeRow[],
+  decisionRows: HistoryDecisionRow[],
+  eventRows: HistoryTradeEventRow[] = [],
+) {
   const decisions = decisionRows.map(decisionItem).filter((item): item is HistoryDecisionItem => item !== null);
   const decisionMap = new Map(decisions.map((item) => [item.id, item]));
-  const trades = tradeRows.map((row) => tradeItem(row, decisionMap)).filter((item): item is HistoryTradeItem => item !== null);
+  const eventsByTrade = new Map<string, HistoryTradeEventItem[]>();
+  for (const row of eventRows) {
+    const event = tradeEventItem(row);
+    if (!event) continue;
+    const events = eventsByTrade.get(row.trade_id) ?? [];
+    events.push(event);
+    eventsByTrade.set(row.trade_id, events);
+  }
+  for (const events of eventsByTrade.values()) {
+    events.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  }
+  const trades = tradeRows.map((row) => tradeItem(row, decisionMap, eventsByTrade)).filter((item): item is HistoryTradeItem => item !== null);
   const linkedReportIds = new Set(trades.map((trade) => trade.sourceReportId).filter((id): id is string => Boolean(id)));
   const unconvertedDecisions = decisions.filter((decision) => !linkedReportIds.has(decision.id));
   return {

@@ -7,6 +7,7 @@ import {
   type HistoryDecisionItem,
   type HistoryDecisionRow,
   type HistoryJournalItem,
+  type HistoryTradeEventRow,
   type HistoryTradeItem,
   type HistoryTradeRow,
 } from '@/lib/history-journal';
@@ -94,6 +95,61 @@ function TradeJournalRow({ item, c, locale }: { item: HistoryTradeItem; c: Scree
 
         <details className="history-event-details">
           <summary>{c.tradeDetails} <span>{c.tradeDetailsHint}</span></summary>
+
+          <div className="history-lifecycle-flow">
+            <div className="history-lifecycle-step">
+              <span className="history-lifecycle-dot" aria-hidden="true" />
+              <div>
+                <small>{c.decision}</small>
+                <strong>{label(item.originalVerdict, c.notAvailable)}</strong>
+                {item.linkedDecision ? <time dateTime={item.linkedDecision.occurredAt}>{formatDateTime(item.linkedDecision.occurredAt, locale)}</time> : null}
+                {item.originalVerdictReason ? <p>{item.originalVerdictReason}</p> : null}
+              </div>
+            </div>
+
+            <div className="history-lifecycle-step">
+              <span className="history-lifecycle-dot" aria-hidden="true" />
+              <div>
+                <small>{c.entry}</small>
+                <strong>{formatPrice(item.entry)}</strong>
+                <time dateTime={item.openedAt}>{formatDateTime(item.openedAt, locale)}</time>
+                <p>{c.risk}: {item.riskPercent === null ? c.notRecorded : `${item.riskPercent.toFixed(2)}%`} · {c.initialRR}: {item.initialRR === null ? c.notRecorded : `${item.initialRR.toFixed(2)}R`}</p>
+              </div>
+            </div>
+
+            {item.events.filter((event) => event.eventType === 'REANALYSIS').map((event) => (
+              <div className="history-lifecycle-step history-lifecycle-management" key={event.id}>
+                <span className="history-lifecycle-dot" aria-hidden="true" />
+                <div>
+                  <small>{label(event.eventType)}</small>
+                  <strong>{label(event.verdict, c.notAvailable)}</strong>
+                  <time dateTime={event.occurredAt}>{formatDateTime(event.occurredAt, locale)}</time>
+                  <p>{c.currentR}: {formatR(event.currentR, c.notRecorded)}{event.currentPrice === null ? '' : ` · ${formatPrice(event.currentPrice)}`}</p>
+                </div>
+              </div>
+            ))}
+
+            {item.status === 'CLOSED' && item.closedAt ? (
+              <div className="history-lifecycle-step">
+                <span className="history-lifecycle-dot" aria-hidden="true" />
+                <div>
+                  <small>{c.closedAt}</small>
+                  <strong>{item.events.find((event) => event.eventType === 'CLOSED')?.currentPrice === null || item.events.find((event) => event.eventType === 'CLOSED')?.currentPrice === undefined ? c.notRecorded : formatPrice(item.events.find((event) => event.eventType === 'CLOSED')!.currentPrice!)}</strong>
+                  <time dateTime={item.closedAt}>{formatDateTime(item.closedAt, locale)}</time>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="history-lifecycle-step history-lifecycle-result">
+              <span className="history-lifecycle-dot" aria-hidden="true" />
+              <div>
+                <small>{item.status === 'OPEN' ? c.currentR : c.result}</small>
+                <strong className={resultValue !== null && resultValue < 0 ? 'metric-negative' : 'metric-positive'}>{formatR(resultValue, c.notRecorded)}</strong>
+                <p>{item.status === 'OPEN' ? c.inProgress : label(item.outcome, c.notAvailable)}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="history-event-detail-grid">
             <div><span>{c.entry}</span><strong>{formatPrice(item.entry)}</strong></div>
             <div><span>{c.stop}</span><strong>{formatPrice(item.stopLoss)}</strong></div>
@@ -156,7 +212,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
 
   const [displayName, locale] = await Promise.all([getUserDisplayName(s, user), getRequestLocale()]);
   const c = getScreenCopy(locale).history;
-  const [tradeResult, decisionResult] = await Promise.all([
+  const [tradeResult, decisionResult, eventResult] = await Promise.all([
     s.from('active_trades')
       .select('id,trade_record_id,instrument,direction,entry,stop_loss,take_profit,risk_percent,initial_rr,setup_type,status,current_r,taken_against_verdict,original_verdict,original_verdict_reason,override_reason,close_price,result_r,outcome,opened_at,closed_at,strategy_profile_id,strategy_name_at_entry,strategy_snapshot,strategy_revision_id,source_report_id,activation_mode')
       .eq('user_id', user.id)
@@ -167,17 +223,27 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100),
+    s.from('active_trade_events')
+      .select('id,trade_id,event_type,verdict,current_price,current_r,created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(500),
   ]);
 
-  const journal = buildHistoryJournal((tradeResult.data ?? []) as HistoryTradeRow[], (decisionResult.data ?? []) as HistoryDecisionRow[]);
+  const journal = buildHistoryJournal(
+    (tradeResult.data ?? []) as HistoryTradeRow[],
+    (decisionResult.data ?? []) as HistoryDecisionRow[],
+    (eventResult.data ?? []) as HistoryTradeEventRow[],
+  );
   const summary = summarizeHistoryJournal(journal.trades, journal.decisions);
   const selectedItems = selectedView === 'trades' ? journal.trades : selectedView === 'decisions' ? journal.decisions : journal.all;
   const visibleItems = filterHistoryJournal(selectedItems, filters);
-  const loadError = tradeResult.error ?? decisionResult.error;
+  const loadError = tradeResult.error ?? decisionResult.error ?? eventResult.error;
   if (loadError) {
     console.error('History journal load failed', {
       tradeError: tradeResult.error?.message ?? null,
       decisionError: decisionResult.error?.message ?? null,
+      eventError: eventResult.error?.message ?? null,
     });
   }
   const instruments = [...new Set([...journal.trades, ...journal.decisions].map((item) => item.instrument))].sort();
