@@ -6,6 +6,8 @@ const migration=fs.readFileSync('supabase/migrations/098_coordinate_twelve_data_
 const rollingMigration=fs.readFileSync('supabase/migrations/099_align_provider_rolling_credit_window.sql','utf8');
 const protectedCapacityMigration=fs.readFileSync('supabase/migrations/100_protect_daily_live_market_capacity.sql','utf8');
 const reconciliationMigration=fs.readFileSync('supabase/migrations/101_reconcile_twelve_data_credit_usage.sql','utf8');
+const settlementRepairPath='supabase/migrations/102_repair_provider_credit_settlement.sql';
+const settlementRepairMigration=fs.existsSync(settlementRepairPath)?fs.readFileSync(settlementRepairPath,'utf8'):'';
 const coordinator=fs.readFileSync('lib/server/provider-credit-coordinator.ts','utf8');
 const market=fs.readFileSync('lib/market-data.ts','utf8');
 const analyze=fs.readFileSync('app/api/market/analyze/route.ts','utf8');
@@ -65,4 +67,11 @@ test('reservations settle to provider-confirmed usage or are released',()=>{
   assert.match(market,/api-credits-used/);
   assert.match(market,/api-credits-left/);
   assert.match(market,/api-credits-request/);
+});
+
+test('provider settlement uses the bigint identity type from the credit event table',()=>{
+  assert.match(migration,/id bigint generated always as identity primary key/);
+  assert.match(settlementRepairMigration,/declare\s+v_id bigint/);
+  assert.doesNotMatch(settlementRepairMigration,/declare\s+v_id uuid/);
+  assert.match(settlementRepairMigration,/where id\s*=\s*v_id/);
 });
