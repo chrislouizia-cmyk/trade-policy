@@ -43,6 +43,14 @@ export default function ClientLoginForm({ next, initialMode='login' }: { next: s
           console.error('[CUSTOMER_SIGNUP_FAILED]', { code: error.code, status: error.status, message: error.message });
           setMessage(signupErrorMessage(error,c.signupFailed));
         } else if (data.session) {
+          try {
+            await fetch('/api/affiliate/bind-signup', {
+              method: 'POST',
+              credentials: 'same-origin',
+            });
+          } catch (error) {
+            console.warn('[AFFILIATE_SIGNUP_BIND_FAILED]', error);
+          }
           window.location.assign('/onboarding');
           return;
         } else {

@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { recordServerBetaEvent } from '@/lib/server/beta-events';
 import { getCanonicalAppUrls } from '@/lib/app-urls';
 import { getSafeClientNextPath } from '@/lib/auth/safe-next';
+import {
+  AFFILIATE_COOKIE,
+  bindAffiliateReferralFromCookie,
+} from '@/lib/affiliate/referral-cookie';
 
 function safeNext(value: string | null) {
   return getSafeClientNextPath(value, '/auth/callback', '/dashboard');
@@ -51,10 +56,20 @@ export async function GET(request: Request) {
 
   const {data:{user}}=await supabase.auth.getUser();
   const recentlyCreated=user?.created_at&&Date.now()-new Date(user.created_at).getTime()<10*60_000;
-  if(user&&(type==='signup'||(next==='/onboarding'&&recentlyCreated)))await recordServerBetaEvent(user.id,'SIGNUP_COMPLETED');
+  if(user&&(type==='signup'||(next==='/onboarding'&&recentlyCreated))){
+    await recordServerBetaEvent(user.id,'SIGNUP_COMPLETED');
+
+    if (recentlyCreated) {
+      const cookieStore = await cookies();
+      const rawAffiliateCookie = cookieStore.get(AFFILIATE_COOKIE)?.value;
+      await bindAffiliateReferralFromCookie(user.id, rawAffiliateCookie);
+    }
+  }
   const urls = getCanonicalAppUrls();
   const isProductionDomain = url.hostname === 'tradepolice.app' || url.hostname.endsWith('.tradepolice.app');
   const isHQRecovery = portal === 'hq' || next.includes('portal=hq') || next.startsWith('/hq');
   const destinationOrigin = isProductionDomain ? (isHQRecovery ? urls.hq : urls.portal) : url.origin;
-  return NextResponse.redirect(new URL(next, destinationOrigin));
+  const response = NextResponse.redirect(new URL(next, destinationOrigin));
+  if (user && recentlyCreated) response.cookies.delete(AFFILIATE_COOKIE);
+  return response;
 }
