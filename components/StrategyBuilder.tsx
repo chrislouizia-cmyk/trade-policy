@@ -546,9 +546,18 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       if (!response.ok) throw new Error(apiErrorMessage(result, 'Could not delete strategy.'));
       const deletedId = deleteTarget.id;
       const deletedName = deleteTarget.name;
+
+      setProfiles((current) => current.filter((item) => item.id !== deletedId));
+
       setDeleteTarget(null);
       setDeleteConfirmation('');
+
+      if (profile.id === deletedId) {
+        setProfile(createEmptyStrategyProfile());
+      }
+
       await loadAll(undefined, { preserveCurrentSelection: false });
+
       setMessage(`${deletedName} was deleted. Historical trades, reports, and backtests were preserved.`);
       void trackBetaEvent('PLAYBOOK_DELETED', deletedId);
       window.dispatchEvent(new CustomEvent('trade-police:strategy-changed'));
@@ -591,7 +600,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
               </button>
             ))}</>}
           </div>
-          {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>{w('Edit')}</button><button type="button" onClick={() => void duplicate(selectedProfile)}>{w('Duplicate')}</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>{w('Restore')}</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Set active')}</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Archive')}</button></>}<button className="danger" type="button" onClick={()=>{console.log('DELETE_STRATEGY_CLICK', selectedProfile.id, selectedProfile.name); alert(`Delete click reached: ${selectedProfile.name}`); setDeleteTarget(selectedProfile);setDeleteConfirmation('')}}>{w('Delete strategy')}</button></div>}
+          {selectedProfile && <div className="stack sidebar-actions"><button type="button" onClick={()=>{if(profile.personalRules?.some(rule=>rule.key==='trade-police-v2-metadata'))openV2Edit();else setBuilderStep('identity')}}>{w('Edit')}</button><button type="button" onClick={() => void duplicate(selectedProfile)}>{w('Duplicate')}</button>{selectedProfile.isArchived?<button type="button" onClick={() => void restore(selectedProfile)}>{w('Restore')}</button>:<><button type="button" onClick={() => void setActive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Set active')}</button><button type="button" onClick={() => void archive(selectedProfile)} disabled={selectedProfile.isDefault}>{w('Archive')}</button></>}<button className="danger" type="button" onClick={()=>{setDeleteTarget(selectedProfile);setDeleteConfirmation('')}}>{w('Delete strategy')}</button></div>}
         </aside>
 
         <div className="stack strategy-main" data-step={builderStep}>
