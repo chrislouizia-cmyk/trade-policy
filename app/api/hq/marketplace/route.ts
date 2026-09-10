@@ -109,7 +109,7 @@ export async function GET(request:Request) {
 
       const { data: profiles, error: profilesError } = await admin
         .from('strategy_profiles')
-        .select('id,name,is_default,is_archived,instruments,market_types,macro_timeframe,trend_timeframe,confirmation_timeframe,entry_timeframe,trigger_timeframe,minimum_rr,maximum_risk_percent,allowed_sessions,required_evidence,engine_version,created_at,updated_at')
+        .select('id,user_id,name,is_default,is_archived,instruments,market_types,macro_timeframe,trend_timeframe,confirmation_timeframe,entry_timeframe,trigger_timeframe,minimum_rr,maximum_risk_percent,allowed_sessions,required_evidence,engine_version,created_at,updated_at')
         .in('user_id', internalUserIds)
         .eq('is_archived', false)
         .order('updated_at', { ascending: false })
@@ -120,9 +120,26 @@ export async function GET(request:Request) {
         return NextResponse.json({ error: 'Strategy profile directory unavailable.', code: 'STRATEGY_PROFILE_ERROR' }, { status: 503 });
       }
 
+      const currentProfiles = await Promise.all((profiles ?? []).map(async (profile: any) => {
+        const strategy = await loadStrategyById(admin, profile.user_id, profile.id);
+        return { profile, revisionId: strategyRevisionId(strategy) };
+      }));
+      const profileIds = currentProfiles.map(({ profile }) => profile.id).filter(Boolean);
+      const { data: releases, error: releasesError } = profileIds.length
+        ? await admin
+            .from('marketplace_strategy_releases')
+            .select('source_strategy_id,source_strategy_revision_id')
+            .in('source_strategy_id', profileIds)
+        : { data: [], error: null };
+      if (releasesError) {
+        logSupabaseQueryFailure('profile_release_availability', releasesError);
+        return NextResponse.json({ error: 'Internal release availability unavailable.', code: 'MARKETPLACE_CATALOG_UNAVAILABLE' }, { status: 503 });
+      }
+      const releasedRevisions = new Set((releases ?? []).map((row: any) => `${row.source_strategy_id}:${row.source_strategy_revision_id}`));
+
       return NextResponse.json({
         isFounder: true,
-        profiles: (profiles ?? []).map((profile: any) => ({
+        profiles: currentProfiles.map(({ profile, revisionId }) => ({
           id: profile.id,
           name: profile.name,
           instruments: Array.isArray(profile.instruments) ? profile.instruments.filter((value: unknown): value is string => typeof value === 'string') : [],
@@ -135,6 +152,8 @@ export async function GET(request:Request) {
             trigger: typeof profile.trigger_timeframe === 'string' ? profile.trigger_timeframe : null,
           },
           createdAt: profile.created_at ?? null,
+          currentRevisionId: revisionId,
+          hasInternalTestRelease: releasedRevisions.has(`${profile.id}:${revisionId}`),
         })),
       }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {

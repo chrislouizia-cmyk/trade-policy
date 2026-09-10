@@ -19,6 +19,8 @@ type StrategyOption = {
     trigger: string | null;
   };
   createdAt: string | null;
+  currentRevisionId: string;
+  hasInternalTestRelease: boolean;
 };
 
 const score = (value: number | null) => value ?? -Infinity;
@@ -88,12 +90,18 @@ export default function MarketplaceLab() {
     [profileSearch, profiles],
   );
 
+  const availableProfiles = useMemo(
+    () => filteredProfiles.filter((profile) => !profile.hasInternalTestRelease),
+    [filteredProfiles],
+  );
+
   useEffect(() => {
-    if (!showCreate || !filteredProfiles.length) return;
-    if (!filteredProfiles.some((profile) => profile.id === selectedProfileId)) {
-      setSelectedProfileId(filteredProfiles[0].id);
+    if (!showCreate) return;
+    const selectedIsAvailable = availableProfiles.some((profile) => profile.id === selectedProfileId);
+    if (!selectedIsAvailable) {
+      setSelectedProfileId(availableProfiles[0]?.id ?? '');
     }
-  }, [filteredProfiles, selectedProfileId, showCreate]);
+  }, [availableProfiles, selectedProfileId, showCreate]);
 
   useEffect(() => {
     if (!showCreate) return;
@@ -177,7 +185,15 @@ export default function MarketplaceLab() {
         cache: 'no-store',
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Internal strategy creation failed.');
+      if (!response.ok) {
+        if (body.code === 'DUPLICATE_MARKETPLACE_RELEASE') {
+          setProfiles((current) => current.map((profile) => profile.id === selectedProfileId
+            ? { ...profile, hasInternalTestRelease: true }
+            : profile));
+          throw new Error('This exact strategy revision is already listed for internal testing. Choose another strategy or create a new revision first.');
+        }
+        throw new Error(body.error || 'Internal strategy creation failed.');
+      }
       setSuccess(`Published internal test release for ${selectedProfile?.name ?? 'strategy profile'}.`);
       setShowCreate(false);
       window.location.reload();
@@ -241,6 +257,7 @@ export default function MarketplaceLab() {
           const tradeProgress=Math.min(100,Math.round(candidate.closedTrades/candidate.policy.minimumClosedTrades*100));
           const dayProgress=Math.min(100,Math.round(candidate.observationDays/candidate.policy.minimumObservationDays*100));
           const isSelected=selectedCandidateId===candidate.candidateId;
+          const candidateAlreadyListed=profiles.some((profile)=>profile.id===candidate.strategyId&&profile.currentRevisionId===candidate.strategyRevisionId&&profile.hasInternalTestRelease);
           return <article key={candidate.candidateId} className={`marketplace-candidate-card${isSelected?' selected':''}`}>
             <div><span className={`status-badge ${candidate.status.toLowerCase()}`}>{candidate.status.replaceAll('_',' ')}</span><h3>{candidate.strategyName}</h3><p>{candidate.ownerName??'Private owner'} · {candidate.instruments.join(', ')||'No instrument'}</p></div>
             <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Recorded trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Rule adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
@@ -258,7 +275,7 @@ export default function MarketplaceLab() {
               </ul>
               {candidateEvidenceState[candidate.candidateId]?<p className="muted" role="status">{candidateEvidenceState[candidate.candidateId]}</p>:null}
               {candidateEvidence[candidate.candidateId]?.evidence?<CandidateEvidence evidence={candidateEvidence[candidate.candidateId].evidence}/>:null}
-              {isFounder?<button className="button compact-button" type="button" onClick={()=>openInternalTestForCandidate(candidate.strategyId)}>Create internal test listing</button>:null}
+              {isFounder?<button className="button compact-button" type="button" disabled={candidateAlreadyListed} onClick={()=>openInternalTestForCandidate(candidate.strategyId)}>{candidateAlreadyListed?'Current revision already listed':'Create internal test listing'}</button>:null}
             </div>:null}
           </article>;
         })}</div>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
@@ -296,10 +313,11 @@ export default function MarketplaceLab() {
                       key={profile.id}
                       type="button"
                       className={profile.id === selectedProfileId ? 'marketplace-profile-option selected' : 'marketplace-profile-option'}
+                      disabled={profile.hasInternalTestRelease}
                       onClick={() => setSelectedProfileId(profile.id)}
                     >
                       <span>{profile.name}</span>
-                      <small>{profile.marketTypes.join(', ') || 'Internal test'}</small>
+                      <small>{profile.hasInternalTestRelease ? 'Current revision already listed' : profile.marketTypes.join(', ') || 'Available for internal test'}</small>
                     </button>
                   ))
                 ) : (
@@ -357,7 +375,7 @@ export default function MarketplaceLab() {
               <button type="button" className="button secondary" onClick={closeCreate}>
                 Cancel
               </button>
-              <button type="button" className="button primary" onClick={handleCreate} disabled={creating}>
+              <button type="button" className="button primary" onClick={handleCreate} disabled={creating || !selectedProfile || selectedProfile.hasInternalTestRelease}>
                 {creating ? 'Publishing…' : 'Publish internal test listing'}
               </button>
             </div>
