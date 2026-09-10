@@ -24,3 +24,167 @@
 @media(max-width:600px){.marketplace-proof-heading{display:grid}.marketplace-proof-metrics{grid-template-columns:repeat(2,1fr)}.marketplace-candidate-proof>dl{grid-template-columns:repeat(2,minmax(0,1fr))}.marketplace-trade-row,.marketplace-backtest-row{grid-template-columns:1fr;gap:6px}.marketplace-equity-chart,.marketplace-equity-empty{height:190px}.marketplace-equity-chart.compact,.marketplace-equity-empty.compact{height:130px}}
 
 .marketplace-hero-actions,.marketplace-release-badges,.marketplace-review-actions{display:flex;flex-wrap:wrap;gap:9px}.marketplace-observation-board{display:grid;gap:18px}.marketplace-candidate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:11px}.marketplace-candidate-card{display:grid;gap:15px;padding:17px;border:1px solid rgba(160,181,210,.13);border-radius:14px;background:linear-gradient(150deg,rgba(255,255,255,.025),rgba(255,255,255,.008))}.marketplace-candidate-card h3{margin:9px 0 3px;font-size:17px}.marketplace-candidate-card p{margin:0;color:#7f8a9a;font-size:11px}.marketplace-candidate-card dl{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0}.marketplace-candidate-card dl div{padding:9px;border:1px solid rgba(255,255,255,.055);border-radius:9px}.marketplace-candidate-card dt{color:#778294;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.marketplace-candidate-card dd{margin:4px 0 0;color:#e7ebf2;font-size:11px;font-weight:800}.marketplace-progress{height:4px;overflow:hidden;border-radius:20px;background:#202734}.marketplace-progress i{display:block;height:100%;background:linear-gradient(90deg,#728ff1,#70dfc1)}.marketplace-progress.trades i{background:linear-gradient(90deg,#b5914e,#e2c574)}.marketplace-detail{max-width:1240px;margin:auto}.marketplace-detail textarea{width:100%;margin:12px 0;padding:13px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0d131c;color:#fff;resize:vertical}.marketplace-field{display:grid;gap:7px;margin:14px 0}.marketplace-field span{color:#8995a7;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.marketplace-field select{min-height:44px;padding:0 11px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0d131c;color:#fff}.marketplace-detail .event-row small{display:block;margin-top:3px;color:#6f7a8b}.status-badge.owner_consent_pending,.status-badge.insufficient_data{color:#e8c779;border-color:rgba(232,199,121,.25)}.status-badge.under_review,.status-badge.observing{color:#91aafc;border-color:rgba(145,170,252,.25)}
+
+
+/* Affiliate HQ premium confirmation */
+.affiliate-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 14, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.affiliate-review-modal {
+  position: relative;
+  width: min(560px, 100%);
+  padding: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(37, 99, 235, 0.12),
+      transparent 36%
+    ),
+    rgba(10, 17, 29, 0.98);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.5),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.affiliate-review-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.affiliate-review-icon,
+.affiliate-review-success-icon,
+.affiliate-review-error-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 22px;
+  border-radius: 18px;
+  font-size: 28px;
+}
+
+.affiliate-review-icon {
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  background: rgba(37, 99, 235, 0.16);
+  color: #7fb2ff;
+}
+
+.affiliate-review-success-icon {
+  border: 1px solid rgba(52, 211, 153, 0.42);
+  background: rgba(16, 185, 129, 0.14);
+  color: #67e8b4;
+  box-shadow: 0 0 32px rgba(16, 185, 129, 0.14);
+}
+
+.affiliate-review-error-icon {
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.affiliate-review-modal h2 {
+  margin: 8px 0 8px;
+  font-size: clamp(24px, 4vw, 32px);
+  letter-spacing: -0.03em;
+}
+
+.affiliate-review-details {
+  display: grid;
+  gap: 14px;
+  margin: 26px 0 20px;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.affiliate-review-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.affiliate-review-details span {
+  color: rgba(203, 213, 225, 0.72);
+}
+
+.affiliate-review-details strong {
+  max-width: 68%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.affiliate-review-explanation {
+  margin: 4px 0 24px;
+  color: rgba(226, 232, 240, 0.82);
+  line-height: 1.6;
+}
+
+.affiliate-review-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.affiliate-review-actions button,
+.affiliate-review-done {
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+.affiliate-review-done {
+  width: 100%;
+  margin-top: 26px;
+}
+
+.affiliate-review-error-message {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 14px;
+  background: rgba(127, 29, 29, 0.16);
+  color: rgba(254, 202, 202, 0.92);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .affiliate-review-modal {
+    padding: 26px 20px 20px;
+    border-radius: 20px;
+  }
+
+  .affiliate-review-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .affiliate-review-details > div {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .affiliate-review-details strong {
+    max-width: 100%;
+    text-align: left;
+  }
+}

@@ -141,3 +141,26 @@ test('affiliate HQ navigation is permission gated', () => {
     /\['Affiliates','\/hq\/affiliates','affiliate\.manage'\]/
   );
 });
+
+test('affiliate audit fingerprint uses schema-qualified pgcrypto digest', () => {
+  const auditFix = fs.readFileSync(
+    'supabase/migrations/111_affiliate_hq_audit_and_confirmation.sql',
+    'utf8'
+  );
+
+  assert.match(auditFix, /extensions\.digest/);
+  assert.match(auditFix, /convert_to\(v_payload,\s*'UTF8'\)/);
+  assert.match(auditFix, /'sha256'/);
+});
+
+test('affiliate HQ no longer uses native browser confirmation', () => {
+  assert.doesNotMatch(queue, /window\.confirm/);
+  assert.match(queue, /affiliate-review-modal/);
+  assert.match(queue, /Approve this affiliate\?/);
+});
+
+test('affiliate HQ renders dedicated success and error states', () => {
+  assert.match(queue, /Affiliate approved/);
+  assert.match(queue, /We couldn’t update this affiliate/);
+  assert.match(queue, /Try again/);
+});
