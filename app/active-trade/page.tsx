@@ -12,5 +12,5 @@ export default async function ActiveTradePage() {
   if (!user) redirect('/login');
   const [displayName, locale] = await Promise.all([getUserDisplayName(supabase, user), getRequestLocale()]);
   const copy = getScreenCopy(locale).active;
-  return <main className="container"><AppHeader eyebrow={copy.eyebrow} displayName={displayName} description={copy.description} userId={user.id} /><ActiveTradeMonitor userId={user.id} /></main>;
+  return <main className="container"><AppHeader eyebrow={copy.eyebrow} displayName={displayName} description={copy.description} userId={user.id} showContext /><ActiveTradeMonitor userId={user.id} /></main>;
 }
