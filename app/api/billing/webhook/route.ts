@@ -161,6 +161,190 @@ async function recordAffiliateInvoiceCommission(
 
     throw new StripeBillingError('WEBHOOK_PROCESSING_FAILED',true);
   }
+
+  // Stripe does not guarantee webhook delivery order. If a successful
+  // refund arrived before invoice.paid established the commission,
+  // reconcile Stripe's current refund truth now.
+  await reconcileAffiliateRefundsForInvoice(admin,invoice);
+}
+
+
+async function recordAffiliateStripeAdjustment(
+  admin:Admin,
+  input:{
+    invoiceId:string;
+    sourceType:'REFUND'|'CHARGEBACK';
+    sourceId:string;
+    sourceAmountMinor:number;
+    sourceTotalMinor:number;
+    reason:string;
+    metadata?:Record<string,unknown>;
+  },
+){
+  if(
+    !input.invoiceId ||
+    !input.sourceId ||
+    !Number.isFinite(input.sourceAmountMinor) ||
+    input.sourceAmountMinor<=0 ||
+    !Number.isFinite(input.sourceTotalMinor) ||
+    input.sourceTotalMinor<=0
+  ){
+    return;
+  }
+
+  const {error}=await admin.rpc('record_affiliate_system_adjustment',{
+    p_stripe_invoice_id:input.invoiceId,
+    p_source_type:input.sourceType,
+    p_source_id:input.sourceId,
+    p_source_amount_minor:Math.trunc(input.sourceAmountMinor),
+    p_source_total_minor:Math.trunc(input.sourceTotalMinor),
+    p_reason:input.reason,
+    p_metadata:input.metadata ?? {},
+  });
+
+  if(error){
+    throw new StripeBillingError('WEBHOOK_PROCESSING_FAILED',true);
+  }
+}
+
+async function invoiceIdForPaymentIntent(
+  paymentIntentId:string,
+):Promise<string|undefined>{
+  const stripe=stripeClient();
+
+  const invoicePayments=await stripe.invoicePayments.list({
+    payment:{
+      type:'payment_intent',
+      payment_intent:paymentIntentId,
+    },
+    status:'paid',
+    limit:10,
+  });
+
+  const payment=invoicePayments.data[0];
+  return payment ? id(payment.invoice) ?? undefined : undefined;
+}
+
+async function reconcileAffiliateRefundsForInvoice(
+  admin:Admin,
+  invoice:Stripe.Invoice,
+){
+  const paymentIntentId=id(
+    (invoice as any).payment_intent ??
+    (invoice as any).payments?.data?.[0]?.payment?.payment_intent
+  );
+
+  if(!paymentIntentId)return;
+
+  const stripe=stripeClient();
+
+  const charges=await stripe.charges.list({
+    payment_intent:paymentIntentId,
+    limit:10,
+  });
+
+  for(const charge of charges.data){
+    const refunds=await stripe.refunds.list({
+      charge:charge.id,
+      limit:100,
+    });
+
+    for(const refund of refunds.data){
+      if(refund.status==='succeeded'){
+        await processAffiliateRefund(admin,refund);
+      }
+    }
+  }
+}
+
+
+async function processAffiliateRefund(
+  admin:Admin,
+  refund:Stripe.Refund,
+){
+  // A refund is economic truth only after Stripe confirms success.
+  // refund.updated may deliver the transition from pending to succeeded.
+  if(refund.status!=='succeeded')return;
+
+  const chargeId=id(refund.charge);
+  if(!chargeId)return;
+
+  const stripe=stripeClient();
+  const charge=await stripe.charges.retrieve(chargeId);
+  const paymentIntentId=id(refund.payment_intent) ?? id(charge.payment_intent);
+  if(!paymentIntentId)return;
+
+  const invoiceId=await invoiceIdForPaymentIntent(paymentIntentId);
+
+  // Affiliate commissions exist only for subscription invoices.
+  if(!invoiceId)return;
+
+  const sourceAmountMinor=
+    typeof refund.amount==='number'
+      ?Math.max(0,Math.trunc(refund.amount))
+      :0;
+
+  const sourceTotalMinor=
+    typeof charge.amount==='number'
+      ?Math.max(0,Math.trunc(charge.amount))
+      :0;
+
+  await recordAffiliateStripeAdjustment(admin,{
+    invoiceId,
+    sourceType:'REFUND',
+    sourceId:refund.id,
+    sourceAmountMinor,
+    sourceTotalMinor,
+    reason:'Stripe refund',
+    metadata:{
+      charge_id:charge.id,
+      refund_id:refund.id,
+    },
+  });
+}
+
+async function processAffiliateLostDispute(
+  admin:Admin,
+  dispute:Stripe.Dispute,
+){
+  // An opened dispute is not economic truth. Reverse affiliate
+  // commission only after Stripe closes the dispute against us.
+  if(dispute.status!=='lost')return;
+
+  const chargeId=id(dispute.charge);
+  if(!chargeId)return;
+
+  const stripe=stripeClient();
+  const charge=await stripe.charges.retrieve(chargeId);
+  const paymentIntentId=id(dispute.payment_intent) ?? id(charge.payment_intent);
+  if(!paymentIntentId)return;
+
+  const invoiceId=await invoiceIdForPaymentIntent(paymentIntentId);
+  if(!invoiceId)return;
+
+  const sourceAmountMinor=
+    typeof dispute.amount==='number'
+      ?Math.max(0,Math.trunc(dispute.amount))
+      :0;
+
+  const sourceTotalMinor=
+    typeof charge.amount==='number'
+      ?Math.max(0,Math.trunc(charge.amount))
+      :0;
+
+  await recordAffiliateStripeAdjustment(admin,{
+    invoiceId,
+    sourceType:'CHARGEBACK',
+    sourceId:dispute.id,
+    sourceAmountMinor,
+    sourceTotalMinor,
+    reason:'Stripe dispute lost',
+    metadata:{
+      charge_id:charge.id,
+      dispute_id:dispute.id,
+      dispute_status:dispute.status,
+    },
+  });
 }
 
 async function processEvent(admin:Admin,event:Stripe.Event){
@@ -180,6 +364,19 @@ async function processEvent(admin:Admin,event:Stripe.Event){
         event,
       );
     }
+  }else if(
+    event.type==='refund.created' ||
+    event.type==='refund.updated'
+  ){
+    await processAffiliateRefund(
+      admin,
+      object as Stripe.Refund,
+    );
+  }else if(event.type==='charge.dispute.closed'){
+    await processAffiliateLostDispute(
+      admin,
+      object as Stripe.Dispute,
+    );
   }
 }
 
