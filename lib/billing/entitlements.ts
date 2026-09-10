@@ -166,6 +166,16 @@ export async function getBillingState(userId: string): Promise<BillingState> {
   };
 }
 
+type AtomicAnalysisReservation = {
+  allowed: boolean;
+  duplicate: boolean;
+  reservation: {
+    id: number;
+    status: 'RESERVED' | 'COMPLETED' | 'FAILED';
+    result_analysis_id: string | null;
+  };
+};
+
 export async function reserveAnalysis(
   userId: string,
   requestKey: string,
@@ -174,101 +184,30 @@ export async function reserveAnalysis(
   const admin = createAdminClient();
   const periodKey = state.usagePeriodStart;
 
-  const { data: existing, error: existingError } = await admin
-    .from('analysis_usage')
-    .select('id,status,result_analysis_id')
-    .eq('user_id', userId)
-    .eq('request_key', requestKey)
-    .maybeSingle();
+  const { data, error } = await admin.rpc('reserve_analysis_usage_atomic', {
+    p_user_id: userId,
+    p_request_key: requestKey,
+    p_period_start: periodKey,
+    p_monthly_limit: state.entitlements.monthlyAnalysisLimit,
+  });
 
-  if (existingError) {
-    console.error('Billing usage lookup failed during reservation', {
+  if (error || !data) {
+    console.error('Billing usage atomic reservation failed', {
       userId,
       requestKey,
-      error: existingError,
-    });
-    throw new Error('Analysis usage is temporarily unavailable.');
-  }
-
-  if (existing) {
-    return {
-      allowed: existing.status !== 'FAILED',
-      state,
-      reservation: existing,
-      duplicate: true,
-    };
-  }
-
-  const { data, error } = await admin
-    .from('analysis_usage')
-    .insert({
-      user_id: userId,
-      request_key: requestKey,
-      period_start: periodKey,
-      status: 'RESERVED',
-    })
-    .select('id,status,result_analysis_id')
-    .single();
-
-  if (error) {
-    if (error.code === '23505') {
-      const { data: concurrent, error: concurrentError } = await admin
-        .from('analysis_usage')
-        .select('id,status,result_analysis_id')
-        .eq('user_id', userId)
-        .eq('request_key', requestKey)
-        .single();
-      if (!concurrentError && concurrent) {
-        return { allowed: concurrent.status !== 'FAILED', state, reservation: concurrent, duplicate: true };
-      }
-    }
-    console.error('Billing usage reservation failed', {
-      userId,
-      requestKey,
+      periodKey,
       error,
     });
     throw new Error('Analysis usage is temporarily unavailable.');
   }
 
-  if (state.entitlements.monthlyAnalysisLimit !== null) {
-    const { count, error: countError } = await admin
-      .from('analysis_usage')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('period_start', periodKey)
-      .in('status', ['RESERVED', 'COMPLETED']);
-
-    if (countError) {
-      console.error('Billing usage count failed during reservation', {
-        userId,
-        requestKey,
-        periodKey,
-        error: countError,
-      });
-      throw new Error('Analysis usage is temporarily unavailable.');
-    }
-
-    if ((count ?? 0) > state.entitlements.monthlyAnalysisLimit) {
-      await admin
-        .from('analysis_usage')
-        .update({
-          status: 'FAILED',
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', data.id);
-
-      return {
-        allowed: false,
-        state,
-        reservation: data,
-      };
-    }
-  }
+  const reservationResult = data as AtomicAnalysisReservation;
 
   return {
-    allowed: true,
+    allowed: reservationResult.allowed,
     state,
-    reservation: data,
+    reservation: reservationResult.reservation,
+    duplicate: reservationResult.duplicate,
   };
 }
 
