@@ -6,7 +6,7 @@ import {useEffect,useRef,useState} from 'react';
 const navigationGroups = [
   {label:'Command',icon:'⌁',links:[['Overview','/hq','hq.view']]},
   {label:'People & company',icon:'○',links:[['Customers','/hq/customers','customers.view_metadata'],['Team','/hq/team','staff.view'],['Company','/hq/organizations','organizations.view']]},
-  {label:'Growth',icon:'↗',links:[['Sales','/hq/sales','sales.view'],['Beta','/hq/private-beta','beta.manage'],['Marketplace','/hq/marketplace','marketplace.lab']]},
+  {label:'Growth',icon:'↗',links:[['Sales','/hq/sales','sales.view'],['Beta','/hq/private-beta','beta.manage'],['Affiliates','/hq/affiliates','affiliate.manage'],['Marketplace','/hq/marketplace','marketplace.lab']]},
   {label:'Trust & operations',icon:'◇',links:[['Compliance','/hq/compliance','compliance.view'],['Support','/hq/support','support.view'],['System Operations','/hq/system','system.health'],['Constitution','/hq/constitution','hq.view']]},
 ] as const;
 
