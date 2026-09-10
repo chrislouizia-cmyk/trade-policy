@@ -35,3 +35,12 @@ test('recent outcomes stay concise and hand off to canonical history', () => {
   assert.match(source, /ordered\.slice\(-5\)\.reverse\(\)/);
   assert.match(source, /href="\/history\?view=trades"/);
 });
+
+test('analytics never renders signed negative zero', () => {
+  assert.match(source, /Object\.is\(rounded,\s*-0\)\s*\|\|\s*rounded\s*===\s*0/);
+  assert.match(source, /metrics\.netR === null \? '—' : `\$\{signed\(metrics\.netR\)\}R`/);
+});
+
+test('activation mode uses the compact featured treatment', () => {
+  assert.match(source, /featured analytics-featured-compact/);
+});

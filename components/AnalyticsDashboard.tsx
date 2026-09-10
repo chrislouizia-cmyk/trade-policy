@@ -82,7 +82,7 @@ export default function AnalyticsDashboard({ account, trades }: { account: Accou
 
         <div className={`analytics-hero-score ${netTone}`}>
           <span>{c.netR}</span>
-          <strong>{metrics.netR === null ? '—' : `${metrics.netR >= 0 ? '+' : ''}${metrics.netR.toFixed(2)}R`}</strong>
+          <strong>{metrics.netR === null ? '—' : `${signed(metrics.netR)}R`}</strong>
           <div>
             <b>{metrics.sampleSize}</b> {c.closedTrades}
             <i aria-hidden="true" />
@@ -251,7 +251,7 @@ function SecondaryMetric({ label, value, tone = 'neutral' }: { label: string; va
 function BreakdownCard({ eyebrow, title, entries, tradeLabels, featured = false }: { eyebrow: string; title: string; entries: BreakdownEntry[]; tradeLabels: import('@/lib/i18n/screen-copy').ScreenCopy['analytics']; featured?: boolean }) {
   const maxTrades = Math.max(1, ...entries.map((entry) => entry.trades));
   return (
-    <section className={`card analytics-breakdown-card analytics-compact-breakdown ${featured ? 'featured' : ''}`}>
+    <section className={`card analytics-breakdown-card analytics-compact-breakdown ${featured ? 'featured analytics-featured-compact' : ''}`}>
       <header className="analytics-panel-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div></header>
       <div className="analytics-breakdown-list">
         {entries.map((entry) => (
@@ -299,7 +299,11 @@ function buildChart(points: Array<{ label: string; value: number }>) {
   return { min, max, zeroY, points: linePoints, areaPath: `M ${first.x} ${zeroY} ${pathPoints} L ${last.x} ${zeroY} Z` };
 }
 
-function signed(value: number) { return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`; }
+function signed(value: number) {
+  const rounded = Number(value.toFixed(2));
+  if (Object.is(rounded, -0) || rounded === 0) return '0.00';
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
+}
 function formatRLabel(value: number) { return `${value.toFixed(0)}R`; }
 function percentage(value: number) { return `${value}%`; }
 function formatShortDate(value: string | undefined, locale: string) { return value ? new Date(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) : ''; }

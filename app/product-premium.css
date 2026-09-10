@@ -72,3 +72,14 @@ body{background:radial-gradient(circle at 78% -15%,rgba(73,214,191,.08),transpar
   .analytics-detail-disclosure>summary,.analytics-detail-body{padding-left:16px;padding-right:16px}
   .analytics-canonical-recent{padding:17px}
 }
+
+/* Analytics compact discipline — S9B */
+.analytics-canonical-diagnosis>.analytics-featured-compact{padding:18px 20px}
+.analytics-featured-compact .analytics-panel-heading{margin-bottom:10px}
+.analytics-featured-compact .analytics-breakdown-list{gap:8px}
+.analytics-featured-compact .analytics-breakdown-row{min-height:0;padding:8px 0}
+.analytics-featured-compact .analytics-breakdown-name{min-width:150px}
+.analytics-featured-compact .analytics-breakdown-bar{min-width:120px}
+@media(max-width:620px){
+  .analytics-canonical-diagnosis>.analytics-featured-compact{padding:16px}
+}
