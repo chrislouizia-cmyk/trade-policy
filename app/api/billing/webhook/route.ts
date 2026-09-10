@@ -8,6 +8,10 @@ import {createAdminClient} from '@/lib/supabase/admin';
 import {resolveCustomerBinding,type CustomerBinding} from '@/lib/billing/webhook-security';
 import {isUuid,safeStripeReason,stripeOperationalLog,StripeBillingError,validateSubscriptionPrice,type StripeBillingReason} from '@/lib/billing/stripe-verification';
 import {recordServerBetaEvent} from '@/lib/server/beta-events';
+import {
+  affiliateEligibleAmountMinor,
+  affiliateInvoicePaidAt,
+} from '@/lib/billing/affiliate-invoice';
 
 export const runtime='nodejs';export const dynamic='force-dynamic';
 type Admin=ReturnType<typeof createAdminClient>;
@@ -94,6 +98,71 @@ async function currentSubscription(admin:Admin,subscriptionId:string,event:Strip
   }
 }
 
+
+async function recordAffiliateInvoiceCommission(
+  admin:Admin,
+  invoice:Stripe.Invoice,
+  event:Stripe.Event,
+){
+  const subscriptionId=id(
+    (invoice as any).subscription ??
+    (invoice as any).parent?.subscription_details?.subscription
+  );
+
+  // Affiliate commissions are subscription revenue only.
+  if(!subscriptionId)return;
+
+  const customerId=id(invoice.customer);
+  if(!customerId)return;
+
+  const binding=await bindingFor(admin,customerId,undefined);
+
+  const {data:referral,error:referralError}=await admin
+    .from('affiliate_referrals')
+    .select('id,affiliate_id')
+    .eq('referred_user_id',binding.userId)
+    .maybeSingle();
+
+  if(referralError)throw new StripeBillingError('WEBHOOK_PROCESSING_FAILED',true);
+  if(!referral)return;
+
+  const eligibleAmountMinor=affiliateEligibleAmountMinor(invoice);
+
+  // A zero-dollar invoice is not a successful paid origin for the
+  // affiliate 12-month earning clock.
+  if(eligibleAmountMinor<=0)return;
+
+  const paidAt=affiliateInvoicePaidAt(invoice,event.created);
+
+  const {error}=await admin.rpc('record_affiliate_commission',{
+    p_affiliate_id:referral.affiliate_id,
+    p_referral_id:referral.id,
+    p_stripe_invoice_id:invoice.id,
+    p_currency:String(invoice.currency ?? '').toUpperCase(),
+    p_eligible_amount_minor:eligibleAmountMinor,
+
+    // Legacy compatibility parameters. The database ignores these
+    // economic values and calculates the canonical 10% + 12-month
+    // eligibility window itself.
+    p_commission_amount_minor:0,
+    p_eligible_from:paidAt,
+    p_eligible_until:null,
+    p_hold_until:null,
+  });
+
+  if(error){
+    // Being outside the fixed first-year earning window is an expected
+    // business outcome, not a webhook processing failure.
+    if(String(error.message ?? '').includes(
+      'AFFILIATE_COMMISSION_OUTSIDE_ELIGIBILITY_WINDOW'
+    )){
+      return;
+    }
+
+    throw new StripeBillingError('WEBHOOK_PROCESSING_FAILED',true);
+  }
+}
+
 async function processEvent(admin:Admin,event:Stripe.Event){
   const object=event.data.object as any;
   if(event.type==='checkout.session.completed'){
@@ -101,7 +170,16 @@ async function processEvent(admin:Admin,event:Stripe.Event){
   }else if(['customer.subscription.created','customer.subscription.updated','customer.subscription.deleted'].includes(event.type)){
     const subscription=object as Stripe.Subscription;await currentSubscription(admin,subscription.id,event,event.type==='customer.subscription.deleted'?subscription:undefined);
   }else if(event.type==='invoice.paid'||event.type==='invoice.payment_failed'){
-    const subscriptionId=id(object.subscription??object.parent?.subscription_details?.subscription);if(subscriptionId)await currentSubscription(admin,subscriptionId,event);
+    const subscriptionId=id(object.subscription??object.parent?.subscription_details?.subscription);
+    if(subscriptionId)await currentSubscription(admin,subscriptionId,event);
+
+    if(event.type==='invoice.paid'){
+      await recordAffiliateInvoiceCommission(
+        admin,
+        object as Stripe.Invoice,
+        event,
+      );
+    }
   }
 }
 
