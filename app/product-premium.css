@@ -214,3 +214,13 @@ body{background:radial-gradient(circle at 78% -15%,rgba(73,214,191,.08),transpar
 .dashboard-welcome p{margin:2px 0 0;color:#929cac;font-size:13px}
 @media(max-width:900px){.canonical-visible-nav{grid-column:auto!important;grid-row:auto!important;overflow:visible!important}.canonical-visible-nav a{flex:1 1 calc(25% - 5px)!important}}
 @media(max-width:620px){.canonical-visible-nav a{flex:1 1 calc(50% - 5px)!important;min-width:0}.dashboard-welcome h1{font-size:30px}}
+
+/* S10A.2 - contextual shell */
+.canonical-dashboard-greeting{position:relative;z-index:1;display:grid;gap:4px;padding:4px 2px 2px}
+.canonical-dashboard-greeting strong{font-size:clamp(24px,3vw,38px);line-height:1;letter-spacing:-.045em}
+.canonical-dashboard-greeting small{color:#929cac;font-size:12px}
+.canonical-dashboard-greeting+.canonical-visible-nav{margin-top:2px!important}
+.canonical-dashboard-greeting~.canonical-context-bar .canonical-context-copy:empty{display:none}
+.canonical-dashboard-greeting~.canonical-context-bar{grid-template-columns:1fr!important}
+.canonical-dashboard-greeting~.canonical-context-bar .canonical-context-switchers{width:100%}
+@media(max-width:620px){.canonical-dashboard-greeting strong{font-size:29px}}

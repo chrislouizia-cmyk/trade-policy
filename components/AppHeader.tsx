@@ -9,18 +9,28 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getServerTranslator } from '@/lib/i18n/server';
 
+function greeting(hour: number, t: (key: 'greeting.morning' | 'greeting.afternoon' | 'greeting.evening') => string) {
+  if (hour < 12) return t('greeting.morning') || 'Good morning';
+  if (hour < 18) return t('greeting.afternoon') || 'Good afternoon';
+  return t('greeting.evening') || 'Good evening';
+}
+
 export default async function AppHeader({
   eyebrow,
   displayName,
   description,
   userId,
   decisionFocused = false,
+  showContext = false,
+  showGreeting = false,
 }: {
   eyebrow: string;
   displayName: string;
   description: string;
   userId: string;
   decisionFocused?: boolean;
+  showContext?: boolean;
+  showGreeting?: boolean;
 }) {
   const supabase = await createClient();
   const { t } = await getServerTranslator();
@@ -55,6 +65,14 @@ export default async function AppHeader({
           </div>
         </div>
 
+        {showGreeting ? (
+          <div className="canonical-dashboard-greeting">
+            <span className="eyebrow">{eyebrow}</span>
+            <strong>{greeting(new Date().getHours(), t)}, {displayName}.</strong>
+            <small>{description}</small>
+          </div>
+        ) : null}
+
         <nav className="primary-nav shell-primary-nav canonical-shell-nav canonical-visible-nav" aria-label={t('nav.primary')}>
           <Link href="/dashboard">{t('nav.dashboard')}</Link>
           <Link href="/validate">{t('nav.decision')}</Link>
@@ -69,16 +87,18 @@ export default async function AppHeader({
           <Link href="/account">{t('nav.account')}</Link>
         </nav>
 
-        <div className="context-bar compact-context-bar canonical-context-bar">
-          <div className="context-copy canonical-context-copy">
-            <span className="eyebrow">{eyebrow}</span>
-            <small>{description}</small>
+        {showContext ? (
+          <div className="context-bar compact-context-bar canonical-context-bar">
+            <div className="context-copy canonical-context-copy">
+              {!showGreeting ? <span className="eyebrow">{eyebrow}</span> : null}
+              {!showGreeting ? <small>{description}</small> : null}
+            </div>
+            <div className="context-switchers compact-switchers canonical-context-switchers">
+              <ActiveAccountSwitcher />
+              <ActiveStrategySwitcher />
+            </div>
           </div>
-          <div className="context-switchers compact-switchers canonical-context-switchers">
-            <ActiveAccountSwitcher />
-            <ActiveStrategySwitcher />
-          </div>
-        </div>
+        ) : null}
       </header>
       <FeedbackWidget userId={userId} />
     </>

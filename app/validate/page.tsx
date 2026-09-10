@@ -23,7 +23,7 @@ export default async function ValidatePage({ searchParams }: { searchParams: Pro
   } catch (error) {
     if (!((error instanceof NoActiveStrategyError) || (error instanceof StrategyNotFoundError) || (error instanceof StrategyConfigurationError))) throw error;
     const heading = error instanceof StrategyNotFoundError ? c.notFound : error instanceof NoActiveStrategyError ? c.noActive : c.needsConfiguration;
-    return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused /><div className="card empty-state"><h2>{heading}</h2><a className="button-link primary" href="/profile">{c.configure}</a></div></main>;
+    return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused showContext /><div className="card empty-state"><h2>{heading}</h2><a className="button-link primary" href="/profile">{c.configure}</a></div></main>;
   }
-  return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} initialSelectionMode={strategyId ? 'REQUESTED' : 'ACTIVE'} /></main>;
+  return <main className="container"><AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused showContext /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} initialSelectionMode={strategyId ? 'REQUESTED' : 'ACTIVE'} /></main>;
 }

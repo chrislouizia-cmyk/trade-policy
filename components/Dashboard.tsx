@@ -10,11 +10,6 @@ export default function Dashboard(p: Props) {
   const w=(text:string)=>workspaceText(p.locale,text);
   const setupComplete=Boolean(p.account&&p.strategy&&p.hasTrade);
   return <div className="stack dashboard-shell">
-    <section className="dashboard-welcome">
-      <span className="eyebrow">{w('YOUR TRADING WORKSPACE')}</span>
-      <h1>{w('Good morning')}, {p.displayName}.</h1>
-      <p>{w('Your account, strategy and discipline in one place.')}</p>
-    </section>
     <section className="dashboard-hero card command-center-hero">
       <div className="dashboard-hero-copy">
         <div className="dashboard-hero-meta"><span className="status-pill info">{w('Live workspace')}</span></div>
