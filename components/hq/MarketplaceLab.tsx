@@ -1,9 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MarketplaceCandidatePreview, MarketplaceReleasePreview } from '@/lib/marketplace/contracts';
+
+const MarketplaceReleaseDetail = dynamic(() => import('@/components/hq/MarketplaceReleaseDetail'), {
+  loading: () => <section className="card empty-state"><p>Loading full strategy evidence…</p></section>,
+});
 
 type Sort = 'RANK' | 'PERFORMANCE' | 'READINESS' | 'TRENDING' | 'NEWEST';
 type StrategyOption = {
@@ -21,9 +26,26 @@ type StrategyOption = {
   createdAt: string | null;
   currentRevisionId: string;
   hasInternalTestRelease: boolean;
+  existingInternalTestListing: {
+    listingId: string;
+    releaseId: string;
+    strategyName: string;
+    reviewStatus: string;
+  } | null;
 };
 
 const score = (value: number | null) => value ?? -Infinity;
+const CATALOG_PAGE_SIZE = 10;
+const candidateReadinessScore = (candidate: MarketplaceCandidatePreview) => {
+  const statusWeight: Record<MarketplaceCandidatePreview['status'], number> = {
+    APPROVED: 8, UNDER_REVIEW: 7, OWNER_CONSENT_PENDING: 6, QUALIFIED: 5,
+    OBSERVING: 4, INSUFFICIENT_DATA: 3, DECLINED: 2, ARCHIVED: 1,
+  };
+  const dayProgress = Math.min(1, candidate.observationDays / Math.max(1, candidate.policy.minimumObservationDays));
+  const tradeProgress = Math.min(1, candidate.closedTrades / Math.max(1, candidate.policy.minimumClosedTrades));
+  const adherenceProgress = candidate.adherencePercent === null ? 0 : Math.min(1, candidate.adherencePercent / Math.max(1, candidate.policy.minimumAdherencePercent));
+  return statusWeight[candidate.status] * 100 + dayProgress * 35 + tradeProgress * 45 + adherenceProgress * 20;
+};
 
 export default function MarketplaceLab() {
   const [items, setItems] = useState<MarketplaceReleasePreview[]>([]);
@@ -44,6 +66,9 @@ export default function MarketplaceLab() {
   const [syncing, setSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
+  const [visibleCandidateCount, setVisibleCandidateCount] = useState(CATALOG_PAGE_SIZE);
+  const [visibleListingCount, setVisibleListingCount] = useState(CATALOG_PAGE_SIZE);
   const [candidateEvidence,setCandidateEvidence]=useState<Record<string,any>>({});
   const [candidateEvidenceState,setCandidateEvidenceState]=useState<Record<string,string>>({});
   const autoSyncStarted=useRef(false);
@@ -90,32 +115,22 @@ export default function MarketplaceLab() {
     [profileSearch, profiles],
   );
 
-  const availableProfiles = useMemo(
-    () => filteredProfiles.filter((profile) => !profile.hasInternalTestRelease),
-    [filteredProfiles],
-  );
-
   useEffect(() => {
-    if (!showCreate) return;
-    const selectedIsAvailable = availableProfiles.some((profile) => profile.id === selectedProfileId);
-    if (!selectedIsAvailable) {
-      setSelectedProfileId(availableProfiles[0]?.id ?? '');
-    }
-  }, [availableProfiles, selectedProfileId, showCreate]);
-
-  useEffect(() => {
-    if (!showCreate) return;
+    if (!showCreate && !selectedCandidateId && !selectedListingId) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeCreate();
+      if (event.key !== 'Escape') return;
+      if (showCreate) closeCreate();
+      else if (selectedCandidateId) setSelectedCandidateId(null);
+      else setSelectedListingId(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showCreate]);
+  }, [selectedCandidateId, selectedListingId, showCreate]);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
@@ -127,15 +142,21 @@ export default function MarketplaceLab() {
     [candidates, selectedCandidateId],
   );
 
+  const rankedCandidates = useMemo(
+    () => [...candidates].sort((a, b) => candidateReadinessScore(b) - candidateReadinessScore(a)),
+    [candidates],
+  );
+  const visibleCandidates = rankedCandidates.slice(0, visibleCandidateCount);
+
   const openInternalTestForCandidate = (strategyId: string) => {
+    setSelectedCandidateId(null);
     setSelectedProfileId(strategyId);
     setProfileSearch('');
     setError(null);
     setShowCreate(true);
   };
 
-  const toggleCandidateDetails=async(candidateId:string)=>{
-    if(selectedCandidateId===candidateId){setSelectedCandidateId(null);return;}
+  const openCandidateDetails=async(candidateId:string)=>{
     setSelectedCandidateId(candidateId);
     if(candidateEvidence[candidateId])return;
     setCandidateEvidenceState(current=>({...current,[candidateId]:'Loading recorded evidence…'}));
@@ -166,6 +187,9 @@ export default function MarketplaceLab() {
         }),
     [items, health, query, release, sort],
   );
+  const visibleListings = filtered.slice(0, visibleListingCount);
+
+  useEffect(() => setVisibleListingCount(CATALOG_PAGE_SIZE), [health, query, release, sort]);
 
   const handleCreate = async () => {
     if (!selectedProfileId) {
@@ -188,9 +212,10 @@ export default function MarketplaceLab() {
       if (!response.ok) {
         if (body.code === 'DUPLICATE_MARKETPLACE_RELEASE') {
           setProfiles((current) => current.map((profile) => profile.id === selectedProfileId
-            ? { ...profile, hasInternalTestRelease: true }
+            ? { ...profile, hasInternalTestRelease: true, existingInternalTestListing: body.existingListing ?? profile.existingInternalTestListing }
             : profile));
-          throw new Error('This exact strategy revision is already listed for internal testing. Choose another strategy or create a new revision first.');
+          const existingName = body.existingListing?.strategyName ? ` as “${body.existingListing.strategyName}”` : '';
+          throw new Error(`This exact strategy revision is already listed${existingName}. Open the existing listing below, or create a new strategy revision first.`);
         }
         throw new Error(body.error || 'Internal strategy creation failed.');
       }
@@ -253,33 +278,46 @@ export default function MarketplaceLab() {
       <section className="card marketplace-observation-board">
         <div className="section-title"><div><span className="eyebrow">PRIVATE OBSERVATION</span><h2>Strategy qualification pipeline</h2></div><strong>{candidates.length} current strategies</strong></div>
         <p className="muted">Every strategy can accumulate private evidence. Qualification never publishes it: owner consent and Compliance approval remain mandatory.</p>
-        {candidates.length?<div className="marketplace-candidate-grid">{candidates.map(candidate=>{
+        {candidates.length?<><div className="marketplace-candidate-grid">{visibleCandidates.map(candidate=>{
           const tradeProgress=Math.min(100,Math.round(candidate.closedTrades/candidate.policy.minimumClosedTrades*100));
           const dayProgress=Math.min(100,Math.round(candidate.observationDays/candidate.policy.minimumObservationDays*100));
-          const isSelected=selectedCandidateId===candidate.candidateId;
-          const candidateAlreadyListed=profiles.some((profile)=>profile.id===candidate.strategyId&&profile.currentRevisionId===candidate.strategyRevisionId&&profile.hasInternalTestRelease);
-          return <article key={candidate.candidateId} className={`marketplace-candidate-card${isSelected?' selected':''}`}>
+          return <article key={candidate.candidateId} className="marketplace-candidate-card">
             <div><span className={`status-badge ${candidate.status.toLowerCase()}`}>{candidate.status.replaceAll('_',' ')}</span><h3>{candidate.strategyName}</h3><p>{candidate.ownerName??'Private owner'} · {candidate.instruments.join(', ')||'No instrument'}</p></div>
             <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Recorded trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Rule adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
             <div className="marketplace-progress" aria-label={`Observation ${dayProgress} percent`}><i style={{width:`${dayProgress}%`}}/></div>
             <div className="marketplace-progress trades" aria-label={`Recorded trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
-            <button className="button secondary compact-button" type="button" aria-expanded={isSelected} onClick={()=>void toggleCandidateDetails(candidate.candidateId)}>{isSelected?'Hide qualification details':'View qualification details'}</button>
-            {isSelected?<div className="marketplace-candidate-details">
-              <p><strong>{candidate.status==='INSUFFICIENT_DATA'?'Public qualification is not ready yet.':'Private observation is in progress.'}</strong> Internal testing remains available and does not bypass the requirements for future public commerce.</p>
-              <ul>
-                <li>{candidate.observationDays}/{candidate.policy.minimumObservationDays} observation days</li>
-                <li>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades} closed trades recorded in Trade Police</li>
-                <li>{candidate.adherencePercent===null?'No adherence evidence yet':`${candidate.adherencePercent}%/${candidate.policy.minimumAdherencePercent}% adherence`}</li>
-                <li>{candidate.criticalViolations}/{candidate.policy.maximumCriticalViolations} critical violations allowed</li>
-                <li>{candidate.maximumDrawdownR===null?'No recorded drawdown yet':`${candidate.maximumDrawdownR}R/${candidate.policy.maximumDrawdownR}R maximum drawdown`}</li>
-              </ul>
-              {candidateEvidenceState[candidate.candidateId]?<p className="muted" role="status">{candidateEvidenceState[candidate.candidateId]}</p>:null}
-              {candidateEvidence[candidate.candidateId]?.evidence?<CandidateEvidence evidence={candidateEvidence[candidate.candidateId].evidence}/>:null}
-              {isFounder?<button className="button compact-button" type="button" disabled={candidateAlreadyListed} onClick={()=>openInternalTestForCandidate(candidate.strategyId)}>{candidateAlreadyListed?'Current revision already listed':'Create internal test listing'}</button>:null}
-            </div>:null}
+            <button className="button secondary compact-button" type="button" aria-haspopup="dialog" onClick={()=>void openCandidateDetails(candidate.candidateId)}>View qualification details</button>
           </article>;
-        })}</div>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
+        })}{rankedCandidates.length>visibleCandidateCount?<button className="marketplace-more-card" type="button" onClick={()=>setVisibleCandidateCount(count=>count+CATALOG_PAGE_SIZE)}><strong>View more strategies</strong><span>{rankedCandidates.length-visibleCandidateCount} remaining</span></button>:null}</div>{visibleCandidateCount>CATALOG_PAGE_SIZE?<button className="button secondary compact-button" type="button" onClick={()=>setVisibleCandidateCount(CATALOG_PAGE_SIZE)}>Show top 10</button>:null}</>:<div className="empty-state"><p>No strategy revisions have been evaluated yet.</p>{isFounder?<button className="button secondary" type="button" onClick={handleSync} disabled={syncing}>Start private evaluation</button>:null}</div>}
       </section>
+
+      {selectedCandidate ? createPortal((
+        <div className="marketplace-create-modal-backdrop" onClick={()=>setSelectedCandidateId(null)} role="presentation">
+          <section className="marketplace-detail-modal card" role="dialog" aria-modal="true" aria-labelledby="qualification-detail-title" onClick={(event)=>event.stopPropagation()}>
+            <div className="marketplace-create-header">
+              <div><span className="eyebrow">QUALIFICATION · EXACT REVISION</span><h2 id="qualification-detail-title">{selectedCandidate.strategyName}</h2></div>
+              <button type="button" className="icon-button" aria-label="Close qualification details" autoFocus onClick={()=>setSelectedCandidateId(null)}>×</button>
+            </div>
+            <div className="marketplace-detail-scroll">
+              <div className={`marketplace-readiness-callout ${selectedCandidate.status==='APPROVED'||selectedCandidate.status==='QUALIFIED'?'ready':'not-ready'}`}>
+                <span className={`status-badge ${selectedCandidate.status.toLowerCase()}`}>{selectedCandidate.status.replaceAll('_',' ')}</span>
+                <div><strong>{selectedCandidate.status==='APPROVED'||selectedCandidate.status==='QUALIFIED'?'Qualification requirements are satisfied.':'Not ready for public Marketplace yet.'}</strong><p>Internal testing does not bypass owner consent, Compliance review, or the recorded-evidence policy.</p></div>
+              </div>
+              <div className="marketplace-qualification-grid">
+                <QualificationMetric label="Observation" value={`${selectedCandidate.observationDays}/${selectedCandidate.policy.minimumObservationDays} days`} pass={selectedCandidate.observationDays>=selectedCandidate.policy.minimumObservationDays}/>
+                <QualificationMetric label="Recorded trades" value={`${selectedCandidate.closedTrades}/${selectedCandidate.policy.minimumClosedTrades}`} pass={selectedCandidate.closedTrades>=selectedCandidate.policy.minimumClosedTrades}/>
+                <QualificationMetric label="Rule adherence" value={selectedCandidate.adherencePercent===null?'No evidence':`${selectedCandidate.adherencePercent}% / ${selectedCandidate.policy.minimumAdherencePercent}%`} pass={selectedCandidate.adherencePercent!==null&&selectedCandidate.adherencePercent>=selectedCandidate.policy.minimumAdherencePercent}/>
+                <QualificationMetric label="Critical violations" value={`${selectedCandidate.criticalViolations} / ${selectedCandidate.policy.maximumCriticalViolations} allowed`} pass={selectedCandidate.criticalViolations<=selectedCandidate.policy.maximumCriticalViolations}/>
+                <QualificationMetric label="Maximum drawdown" value={selectedCandidate.maximumDrawdownR===null?'No evidence':`${selectedCandidate.maximumDrawdownR}R / ${selectedCandidate.policy.maximumDrawdownR}R`} pass={selectedCandidate.maximumDrawdownR!==null&&selectedCandidate.maximumDrawdownR<=selectedCandidate.policy.maximumDrawdownR}/>
+                <QualificationMetric label="Owner consent" value={selectedCandidate.consentStatus.replaceAll('_',' ')} pass={selectedCandidate.consentStatus==='GRANTED'}/>
+              </div>
+              {candidateEvidenceState[selectedCandidate.candidateId]?<p className="muted" role="status">{candidateEvidenceState[selectedCandidate.candidateId]}</p>:null}
+              {candidateEvidence[selectedCandidate.candidateId]?.evidence?<CandidateEvidence evidence={candidateEvidence[selectedCandidate.candidateId].evidence}/>:null}
+            </div>
+            {isFounder?<CandidateMarketplaceAction candidate={selectedCandidate} profiles={profiles} onCreate={openInternalTestForCandidate} onOpenListing={(listingId)=>{setSelectedCandidateId(null);setSelectedListingId(listingId);}}/>:null}
+          </section>
+        </div>
+      ),document.body):null}
 
       {showCreate && isFounder ? createPortal((
         <div className="marketplace-create-modal-backdrop" onClick={closeCreate} role="presentation">
@@ -313,11 +351,10 @@ export default function MarketplaceLab() {
                       key={profile.id}
                       type="button"
                       className={profile.id === selectedProfileId ? 'marketplace-profile-option selected' : 'marketplace-profile-option'}
-                      disabled={profile.hasInternalTestRelease}
                       onClick={() => setSelectedProfileId(profile.id)}
                     >
                       <span>{profile.name}</span>
-                      <small>{profile.hasInternalTestRelease ? 'Current revision already listed' : profile.marketTypes.join(', ') || 'Available for internal test'}</small>
+                      <small>{profile.hasInternalTestRelease ? `Already listed${profile.existingInternalTestListing?.strategyName?` as “${profile.existingInternalTestListing.strategyName}”`:''}` : profile.marketTypes.join(', ') || 'Available for internal test'}</small>
                     </button>
                   ))
                 ) : (
@@ -359,6 +396,10 @@ export default function MarketplaceLab() {
                   <div className="marketplace-protected-notice">
                     <strong>Protected configuration:</strong> Private rules, configuration, and strategy payload remain excluded from the browser listing DTO.
                   </div>
+                  {selectedProfile.existingInternalTestListing ? <div className="marketplace-existing-listing">
+                    <p>This exact revision already exists as <strong>“{selectedProfile.existingInternalTestListing.strategyName}”</strong> · {selectedProfile.existingInternalTestListing.reviewStatus.replaceAll('_',' ')}.</p>
+                    <button className="button secondary compact-button" type="button" onClick={()=>{const listingId=selectedProfile.existingInternalTestListing?.listingId;if(!listingId)return;closeCreate();setSelectedListingId(listingId);}}>Open existing listing</button>
+                  </div> : null}
                 </div>
               ) : null}
 
@@ -429,7 +470,7 @@ export default function MarketplaceLab() {
         </section>
       ) : (
         <section className="marketplace-product-grid">
-          {filtered.map((item) => (
+          {visibleListings.map((item) => (
             <article className="card marketplace-product-card" key={item.releaseId}>
               <div className="marketplace-product-meta">
                 <span className="eyebrow">{item.reviewStatus}</span>
@@ -439,18 +480,37 @@ export default function MarketplaceLab() {
               <div className="marketplace-product-stats">
                 <div><span>PERFORMANCE</span><strong>{item.scores.performance ?? 'Not enough recorded data'}</strong></div>
                 <div><span>READINESS</span><strong>{item.scores.marketplaceReadiness ?? 'Not enough recorded data'}</strong></div>
-                <div><span>TRENDING</span><strong>{item.usage.decisions}</strong></div>
-                <div><span>NEWEST</span><strong>v{item.releaseVersion}</strong></div>
+                <div><span>RECORDED TRADES</span><strong>{item.usage.trades}</strong></div>
+                <div><span>SAVED DECISIONS</span><strong>{item.usage.decisions}</strong></div>
               </div>
               <div className="marketplace-footer">
-                <Link href={`/hq/marketplace/${item.listing.listingId}`}>View strategy / Preview</Link>
+                <small>Release v{item.releaseVersion} · {item.listing.instruments.join(', ') || 'No instrument recorded'}</small>
+                <button className="button secondary" type="button" aria-haspopup="dialog" onClick={()=>setSelectedListingId(item.listing.listingId)}>View full strategy</button>
               </div>
             </article>
           ))}
+          {filtered.length>visibleListingCount?<button className="marketplace-more-card" type="button" onClick={()=>setVisibleListingCount(count=>count+CATALOG_PAGE_SIZE)}><strong>View more listings</strong><span>{filtered.length-visibleListingCount} remaining</span></button>:null}
         </section>
       )}
+
+      {selectedListingId ? createPortal((
+        <div className="marketplace-create-modal-backdrop" onClick={()=>setSelectedListingId(null)} role="presentation">
+          <section className="marketplace-release-modal card" role="dialog" aria-modal="true" aria-labelledby="marketplace-release-title" onClick={(event)=>event.stopPropagation()}>
+            <div className="marketplace-create-header"><div><span className="eyebrow">STRATEGY RELEASE</span><h2 id="marketplace-release-title">Full strategy evidence</h2></div><button type="button" className="icon-button" aria-label="Close strategy details" autoFocus onClick={()=>setSelectedListingId(null)}>×</button></div>
+            <div className="marketplace-detail-scroll"><MarketplaceReleaseDetail listingId={selectedListingId} embedded/></div>
+          </section>
+        </div>
+      ),document.body):null}
     </div>
   );
+}
+
+function QualificationMetric({label,value,pass}:{label:string;value:string;pass:boolean}){return <div className={pass?'pass':'pending'}><span>{label}</span><strong>{value}</strong><small>{pass?'Requirement met':'Still required'}</small></div>}
+
+function CandidateMarketplaceAction({candidate,profiles,onCreate,onOpenListing}:{candidate:MarketplaceCandidatePreview;profiles:StrategyOption[];onCreate:(strategyId:string)=>void;onOpenListing:(listingId:string)=>void}){
+  const profile=profiles.find(item=>item.id===candidate.strategyId&&item.currentRevisionId===candidate.strategyRevisionId);
+  const existing=profile?.existingInternalTestListing;
+  return <div className="marketplace-modal-actions">{profile?.hasInternalTestRelease?<><p>This exact revision is already listed{existing?.strategyName?` as “${existing.strategyName}”`:''}. No duplicate was created.</p>{existing?<button className="button secondary" type="button" onClick={()=>onOpenListing(existing.listingId)}>Open existing listing</button>:null}</>:<button className="button primary" type="button" onClick={()=>onCreate(candidate.strategyId)}>Create internal test listing</button>}</div>;
 }
 
 function CandidateEvidence({evidence}:{evidence:any}){

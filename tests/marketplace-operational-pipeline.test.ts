@@ -60,7 +60,7 @@ test('observing candidates load the same exact-revision evidence without creatin
   assert.match(route,/marketplace_strategy_candidates/);assert.match(route,/evaluate_marketplace_strategy_candidate/);
   assert.match(route,/buildMarketplaceEvidence\(admin,candidate\.source_strategy_id,candidate\.source_strategy_revision_id\)/);
   assert.doesNotMatch(route,/marketplace_listings/);assert.doesNotMatch(route,/create_internal_marketplace_release/);
-  assert.match(lab,/toggleCandidateDetails/);assert.match(lab,/CandidateEvidence/);
+  assert.match(lab,/openCandidateDetails/);assert.match(lab,/CandidateEvidence/);
   assert.match(lab,/EXACT REVISION · PLATFORM-RECORDED RESULTS/);assert.match(lab,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
 });
 
@@ -81,9 +81,9 @@ test('internal test modal keeps its publish controls visible on short viewports'
 test('qualification cards explain thresholds and can open internal testing',()=>{
   const lab=read('components/hq/MarketplaceLab.tsx');
   assert.match(lab,/View qualification details/);
-  assert.match(lab,/Public qualification is not ready yet/);
+  assert.match(lab,/Not ready for public Marketplace yet/);
   assert.match(lab,/Create internal test listing/);
-  assert.match(lab,/openInternalTestForCandidate\(candidate\.strategyId\)/);
+  assert.match(lab,/onCreate\(candidate\.strategyId\)/);
   const api=read('app/api/hq/marketplace/route.ts');
   assert.match(api,/databaseCode: creationError\.code/);
 });

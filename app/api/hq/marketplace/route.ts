@@ -128,7 +128,7 @@ export async function GET(request:Request) {
       const { data: releases, error: releasesError } = profileIds.length
         ? await admin
             .from('marketplace_strategy_releases')
-            .select('source_strategy_id,source_strategy_revision_id')
+            .select('id,source_strategy_id,source_strategy_revision_id')
             .in('source_strategy_id', profileIds)
         : { data: [], error: null };
       if (releasesError) {
@@ -136,25 +136,45 @@ export async function GET(request:Request) {
         return NextResponse.json({ error: 'Internal release availability unavailable.', code: 'MARKETPLACE_CATALOG_UNAVAILABLE' }, { status: 503 });
       }
       const releasedRevisions = new Set((releases ?? []).map((row: any) => `${row.source_strategy_id}:${row.source_strategy_revision_id}`));
+      const releaseIds = (releases ?? []).map((row: any) => row.id).filter((value): value is string => typeof value === 'string');
+      const { data: existingListings, error: existingListingsError } = releaseIds.length
+        ? await admin.from('marketplace_listings').select('id,release_id,review_status,sanitized_metadata').in('release_id', releaseIds)
+        : { data: [], error: null };
+      if (existingListingsError) {
+        logSupabaseQueryFailure('profile_existing_listings', existingListingsError);
+        return NextResponse.json({ error: 'Internal listing directory unavailable.', code: 'MARKETPLACE_CATALOG_UNAVAILABLE' }, { status: 503 });
+      }
+      const listingByReleaseId = new Map((existingListings ?? []).map((listing: any) => [listing.release_id, listing]));
+      const releaseByRevision = new Map((releases ?? []).map((row: any) => [`${row.source_strategy_id}:${row.source_strategy_revision_id}`, row]));
 
       return NextResponse.json({
         isFounder: true,
-        profiles: currentProfiles.map(({ profile, revisionId }) => ({
-          id: profile.id,
-          name: profile.name,
-          instruments: Array.isArray(profile.instruments) ? profile.instruments.filter((value: unknown): value is string => typeof value === 'string') : [],
-          marketTypes: Array.isArray(profile.market_types) ? profile.market_types.filter((value: unknown): value is string => typeof value === 'string') : [],
-          timeframeRoles: {
-            macro: typeof profile.macro_timeframe === 'string' ? profile.macro_timeframe : null,
-            trend: typeof profile.trend_timeframe === 'string' ? profile.trend_timeframe : null,
-            confirmation: typeof profile.confirmation_timeframe === 'string' ? profile.confirmation_timeframe : null,
-            entry: typeof profile.entry_timeframe === 'string' ? profile.entry_timeframe : null,
-            trigger: typeof profile.trigger_timeframe === 'string' ? profile.trigger_timeframe : null,
-          },
-          createdAt: profile.created_at ?? null,
-          currentRevisionId: revisionId,
-          hasInternalTestRelease: releasedRevisions.has(`${profile.id}:${revisionId}`),
-        })),
+        profiles: currentProfiles.map(({ profile, revisionId }) => {
+          const release = releaseByRevision.get(`${profile.id}:${revisionId}`) as any;
+          const listing = release ? listingByReleaseId.get(release.id) as any : null;
+          return {
+            id: profile.id,
+            name: profile.name,
+            instruments: Array.isArray(profile.instruments) ? profile.instruments.filter((value: unknown): value is string => typeof value === 'string') : [],
+            marketTypes: Array.isArray(profile.market_types) ? profile.market_types.filter((value: unknown): value is string => typeof value === 'string') : [],
+            timeframeRoles: {
+              macro: typeof profile.macro_timeframe === 'string' ? profile.macro_timeframe : null,
+              trend: typeof profile.trend_timeframe === 'string' ? profile.trend_timeframe : null,
+              confirmation: typeof profile.confirmation_timeframe === 'string' ? profile.confirmation_timeframe : null,
+              entry: typeof profile.entry_timeframe === 'string' ? profile.entry_timeframe : null,
+              trigger: typeof profile.trigger_timeframe === 'string' ? profile.trigger_timeframe : null,
+            },
+            createdAt: profile.created_at ?? null,
+            currentRevisionId: revisionId,
+            hasInternalTestRelease: releasedRevisions.has(`${profile.id}:${revisionId}`),
+            existingInternalTestListing: release && listing ? {
+              listingId: listing.id,
+              releaseId: release.id,
+              strategyName: typeof listing.sanitized_metadata?.strategyName === 'string' ? listing.sanitized_metadata.strategyName : profile.name,
+              reviewStatus: listing.review_status,
+            } : null,
+          };
+        }),
       }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
       console.error('[HQ marketplace profiles access failure]', error);
@@ -310,7 +330,27 @@ export async function POST(request:Request) {
     const hint = typeof (creationError as { hint?: unknown })?.hint === 'string' ? (creationError as { hint: string }).hint : null;
 
     if (message.includes('already exists for this strategy revision') || message.includes('already exists')) {
-      return NextResponse.json({ error: 'An internal test release already exists for this strategy revision.', code: 'DUPLICATE_MARKETPLACE_RELEASE' }, { status: 409 });
+      const { data: existingRelease } = await admin
+        .from('marketplace_strategy_releases')
+        .select('id')
+        .eq('source_strategy_id', sourceProfile.id)
+        .eq('source_strategy_revision_id', sourceStrategyRevisionId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const { data: existingListing } = existingRelease?.id
+        ? await admin.from('marketplace_listings').select('id,release_id,review_status,sanitized_metadata').eq('release_id', existingRelease.id).limit(1).maybeSingle()
+        : { data: null };
+      return NextResponse.json({
+        error: 'An internal test release already exists for this strategy revision.',
+        code: 'DUPLICATE_MARKETPLACE_RELEASE',
+        existingListing: existingListing ? {
+          listingId: existingListing.id,
+          releaseId: existingListing.release_id,
+          strategyName: typeof existingListing.sanitized_metadata?.strategyName === 'string' ? existingListing.sanitized_metadata.strategyName : sourceProfile.name,
+          reviewStatus: existingListing.review_status,
+        } : null,
+      }, { status: 409 });
     }
     if (message.includes('Archived strategy profile')) {
       return NextResponse.json({ error: 'Archived strategy profiles cannot be used for internal testing.', code: 'ARCHIVED_PROFILE' }, { status: 409 });
