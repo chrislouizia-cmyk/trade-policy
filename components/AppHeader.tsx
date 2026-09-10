@@ -48,26 +48,26 @@ export default async function AppHeader({
             </span>
           </Link>
 
-          <nav className="primary-nav shell-primary-nav canonical-shell-nav" aria-label={t('nav.primary')}>
-            <Link href="/dashboard">{t('nav.dashboard')}</Link>
-            <Link href="/validate">{t('nav.decision')}</Link>
-            <Link href="/active-trade">
-              {t('nav.activeTrade') || 'Active Trade'}
-              {activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}
-            </Link>
-            <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
-            <Link href="/profile">{t('nav.strategies')}</Link>
-            <Link href="/history">{t('nav.history')}</Link>
-            <Link href="/analytics">{t('nav.analytics')}</Link>
-            <Link href="/account">{t('nav.account')}</Link>
-          </nav>
-
           <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
             <TradePoliceShield />
             <KeyboardShortcuts />
             <SignOutButton />
           </div>
         </div>
+
+        <nav className="primary-nav shell-primary-nav canonical-shell-nav canonical-visible-nav" aria-label={t('nav.primary')}>
+          <Link href="/dashboard">{t('nav.dashboard')}</Link>
+          <Link href="/validate">{t('nav.decision')}</Link>
+          <Link href="/active-trade">
+            {t('nav.activeTrade') || 'Active Trade'}
+            {activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}
+          </Link>
+          <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
+          <Link href="/profile">{t('nav.strategies')}</Link>
+          <Link href="/history">{t('nav.history')}</Link>
+          <Link href="/analytics">{t('nav.analytics')}</Link>
+          <Link href="/account">{t('nav.account')}</Link>
+        </nav>
 
         <div className="context-bar compact-context-bar canonical-context-bar">
           <div className="context-copy canonical-context-copy">

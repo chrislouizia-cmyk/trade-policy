@@ -1,42 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+const header=fs.readFileSync('components/AppHeader.tsx','utf8');
+const dashboard=fs.readFileSync('components/Dashboard.tsx','utf8');
+const css=fs.readFileSync('app/product-premium.css','utf8');
 
-const header = fs.readFileSync('components/AppHeader.tsx', 'utf8');
-const css = fs.readFileSync('app/product-premium.css', 'utf8');
-
-test('authenticated shell has two structural rows', () => {
-  assert.match(header, /canonical-shell-top/);
-  assert.match(header, /canonical-context-bar/);
-  assert.doesNotMatch(header, /client-greeting-row/);
-  assert.doesNotMatch(header, /personal-greeting/);
+test('primary navigation is explicit rather than hidden behind horizontal discovery',()=>{
+  assert.match(header,/canonical-visible-nav/);
+  assert.match(css,/flex-wrap:wrap!important/);
+  assert.match(css,/overflow:visible!important/);
 });
-
-test('primary navigation lives in the top shell row', () => {
-  const topStart = header.indexOf('canonical-shell-top');
-  const contextStart = header.indexOf('canonical-context-bar');
-  const nav = header.indexOf('canonical-shell-nav');
-  assert.ok(topStart >= 0);
-  assert.ok(nav > topStart);
-  assert.ok(contextStart > nav);
+test('all primary destinations remain directly present',()=>{
+  for(const href of ['/dashboard','/validate','/active-trade','/accounts','/profile','/history','/analytics','/account']) assert.ok(header.includes(`href="${href}"`));
 });
-
-test('account and strategy switchers remain intact', () => {
-  assert.match(header, /<ActiveAccountSwitcher \/>/);
-  assert.match(header, /<ActiveStrategySwitcher \/>/);
-  assert.match(header, /canonical-context-switchers/);
+test('dashboard restores human welcome only in dashboard content',()=>{
+  assert.match(dashboard,/Good morning/);
+  assert.match(dashboard,/p\.displayName/);
+  assert.doesNotMatch(header,/Good morning/);
 });
-
-test('shell keeps active trade badge and user controls', () => {
-  assert.match(header, /activeTradeCount > 0/);
-  assert.match(header, /<TradePoliceShield \/>/);
-  assert.match(header, /<KeyboardShortcuts \/>/);
-  assert.match(header, /<SignOutButton \/>/);
+test('account strategy and user controls remain intact',()=>{
+  assert.match(header,/<ActiveAccountSwitcher \/>/);
+  assert.match(header,/<ActiveStrategySwitcher \/>/);
+  assert.match(header,/<TradePoliceShield \/>/);
+  assert.match(header,/<KeyboardShortcuts \/>/);
+  assert.match(header,/<SignOutButton \/>/);
 });
-
-test('canonical shell has responsive rules', () => {
-  assert.match(css, /Canonical authenticated app shell - S10A/);
-  assert.match(css, /\.canonical-shell-top\{/);
-  assert.match(css, /@media\(max-width:900px\)/);
-  assert.match(css, /@media\(max-width:560px\)/);
+test('navigation wraps visibly on narrower screens',()=>{
+  assert.match(css,/calc\(25% - 5px\)/);
+  assert.match(css,/calc\(50% - 5px\)/);
 });
