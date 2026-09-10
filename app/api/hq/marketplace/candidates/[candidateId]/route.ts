@@ -23,6 +23,6 @@ export async function GET(_request:Request,{params}:{params:Promise<{candidateId
     },{headers:{'Cache-Control':'private, no-store'}});
   }catch(error){
     console.error('[HQ_MARKETPLACE_CANDIDATE_EVIDENCE_FAILED]',{message:error instanceof Error?error.message:'Unknown error'});
-    return NextResponse.json({error:'Verified qualification evidence is temporarily unavailable.'},{status:503});
+    return NextResponse.json({error:'Recorded qualification evidence is temporarily unavailable.'},{status:503});
   }
 }

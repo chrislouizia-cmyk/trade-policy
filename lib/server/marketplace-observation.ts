@@ -30,7 +30,7 @@ export async function syncMarketplaceCandidates(offset=0,limit=25){
 export async function listMarketplaceCandidates():Promise<MarketplaceCandidatePreview[]>{
   const admin=createAdminClient();
   const [{data:candidates,error:candidateError},{data:policy,error:policyError}]=await Promise.all([
-    admin.from('marketplace_strategy_candidates').select('*').order('updated_at',{ascending:false}).limit(500),
+    admin.from('marketplace_strategy_candidates').select('*').eq('is_current_revision',true).order('updated_at',{ascending:false}).limit(500),
     admin.from('marketplace_qualification_policies').select('*').eq('active',true).single(),
   ]);
   if(candidateError)throw candidateError;if(policyError)throw policyError;

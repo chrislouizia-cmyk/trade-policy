@@ -50,8 +50,8 @@ test('marketplace report proves an exact revision without exposing its private p
   const api=read('app/api/hq/marketplace/[listingId]/route.ts');const evidence=read('lib/server/marketplace-evidence.ts');const detail=read('components/hq/MarketplaceReleaseDetail.tsx');
   assert.match(evidence,/from\('active_trades'\)/);assert.match(evidence,/from\('backtest_runs'\)/);
   assert.match(evidence,/scope:'EXACT_STRATEGY_REVISION'/);assert.match(evidence,/\.eq\('strategy_id',strategyId\)/);assert.doesNotMatch(evidence,/snapshot_json/);
-  assert.match(detail,/EXACT REVISION · VERIFIED LIVE RESULTS/);assert.match(detail,/Verified R curve/);
-  assert.match(detail,/Recent verified trades/);assert.match(detail,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
+  assert.match(detail,/EXACT REVISION · PLATFORM-RECORDED RESULTS/);assert.match(detail,/Recorded R curve/);
+  assert.match(detail,/Recent recorded trades/);assert.match(detail,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
   assert.match(detail,/not a profit guarantee/);
 });
 
@@ -61,7 +61,7 @@ test('observing candidates load the same exact-revision evidence without creatin
   assert.match(route,/buildMarketplaceEvidence\(admin,candidate\.source_strategy_id,candidate\.source_strategy_revision_id\)/);
   assert.doesNotMatch(route,/marketplace_listings/);assert.doesNotMatch(route,/create_internal_marketplace_release/);
   assert.match(lab,/toggleCandidateDetails/);assert.match(lab,/CandidateEvidence/);
-  assert.match(lab,/EXACT REVISION · VERIFIED LIVE RESULTS/);assert.match(lab,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
+  assert.match(lab,/EXACT REVISION · PLATFORM-RECORDED RESULTS/);assert.match(lab,/HISTORICAL SIMULATION · SEPARATE EVIDENCE/);
 });
 
 test('catalog usage is derived from actual installs and exact-revision evidence',()=>{

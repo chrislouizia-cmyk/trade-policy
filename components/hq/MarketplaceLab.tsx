@@ -130,15 +130,15 @@ export default function MarketplaceLab() {
     if(selectedCandidateId===candidateId){setSelectedCandidateId(null);return;}
     setSelectedCandidateId(candidateId);
     if(candidateEvidence[candidateId])return;
-    setCandidateEvidenceState(current=>({...current,[candidateId]:'Loading verified evidence…'}));
+    setCandidateEvidenceState(current=>({...current,[candidateId]:'Loading recorded evidence…'}));
     try{
       const response=await fetch(`/api/hq/marketplace/candidates/${candidateId}`,{cache:'no-store'});
-      const body=await response.json();if(!response.ok)throw new Error(body.error||'Verified evidence unavailable.');
+      const body=await response.json();if(!response.ok)throw new Error(body.error||'Recorded evidence unavailable.');
       setCandidateEvidence(current=>({...current,[candidateId]:body}));
       setCandidates(current=>current.map(candidate=>candidate.candidateId===candidateId?{...candidate,...body.candidate}:candidate));
       setCandidateEvidenceState(current=>({...current,[candidateId]:''}));
     }catch(caught){
-      setCandidateEvidenceState(current=>({...current,[candidateId]:caught instanceof Error?caught.message:'Verified evidence unavailable.'}));
+      setCandidateEvidenceState(current=>({...current,[candidateId]:caught instanceof Error?caught.message:'Recorded evidence unavailable.'}));
     }
   };
 
@@ -235,7 +235,7 @@ export default function MarketplaceLab() {
       {error&&!showCreate?<p className="error" role="alert">{error}</p>:null}
 
       <section className="card marketplace-observation-board">
-        <div className="section-title"><div><span className="eyebrow">PRIVATE OBSERVATION</span><h2>Strategy qualification pipeline</h2></div><strong>{candidates.length} revisions</strong></div>
+        <div className="section-title"><div><span className="eyebrow">PRIVATE OBSERVATION</span><h2>Strategy qualification pipeline</h2></div><strong>{candidates.length} current strategies</strong></div>
         <p className="muted">Every strategy can accumulate private evidence. Qualification never publishes it: owner consent and Compliance approval remain mandatory.</p>
         {candidates.length?<div className="marketplace-candidate-grid">{candidates.map(candidate=>{
           const tradeProgress=Math.min(100,Math.round(candidate.closedTrades/candidate.policy.minimumClosedTrades*100));
@@ -243,18 +243,18 @@ export default function MarketplaceLab() {
           const isSelected=selectedCandidateId===candidate.candidateId;
           return <article key={candidate.candidateId} className={`marketplace-candidate-card${isSelected?' selected':''}`}>
             <div><span className={`status-badge ${candidate.status.toLowerCase()}`}>{candidate.status.replaceAll('_',' ')}</span><h3>{candidate.strategyName}</h3><p>{candidate.ownerName??'Private owner'} · {candidate.instruments.join(', ')||'No instrument'}</p></div>
-            <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Verified trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
+            <dl><div><dt>Observation</dt><dd>{candidate.observationDays}/{candidate.policy.minimumObservationDays} days</dd></div><div><dt>Recorded trades</dt><dd>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades}</dd></div><div><dt>Rule adherence</dt><dd>{candidate.adherencePercent===null?'No evidence':`${candidate.adherencePercent}%`}</dd></div><div><dt>Consent</dt><dd>{candidate.consentStatus.replaceAll('_',' ')}</dd></div></dl>
             <div className="marketplace-progress" aria-label={`Observation ${dayProgress} percent`}><i style={{width:`${dayProgress}%`}}/></div>
-            <div className="marketplace-progress trades" aria-label={`Verified trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
+            <div className="marketplace-progress trades" aria-label={`Recorded trades ${tradeProgress} percent`}><i style={{width:`${tradeProgress}%`}}/></div>
             <button className="button secondary compact-button" type="button" aria-expanded={isSelected} onClick={()=>void toggleCandidateDetails(candidate.candidateId)}>{isSelected?'Hide qualification details':'View qualification details'}</button>
             {isSelected?<div className="marketplace-candidate-details">
               <p><strong>{candidate.status==='INSUFFICIENT_DATA'?'Public qualification is not ready yet.':'Private observation is in progress.'}</strong> Internal testing remains available and does not bypass the requirements for future public commerce.</p>
               <ul>
                 <li>{candidate.observationDays}/{candidate.policy.minimumObservationDays} observation days</li>
-                <li>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades} verified closed trades</li>
+                <li>{candidate.closedTrades}/{candidate.policy.minimumClosedTrades} closed trades recorded in Trade Police</li>
                 <li>{candidate.adherencePercent===null?'No adherence evidence yet':`${candidate.adherencePercent}%/${candidate.policy.minimumAdherencePercent}% adherence`}</li>
                 <li>{candidate.criticalViolations}/{candidate.policy.maximumCriticalViolations} critical violations allowed</li>
-                <li>{candidate.maximumDrawdownR===null?'No verified drawdown yet':`${candidate.maximumDrawdownR}R/${candidate.policy.maximumDrawdownR}R maximum drawdown`}</li>
+                <li>{candidate.maximumDrawdownR===null?'No recorded drawdown yet':`${candidate.maximumDrawdownR}R/${candidate.policy.maximumDrawdownR}R maximum drawdown`}</li>
               </ul>
               {candidateEvidenceState[candidate.candidateId]?<p className="muted" role="status">{candidateEvidenceState[candidate.candidateId]}</p>:null}
               {candidateEvidence[candidate.candidateId]?.evidence?<CandidateEvidence evidence={candidateEvidence[candidate.candidateId].evidence}/>:null}
@@ -419,8 +419,8 @@ export default function MarketplaceLab() {
                 <p>{item.listing.creatorName ?? 'Trade Police'} · {item.listing.category ?? 'INTERNAL_TEST'}</p>
               </div>
               <div className="marketplace-product-stats">
-                <div><span>PERFORMANCE</span><strong>{item.scores.performance ?? 'Not enough verified data'}</strong></div>
-                <div><span>READINESS</span><strong>{item.scores.marketplaceReadiness ?? 'Not enough verified data'}</strong></div>
+                <div><span>PERFORMANCE</span><strong>{item.scores.performance ?? 'Not enough recorded data'}</strong></div>
+                <div><span>READINESS</span><strong>{item.scores.marketplaceReadiness ?? 'Not enough recorded data'}</strong></div>
                 <div><span>TRENDING</span><strong>{item.usage.decisions}</strong></div>
                 <div><span>NEWEST</span><strong>v{item.releaseVersion}</strong></div>
               </div>
@@ -439,11 +439,11 @@ function CandidateEvidence({evidence}:{evidence:any}){
   const live=evidence.live,points=live.equityCurve??[];
   const values=points.map((point:any)=>Number(point.cumulativeR)),min=Math.min(...values,0),max=Math.max(...values,0),range=Math.max(max-min,1);
   const geometry=points.length>1?points.map((point:any,index:number)=>`${index/(points.length-1)*100},${92-(Number(point.cumulativeR)-min)/range*84}`).join(' '):null;
-  return <section className="marketplace-candidate-proof" aria-label="Exact revision verified evidence">
-    <div><span className="eyebrow">EXACT REVISION · VERIFIED LIVE RESULTS</span><h4>Evidence report</h4><p>Real closed trades and historical simulations are kept separate.</p></div>
-    <dl><div><dt>Total R</dt><dd>{live.totalR}R</dd></div><div><dt>Win rate</dt><dd>{live.winRate==null?'No evidence':`${live.winRate}%`}</dd></div><div><dt>Maximum drawdown</dt><dd>{live.maxDrawdownR}R</dd></div><div><dt>Discipline</dt><dd>{live.adherencePercent==null?'No evidence':`${live.adherencePercent}%`}</dd></div></dl>
-    {geometry?<svg className="marketplace-equity-chart compact" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Cumulative verified R curve"><line x1="0" y1="92" x2="100" y2="92"/><polyline points={geometry}/></svg>:<div className="marketplace-equity-empty compact">The verified R curve appears after the first closed trade.</div>}
-    <div><h4>Recent verified trades</h4>{live.recentTrades.length?<div className="marketplace-trade-list">{live.recentTrades.slice(0,5).map((trade:any)=><div className="marketplace-trade-row" key={trade.id}><span><strong>{trade.instrument}</strong><small>{new Date(trade.closedAt).toLocaleString()}</small></span><strong className={trade.resultR>=0?'positive':'negative'}>{trade.resultR>=0?'+':''}{trade.resultR}R</strong><span>{trade.followedVerdict?'Rules followed':'Override'}</span></div>)}</div>:<p className="muted">No closed verified trades exist for this revision yet.</p>}</div>
+  return <section className="marketplace-candidate-proof" aria-label="Exact revision platform-recorded evidence">
+    <div><span className="eyebrow">EXACT REVISION · PLATFORM-RECORDED RESULTS</span><h4>Evidence report</h4><p>Closed trades recorded in Trade Police and historical simulations are kept separate. Broker verification is not available yet.</p></div>
+    <dl><div><dt>Total R</dt><dd>{live.totalR==null?'No evidence':`${live.totalR}R`}</dd></div><div><dt>Win rate</dt><dd>{live.winRate==null?'No evidence':`${live.winRate}%`}</dd></div><div><dt>Maximum drawdown</dt><dd>{live.maxDrawdownR==null?'No evidence':`${live.maxDrawdownR}R`}</dd></div><div><dt>Rule adherence</dt><dd>{live.adherencePercent==null?'No evidence':`${live.adherencePercent}%`}</dd></div></dl>
+    {geometry?<svg className="marketplace-equity-chart compact" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Cumulative recorded R curve"><line x1="0" y1="92" x2="100" y2="92"/><polyline points={geometry}/></svg>:<div className="marketplace-equity-empty compact">The recorded R curve appears after the first closed trade.</div>}
+    <div><h4>Recent recorded trades</h4>{live.recentTrades.length?<div className="marketplace-trade-list">{live.recentTrades.slice(0,5).map((trade:any)=><div className="marketplace-trade-row" key={trade.id}><span><strong>{trade.instrument}</strong><small>{new Date(trade.closedAt).toLocaleString()}</small></span><strong className={trade.resultR>=0?'positive':'negative'}>{trade.resultR>=0?'+':''}{trade.resultR}R</strong><span>{trade.followedVerdict?'Rules followed':'Override'}</span></div>)}</div>:<p className="muted">No closed recorded trades exist for this revision yet.</p>}</div>
     <div><span className="eyebrow">HISTORICAL SIMULATION · SEPARATE EVIDENCE</span>{evidence.backtests.length?<div className="marketplace-backtest-list">{evidence.backtests.map((run:any)=><div className="marketplace-backtest-row" key={run.id}><span><strong>{run.instrument} · {run.execution_timeframe}</strong><small>{run.period_start} → {run.period_end}</small></span><span>{run.result?`${run.result.total_trades??0} trades · ${run.result.net_return_percent??'—'}% net`:'Completed'}</span></div>)}</div>:<p className="muted">No completed backtest exists for this exact revision.</p>}</div>
   </section>;
 }

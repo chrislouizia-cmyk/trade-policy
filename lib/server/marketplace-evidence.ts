@@ -1,5 +1,7 @@
 import 'server-only';
 
+import {deriveMarketplaceRecordedTradeMetrics} from '@/lib/marketplace/recorded-trade-metrics';
+
 type AdminClient=ReturnType<typeof import('@/lib/supabase/admin').createAdminClient>;
 
 export async function buildMarketplaceEvidence(admin:AdminClient,strategyId:string,strategyRevisionId:string){
@@ -21,24 +23,16 @@ export async function buildMarketplaceEvidence(admin:AdminClient,strategyId:stri
     :{data:[],error:null};
   if(resultsResult.error)throw resultsResult.error;
   const trades=(tradesResult.data??[]).map(trade=>({...trade,resultR:Number(trade.result_r)}));
-  let cumulativeR=0,peakR=0,maxDrawdownR=0;
-  const equityCurve=[{index:0,cumulativeR:0},...trades.map((trade,index)=>{
-    cumulativeR+=trade.resultR;peakR=Math.max(peakR,cumulativeR);maxDrawdownR=Math.max(maxDrawdownR,peakR-cumulativeR);
-    return {index:index+1,cumulativeR:Number(cumulativeR.toFixed(4))};
-  })];
-  const wins=trades.filter(trade=>trade.resultR>0).length,losses=trades.filter(trade=>trade.resultR<0).length;
+  const metrics=deriveMarketplaceRecordedTradeMetrics(trades.map(trade=>({
+    id:trade.id,closedAt:trade.closed_at,resultR:trade.resultR,takenAgainstVerdict:trade.taken_against_verdict===true,
+  })));
   const resultsByRun=new Map((resultsResult.data??[]).map(result=>[result.run_id,result]));
   return {
     scope:'EXACT_STRATEGY_REVISION' as const,
     firstEvidenceAt:trades[0]?.closed_at??null,
     decisionCount:decisionsResult.count??0,
     live:{
-      tradeCount:trades.length,wins,losses,breakeven:trades.length-wins-losses,
-      winRate:trades.length?Number((wins/trades.length*100).toFixed(2)):null,
-      totalR:Number(cumulativeR.toFixed(4)),averageR:trades.length?Number((cumulativeR/trades.length).toFixed(4)):null,
-      maxDrawdownR:Number(maxDrawdownR.toFixed(4)),
-      adherencePercent:trades.length?Number((trades.filter(trade=>trade.taken_against_verdict!==true).length/trades.length*100).toFixed(2)):null,
-      equityCurve,
+      ...metrics,
       recentTrades:trades.slice(-20).reverse().map(trade=>({id:trade.id,instrument:trade.instrument,outcome:trade.outcome,resultR:trade.resultR,closedAt:trade.closed_at,activationMode:trade.activation_mode,followedVerdict:trade.taken_against_verdict!==true})),
     },
     backtests:(runsResult.data??[]).map(run=>({...run,result:resultsByRun.get(run.id)??null})),
