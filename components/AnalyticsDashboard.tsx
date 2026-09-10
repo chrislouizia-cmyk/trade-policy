@@ -64,115 +64,174 @@ export default function AnalyticsDashboard({ account, trades }: { account: Accou
   const netR = metrics.netR ?? 0;
   const netTone = netR > 0 ? 'positive' : netR < 0 ? 'negative' : 'neutral';
   const chart = buildChart(metrics.cumulative);
-  const totalOutcomes = Math.max(1, metrics.sampleSize);
-  const fullCircle = 100;
-  const winStop = (metrics.wins / totalOutcomes) * 100;
-  const lossStop = winStop + (metrics.losses / totalOutcomes) * 100;
-  const outcomeChart = {
-    background: `conic-gradient(var(--green) 0 ${winStop}%, var(--red) ${winStop}% ${lossStop}%, #7f8ca3 ${lossStop}% ${fullCircle}%)`,
-  };
 
   return (
-    <div className="stack analytics-shell analytics-premium-shell">
-      <section className="card analytics-hero analytics-cockpit-hero">
+    <div className="stack analytics-shell analytics-premium-shell analytics-canonical-shell">
+      <section className="card analytics-hero analytics-cockpit-hero analytics-canonical-hero">
         <div className="analytics-hero-copy">
           <div className="analytics-kicker-row">
             <span className="eyebrow">{c.cockpit}</span>
-            <span className={`analytics-sample-badge ${metrics.sampleSize < 20 ? 'early' : ''}`}>{metrics.sampleSize < 20 ? c.early : c.established}</span>
+            <span className={`analytics-sample-badge ${metrics.sampleSize < 20 ? 'early' : ''}`}>
+              {metrics.sampleSize < 20 ? c.early : c.established}
+            </span>
           </div>
           <h1>{c.title}</h1>
           <p>{c.intro}</p>
           <small>{c.canonicalOnly}</small>
         </div>
+
         <div className={`analytics-hero-score ${netTone}`}>
           <span>{c.netR}</span>
           <strong>{metrics.netR === null ? '—' : `${metrics.netR >= 0 ? '+' : ''}${metrics.netR.toFixed(2)}R`}</strong>
-          <div><b>{metrics.sampleSize}</b> {c.closedTrades} <i aria-hidden="true" /> <b>{metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(0)}%`}</b> {c.winRate}</div>
-          <small>{c.source}</small>
+          <div>
+            <b>{metrics.sampleSize}</b> {c.closedTrades}
+            <i aria-hidden="true" />
+            <b>{metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(0)}%`}</b> {c.winRate}
+          </div>
         </div>
       </section>
 
-      <section className="analytics-primary-metrics" aria-label="Primary analytics metrics">
-        <PrimaryMetric label={c.winRate} value={metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(1)}%`} sub={`${metrics.wins} ${c.wins} · ${metrics.losses} ${c.losses} · ${metrics.breakeven} ${c.breakeven}`} />
-        <PrimaryMetric label={c.averageR} value={metrics.averageR === null ? '—' : `${signed(metrics.averageR)}R`} sub={c.expectancy} tone={(metrics.averageR ?? 0) >= 0 ? 'positive' : 'negative'} />
-        <PrimaryMetric label={c.profitFactor} value={metrics.profitFactor === null ? '—' : metrics.profitFactor.toFixed(2)} sub={c.profitFactorHint} />
+      <section className="analytics-primary-metrics analytics-canonical-metrics" aria-label="Primary analytics metrics">
+        <PrimaryMetric
+          label={c.averageR}
+          value={metrics.averageR === null ? '—' : `${signed(metrics.averageR)}R`}
+          sub={c.expectancy}
+          tone={(metrics.averageR ?? 0) >= 0 ? 'positive' : 'negative'}
+        />
+        <PrimaryMetric
+          label={c.winRate}
+          value={metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(1)}%`}
+          sub={`${metrics.wins} ${c.wins} · ${metrics.losses} ${c.losses} · ${metrics.breakeven} ${c.breakeven}`}
+        />
+        <PrimaryMetric
+          label={c.profitFactor}
+          value={metrics.profitFactor === null ? '—' : metrics.profitFactor.toFixed(2)}
+          sub={c.profitFactorHint}
+        />
       </section>
 
-      <section className="analytics-secondary-strip" aria-label="Supporting analytics metrics">
-        <SecondaryMetric label={c.closedTradesLabel} value={String(metrics.sampleSize)} />
-        <SecondaryMetric label={c.averageWinner} value={metrics.averageWinner === null ? '—' : `+${metrics.averageWinner.toFixed(2)}R`} tone="positive" />
-        <SecondaryMetric label={c.averageLoser} value={metrics.averageLoser === null ? '—' : `-${metrics.averageLoser.toFixed(2)}R`} tone="negative" />
-        <SecondaryMetric label={c.account} value={account.name} />
-      </section>
-
-      <section className="card analytics-chart-card analytics-equity-card">
+      <section className="card analytics-chart-card analytics-equity-card analytics-canonical-trajectory">
         <header className="analytics-panel-heading">
-          <div><span className="eyebrow">{c.realized}</span><h2>{c.trajectory}</h2></div>
-          <div className={`analytics-chart-delta ${netTone}`}><span>{c.periodChange}</span><strong>{signed(netR)}R</strong></div>
+          <div>
+            <span className="eyebrow">{c.realized}</span>
+            <h2>{c.trajectory}</h2>
+          </div>
+          <div className={`analytics-chart-delta ${netTone}`}>
+            <span>{c.periodChange}</span>
+            <strong>{signed(netR)}R</strong>
+          </div>
         </header>
         <p className="analytics-panel-note">{c.trajectoryHint}</p>
         {metrics.cumulative.length === 0 ? (
           <div className="analytics-empty-inline">{c.noRealized}</div>
         ) : (
           <div className="analytics-chart-frame">
-            <div className="analytics-chart-scale" aria-hidden="true"><span>{chart.max.toFixed(2)}R</span><span>{formatRLabel(0)}</span><span>{chart.min.toFixed(2)}R</span></div>
+            <div className="analytics-chart-scale" aria-hidden="true">
+              <span>{chart.max.toFixed(2)}R</span>
+              <span>{formatRLabel(0)}</span>
+              <span>{chart.min.toFixed(2)}R</span>
+            </div>
             <svg viewBox="0 0 100 40" className="analytics-cumulative-chart" preserveAspectRatio="none" role="img" aria-label="Cumulative realized R chart">
               <defs>
                 <linearGradient id="realized-r-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset={percentage(0)} stopColor="var(--blue)" stopOpacity="0.28" />
-                  <stop offset={percentage(fullCircle)} stopColor="var(--blue)" stopOpacity="0" />
+                  <stop offset={percentage(100)} stopColor="var(--blue)" stopOpacity="0" />
                 </linearGradient>
               </defs>
               <line className="analytics-chart-grid" x1="0" y1={chart.zeroY} x2="100" y2={chart.zeroY} />
               <path className="analytics-chart-area" d={chart.areaPath} />
               <polyline className="analytics-chart-line" points={chart.points} />
             </svg>
-            <div className="analytics-chart-axis"><span>{formatShortDate(ordered[0]?.closedAt,locale)}</span><span>{formatShortDate(ordered.at(-1)?.closedAt,locale)}</span></div>
+            <div className="analytics-chart-axis">
+              <span>{formatShortDate(ordered[0]?.closedAt, locale)}</span>
+              <span>{formatShortDate(ordered.at(-1)?.closedAt, locale)}</span>
+            </div>
           </div>
         )}
       </section>
 
-      <div className="analytics-insight-grid">
-        <section className="card analytics-outcomes-card">
-          <header className="analytics-panel-heading"><div><span className="eyebrow">{c.outcomes}</span><h2>{c.resultMix}</h2></div></header>
-          <div className="analytics-outcome-layout">
-            <div className="analytics-donut" style={outcomeChart} role="img" aria-label={`${metrics.wins} ${c.wins}, ${metrics.losses} ${c.losses}, ${metrics.breakeven} ${c.breakeven}`}><span><strong>{metrics.sampleSize}</strong>{c.trades}</span></div>
-            <div className="analytics-outcome-legend">
-              <OutcomeRow label={c.winsLabel} value={metrics.wins} tone="positive" total={metrics.sampleSize} />
-              <OutcomeRow label={c.lossesLabel} value={metrics.losses} tone="negative" total={metrics.sampleSize} />
-              <OutcomeRow label={c.breakevenLabel} value={metrics.breakeven} tone="neutral" total={metrics.sampleSize} />
-            </div>
+      <section className="analytics-canonical-diagnosis">
+        <div className="analytics-section-heading">
+          <div>
+            <span className="eyebrow">{c.discipline}</span>
+            <h2>{c.activationMode}</h2>
           </div>
-        </section>
-        <BreakdownCard eyebrow={c.discipline} title={c.activationMode} entries={activationBreakdown} tradeLabels={c} featured />
-      </div>
-
-      <section className="analytics-edge-section">
-        <header className="analytics-section-heading">
-          <div><span className="eyebrow">{c.edgeMap}</span><h2>{c.sourceTitle}</h2></div>
           <p>{c.sourceHint}</p>
-        </header>
-        <div className="analytics-edge-grid">
-          <BreakdownCard eyebrow={c.strategy} title={c.byPlaybook} entries={strategyBreakdown} tradeLabels={c} />
-          <BreakdownCard eyebrow={c.instrument} title={c.byMarket} entries={instrumentBreakdown} tradeLabels={c} />
-          <BreakdownCard eyebrow={c.direction} title={c.longShort} entries={directionBreakdown} tradeLabels={c} />
         </div>
+        <BreakdownCard
+          eyebrow={c.discipline}
+          title={c.activationMode}
+          entries={activationBreakdown}
+          tradeLabels={c}
+          featured
+        />
       </section>
 
-      <section className="card analytics-review-card analytics-recent-card">
+      <details className="card analytics-detail-disclosure">
+        <summary>
+          <div>
+            <span className="eyebrow">{c.edgeMap}</span>
+            <strong>{c.sourceTitle}</strong>
+          </div>
+          <span aria-hidden="true">+</span>
+        </summary>
+
+        <div className="analytics-detail-body">
+          <p className="analytics-panel-note">{c.sourceHint}</p>
+
+          <div className="analytics-secondary-strip analytics-canonical-secondary" aria-label="Supporting analytics metrics">
+            <SecondaryMetric label={c.closedTradesLabel} value={String(metrics.sampleSize)} />
+            <SecondaryMetric label={c.averageWinner} value={metrics.averageWinner === null ? '—' : `+${metrics.averageWinner.toFixed(2)}R`} tone="positive" />
+            <SecondaryMetric label={c.averageLoser} value={metrics.averageLoser === null ? '—' : `-${metrics.averageLoser.toFixed(2)}R`} tone="negative" />
+            <SecondaryMetric label={c.account} value={account.name} />
+          </div>
+
+          <div className="analytics-edge-grid">
+            <BreakdownCard eyebrow={c.strategy} title={c.byPlaybook} entries={strategyBreakdown} tradeLabels={c} />
+            <BreakdownCard eyebrow={c.instrument} title={c.byMarket} entries={instrumentBreakdown} tradeLabels={c} />
+            <BreakdownCard eyebrow={c.direction} title={c.longShort} entries={directionBreakdown} tradeLabels={c} />
+          </div>
+        </div>
+      </details>
+
+      <section className="card analytics-review-card analytics-recent-card analytics-canonical-recent">
         <header className="analytics-panel-heading">
-          <div><span className="eyebrow">{c.recent}</span><h2>{c.latest}</h2></div>
+          <div>
+            <span className="eyebrow">{c.recent}</span>
+            <h2>{c.latest}</h2>
+          </div>
           <a className="button-link secondary" href="/history?view=trades">{c.fullJournal}</a>
         </header>
+
         <div className="analytics-trade-table" role="table" aria-label="Recent closed trades">
-          <div className="analytics-trade-head" role="row"><span>{c.trade}</span><span>{c.strategy}</span><span>{c.outcome}</span><span>{c.realizedLabel}</span><span /></div>
-          {ordered.slice(-8).reverse().map((trade) => (
+          <div className="analytics-trade-head" role="row">
+            <span>{c.trade}</span>
+            <span>{c.strategy}</span>
+            <span>{c.outcome}</span>
+            <span>{c.realizedLabel}</span>
+            <span />
+          </div>
+          {ordered.slice(-5).reverse().map((trade) => (
             <div key={trade.id} className="analytics-trade-row" role="row">
-              <div><strong>{trade.instrument} · {trade.direction}</strong><small>{new Date(trade.closedAt).toLocaleString(locale)}</small></div>
-              <div><strong>{trade.strategy}</strong><small>{trade.activationMode}</small></div>
-              <div><span className={`analytics-outcome-chip ${outcomeTone(trade.outcome)}`}>{trade.outcome}</span></div>
-              <div><strong className={(trade.resultR ?? 0) >= 0 ? 'metric-positive' : 'metric-negative'}>{trade.resultR === null ? c.noR : `${signed(trade.resultR)}R`}</strong></div>
-              <div>{trade.sourceReportId ? <a href={`/history/${trade.sourceReportId}`}>{c.decision} →</a> : <span className="muted">—</span>}</div>
+              <div>
+                <strong>{trade.instrument} · {trade.direction}</strong>
+                <small>{new Date(trade.closedAt).toLocaleString(locale)}</small>
+              </div>
+              <div>
+                <strong>{trade.strategy}</strong>
+                <small>{trade.activationMode}</small>
+              </div>
+              <div>
+                <span className={`analytics-outcome-chip ${outcomeTone(trade.outcome)}`}>{trade.outcome}</span>
+              </div>
+              <div>
+                <strong className={(trade.resultR ?? 0) >= 0 ? 'metric-positive' : 'metric-negative'}>
+                  {trade.resultR === null ? c.noR : `${signed(trade.resultR)}R`}
+                </strong>
+              </div>
+              <div>
+                {trade.sourceReportId ? <a href={`/history/${trade.sourceReportId}`}>{c.decision} →</a> : <span className="muted">—</span>}
+              </div>
             </div>
           ))}
         </div>
@@ -187,10 +246,6 @@ function PrimaryMetric({ label, value, sub, tone = 'neutral' }: { label: string;
 
 function SecondaryMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'positive' | 'negative' | 'neutral' }) {
   return <div className={`analytics-secondary-metric ${tone}`}><span>{label}</span><strong>{value}</strong></div>;
-}
-
-function OutcomeRow({ label, value, tone, total }: { label: string; value: number; tone: string; total: number }) {
-  return <div className={`analytics-outcome-row ${tone}`}><span><i />{label}</span><strong>{value}<small>{total ? Math.round((value / total) * 100) : 0}%</small></strong></div>;
 }
 
 function BreakdownCard({ eyebrow, title, entries, tradeLabels, featured = false }: { eyebrow: string; title: string; entries: BreakdownEntry[]; tradeLabels: import('@/lib/i18n/screen-copy').ScreenCopy['analytics']; featured?: boolean }) {
