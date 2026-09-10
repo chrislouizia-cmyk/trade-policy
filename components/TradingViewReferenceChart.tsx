@@ -18,7 +18,6 @@ export default function TradingViewReferenceChart({instrument,timeframe}:{instru
   },[instrument,timeframe]);
 
   return <div className="tradingview-reference">
-    <div className="tradingview-reference-status"><strong>Visual market view</strong><span>Live reference chart · Check the current market to apply your saved rules.</span></div>
     <TradingViewFrame key={src} src={src} title={`${instrument} ${timeframe} live reference chart`}/>
   </div>;
 }

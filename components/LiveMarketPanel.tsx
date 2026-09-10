@@ -62,7 +62,6 @@ export default function LiveMarketPanel({
   const [error, setError] = useState('');
   const [waitingForMarketData, setWaitingForMarketData] = useState(false);
   const [chartData, setChartData] = useState<MarketChartSnapshot['chart']|null>(null);
-  const [snapshotCreatedAt,setSnapshotCreatedAt]=useState<string|null>(null);
   const [analysisSource,setAnalysisSource]=useState<'LIVE'|'SNAPSHOT'|null>(null);
   const [paintedChartKey,setPaintedChartKey]=useState<string|null>(null);
   const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
@@ -79,7 +78,6 @@ export default function LiveMarketPanel({
     analysisContextRef.current = `${strategy.id ?? ''}:${strategyRevisionId ?? ''}:${selectedInstrument}`;
     setChartData(null);
     setPaintedChartKey(null);
-    setSnapshotCreatedAt(null);
     setAnalysisSource(null);
     setError('');
     setWaitingForMarketData(false);
@@ -102,7 +100,6 @@ export default function LiveMarketPanel({
       .then(snapshot=>{
         if(!snapshot||analysisContextRef.current!==requestContextKey)return;
         setChartData(snapshot.chart);
-        setSnapshotCreatedAt(snapshot.snapshotCreatedAt);
         setAnalysisSource('SNAPSHOT');
       })
       .catch(error=>{if(error instanceof Error&&error.name==='AbortError')return;});
@@ -148,7 +145,7 @@ export default function LiveMarketPanel({
     onLoadingChange?.(true);
     setStageIndex(0);
     setError('');
-    if(chartData){setAnalysisSource('SNAPSHOT');setSnapshotCreatedAt(chartData.calculatedAt)}
+    if(chartData)setAnalysisSource('SNAPSHOT');
     if (retryAttempt === 0) onReset?.();
 
     const controller=new AbortController();
@@ -199,7 +196,6 @@ export default function LiveMarketPanel({
       }
 
       setChartData(result as ChartAnalysis);
-      setSnapshotCreatedAt(null);
       setAnalysisSource('LIVE');
       onApply(result as ChartAnalysis);
     } catch(error) {
@@ -269,7 +265,6 @@ export default function LiveMarketPanel({
         </div>
         <strong>{selectedInstrument}</strong>
       </div>
-      {analysisSource==='SNAPSHOT'&&snapshotCreatedAt?<div className="market-snapshot-status" role="status"><strong>Saved market data</strong><span>From {new Date(snapshotCreatedAt).toLocaleString()} · Check current market when you want a new Decision.</span></div>:null}
       <div className="market-chart-stage">
         <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartVisible?'is-hidden':''}`} aria-hidden={analyzedChartVisible} inert={analyzedChartVisible?true:undefined}>
           <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>

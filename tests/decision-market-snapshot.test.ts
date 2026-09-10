@@ -57,7 +57,7 @@ test('the immediate reference chart maps supported markets without using the app
   assert.equal(getTradingViewInterval('H4'),'240');
   const component=read('components/TradingViewReferenceChart.tsx');
   assert.match(component,/s\.tradingview\.com\/widgetembed/);
-  assert.match(component,/Visual market view/);
+  assert.doesNotMatch(component,/Visual market view|Live reference chart · Check/);
   assert.doesNotMatch(component,/\/api\/market|Twelve Data|useMarketCandles/);
 });
 
@@ -81,7 +81,7 @@ test('Decision opens with cached candles without restoring a stale decision',()=
   const panel=read('components/LiveMarketPanel.tsx');
   assert.match(panel,/TradingViewReferenceChart/);
   assert.match(panel,/\/api\/market\/snapshot\?/);
-  assert.match(panel,/Saved market data/);
+  assert.doesNotMatch(panel,/Saved market data|market-snapshot-status/);
   assert.match(panel,/setChartData\(snapshot\.chart\)/);
   assert.doesNotMatch(panel,/onApplyRef\.current\(snapshot\.analysis\)/);
   assert.match(panel,/analysisSource==='LIVE' \? decisionContent : null/);
