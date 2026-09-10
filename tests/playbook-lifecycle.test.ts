@@ -4,34 +4,63 @@ import test from 'node:test';
 
 const builder = readFileSync(new URL('../components/StrategyBuilder.tsx', import.meta.url), 'utf8');
 const route = readFileSync(new URL('../app/api/strategies/delete/route.ts', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/107_repair_strategy_hard_delete.sql', import.meta.url), 'utf8');
 
-test('strategy lifecycle exposes edit duplicate archive restore and soft delete actions', () => {
+test('strategy lifecycle keeps archive separate from permanent delete', () => {
   for (const action of ['Edit', 'Duplicate', 'Archive', 'Restore', 'Delete strategy']) {
     assert.match(builder, new RegExp(`w\\('${action.replace(/\s+/g, ' ')}'\\)`));
   }
-  assert.match(builder, /isArchived/);
-  assert.match(builder, /ARCHIVED/);
+  assert.match(builder, /Type <strong>DELETE<\/strong> to confirm/);
+  assert.match(builder, /permanently removes the strategy/);
 });
 
-test('safe strategy deletion requires an explicit confirmation dialog and archive update', () => {
-  assert.match(builder, /Delete strategy\?/);
-  assert.match(builder, /role="dialog"/);
-  assert.match(builder, /aria-modal="true"/);
-  assert.match(builder, /deleteConfirmation!==['"]DELETE['"]/);
+test('delete endpoint delegates permanent deletion to the canonical database function', () => {
   assert.match(route, /z\.literal\(['"]DELETE['"]\)/);
-  assert.match(route, /is_archived:\s*true/);
-  assert.match(route, /is_default:\s*false/);
+  assert.match(route, /\.rpc\(['"]delete_strategy_playbook['"]/);
+  assert.doesNotMatch(route, /update\(\{\s*is_archived:\s*true/);
+  assert.match(route, /result\.deleted !== true/);
 });
 
-test('soft delete preserves historical references and does not hard-delete strategy rows', () => {
-  assert.match(route, /from\('strategy_profiles'\)/);
-  assert.match(route, /update\(\{\s*is_archived:\s*true/);
-  assert.doesNotMatch(route, /delete from public\.strategy_profiles|delete from public\.strategy_profiles/);
-  assert.doesNotMatch(route, /strategy_profile_id\s*=\s*null/);
+test('database delete is ownership scoped and actually removes the strategy row', () => {
+  assert.match(migration, /auth\.uid\(\)/);
+  assert.match(migration, /where id = p_strategy_id\s+and user_id = v_user_id/);
+  assert.match(migration, /delete from public\.strategy_profiles/);
+  assert.match(migration, /'deleted', true/);
 });
 
-test('default strategies cannot be soft-deleted, and archived strategies are excluded from active selection', () => {
-  assert.match(builder, /disabled=\{selectedProfile\.isDefault\}/);
-  assert.match(route, /is_default\s*:\s*false/);
-  assert.match(route, /eq\('is_archived', false\)/);
+test('historical trading truth is preserved before strategy deletion', () => {
+  for (const table of ['trade_records', 'active_trades', 'market_scans']) {
+    assert.match(migration, new RegExp(`update public\\.${table}`));
+  }
+  assert.match(migration, /set strategy_profile_id = null/);
+  assert.doesNotMatch(migration, /delete from public\.(trade_records|active_trades|market_scans)/);
+});
+
+test('deleting the active strategy selects a safe fallback when one exists', () => {
+  assert.match(migration, /if v_strategy\.is_default then/);
+  assert.match(migration, /id <> p_strategy_id/);
+  assert.match(migration, /is_archived = false/);
+  assert.match(migration, /set is_default = true/);
+  assert.match(migration, /'fallbackStrategyId', v_fallback_strategy_id/);
+  assert.doesNotMatch(builder, /Delete strategy'\)<\/button>.*disabled=\{selectedProfile\.isDefault\}/);
+});
+
+test('delete telemetry captures the id before clearing modal state', () => {
+  const capture = builder.indexOf('const deletedId = deleteTarget.id');
+  const clear = builder.indexOf('setDeleteTarget(null)', capture);
+  const track = builder.indexOf("trackBetaEvent('PLAYBOOK_DELETED', deletedId)", clear);
+  assert.ok(capture >= 0 && clear > capture && track > clear);
+});
+
+test('backtests survive source strategy deletion through their immutable snapshot', () => {
+  assert.match(migration, /alter column strategy_profile_id drop not null/);
+  assert.match(migration, /backtest_runs_strategy_profile_id_fkey/);
+  assert.match(migration, /on delete set null/);
+  assert.match(migration, /update public\.backtest_runs/);
+});
+
+test('immutable Marketplace releases block source deletion instead of being silently corrupted', () => {
+  assert.match(migration, /marketplace_strategy_releases/);
+  assert.match(migration, /Marketplace release/);
+  assert.doesNotMatch(migration, /delete from public\.marketplace_strategy_releases/);
 });

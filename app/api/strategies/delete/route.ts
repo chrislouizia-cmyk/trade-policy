@@ -8,6 +8,15 @@ const schema = z.object({
   confirmation: z.literal('DELETE'),
 });
 
+type DeleteStrategyResult = {
+  deleted?: boolean;
+  strategyId?: string;
+  fallbackStrategyId?: string | null;
+  detachedTradeRecords?: number;
+  detachedActiveTrades?: number;
+  detachedMarketScans?: number;
+};
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -25,7 +34,7 @@ export async function POST(request: Request) {
 
   const { data: existing, error: lookupError } = await supabase
     .from('strategy_profiles')
-    .select('id,user_id,is_archived,is_default,created_at')
+    .select('id,user_id,name,is_default')
     .eq('id', strategyId)
     .eq('user_id', user.id)
     .maybeSingle();
@@ -38,61 +47,26 @@ export async function POST(request: Request) {
     return apiError('STRATEGY_NOT_FOUND', 'Strategy not found or not owned by this user.', 404);
   }
 
-  if (existing.is_archived) {
-    return NextResponse.json({
-      ok: true,
-      strategyId,
-      archived: true,
-      alreadyArchived: true,
-    }, { headers: { 'Cache-Control': 'no-store' } });
+  const { data, error } = await supabase.rpc('delete_strategy_playbook', {
+    p_strategy_id: strategyId,
+  });
+
+  if (error) {
+    return apiError('STRATEGY_DELETE_FAILED', error.message, 500);
   }
 
-  const fallbackTarget = await supabase
-    .from('strategy_profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('is_archived', false)
-    .neq('id', strategyId)
-    .order('is_default', { ascending: false })
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  const { error: archiveError } = await supabase
-    .from('strategy_profiles')
-    .update({
-      is_archived: true,
-      is_default: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', strategyId)
-    .eq('user_id', user.id);
-
-  if (archiveError) {
-    return apiError('STRATEGY_ARCHIVE_FAILED', archiveError.message, 500);
-  }
-
-  if (fallbackTarget.data?.id && existing.is_default) {
-    const { error: activateNextError } = await supabase
-      .from('strategy_profiles')
-      .update({
-        is_default: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', fallbackTarget.data.id)
-      .eq('user_id', user.id)
-      .eq('is_archived', false);
-
-    if (activateNextError) {
-      return apiError('STRATEGY_FALLBACK_FAILED', activateNextError.message, 500);
-    }
+  const result = (data ?? {}) as DeleteStrategyResult;
+  if (result.deleted !== true || result.strategyId !== strategyId) {
+    return apiError('STRATEGY_DELETE_INCOMPLETE', 'Strategy deletion did not complete.', 500);
   }
 
   return NextResponse.json({
     ok: true,
+    deleted: true,
     strategyId,
-    archived: true,
-    alreadyArchived: false,
-    fallbackStrategyId: fallbackTarget.data?.id ?? null,
+    fallbackStrategyId: result.fallbackStrategyId ?? null,
+    detachedTradeRecords: result.detachedTradeRecords ?? 0,
+    detachedActiveTrades: result.detachedActiveTrades ?? 0,
+    detachedMarketScans: result.detachedMarketScans ?? 0,
   }, { headers: { 'Cache-Control': 'no-store' } });
 }
