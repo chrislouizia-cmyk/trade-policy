@@ -9,12 +9,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getServerTranslator } from '@/lib/i18n/server';
 
-function greeting(hour: number, t: (key: 'greeting.morning' | 'greeting.afternoon' | 'greeting.evening') => string) {
-  if (hour < 12) return t('greeting.morning') || 'Good morning';
-  if (hour < 18) return t('greeting.afternoon') || 'Good afternoon';
-  return t('greeting.evening') || 'Good evening';
-}
-
 export default async function AppHeader({
   eyebrow,
   displayName,
@@ -30,50 +24,57 @@ export default async function AppHeader({
 }) {
   const supabase = await createClient();
   const { t } = await getServerTranslator();
-  const { count } = await supabase.from('active_trades').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'OPEN');
+  const { count } = await supabase
+    .from('active_trades')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('status', 'OPEN');
   const activeTradeCount = count ?? 0;
 
   return (
     <>
-      <header className={`app-shell-header client-header ${decisionFocused ? 'decision-focused-header' : ''}`}>
-        <div className="app-brand-row shell-brand-row">
-          <Link href="/dashboard" className="app-brand" aria-label="Trade Police">
-            <Image src="/brand/trade-police-logo.png" alt="Trade Police" width={220} height={46} className="brand-logo-wordmark brand-logo-header" />
+      <header className={`app-shell-header client-header canonical-app-shell ${decisionFocused ? 'decision-focused-header' : ''}`}>
+        <div className="canonical-shell-top">
+          <Link href="/dashboard" className="app-brand canonical-shell-brand" aria-label="Trade Police">
+            <Image
+              src="/brand/trade-police-logo.png"
+              alt="Trade Police"
+              width={220}
+              height={46}
+              className="brand-logo-wordmark brand-logo-header"
+            />
             <span className="brand-caption">
               <small>{t('brand.tagline') || 'No trade without evidence.'}</small>
             </span>
           </Link>
-          <div className="app-user shell-user-controls">
+
+          <nav className="primary-nav shell-primary-nav canonical-shell-nav" aria-label={t('nav.primary')}>
+            <Link href="/dashboard">{t('nav.dashboard')}</Link>
+            <Link href="/validate">{t('nav.decision')}</Link>
+            <Link href="/active-trade">
+              {t('nav.activeTrade') || 'Active Trade'}
+              {activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}
+            </Link>
+            <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
+            <Link href="/profile">{t('nav.strategies')}</Link>
+            <Link href="/history">{t('nav.history')}</Link>
+            <Link href="/analytics">{t('nav.analytics')}</Link>
+            <Link href="/account">{t('nav.account')}</Link>
+          </nav>
+
+          <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
             <TradePoliceShield />
             <KeyboardShortcuts />
             <SignOutButton />
           </div>
         </div>
 
-        <div className="client-greeting-row client-shell-top">
-          <div className="client-greeting personal-greeting">
-            <strong>{greeting(new Date().getHours(), t)}, {displayName}.</strong>
+        <div className="context-bar compact-context-bar canonical-context-bar">
+          <div className="context-copy canonical-context-copy">
+            <span className="eyebrow">{eyebrow}</span>
             <small>{description}</small>
           </div>
-        </div>
-
-        <nav className="primary-nav shell-primary-nav" aria-label={t('nav.primary')}>
-          <Link href="/dashboard">{t('nav.dashboard')}</Link>
-          <Link href="/validate">{t('nav.decision')}</Link>
-          <Link href="/active-trade">{t('nav.activeTrade') || 'Active Trade'}{activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}</Link>
-          <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
-          <Link href="/profile">{t('nav.strategies')}</Link>
-          <Link href="/history">{t('nav.history')}</Link>
-          <Link href="/analytics">{t('nav.analytics')}</Link>
-          <Link href="/account">{t('nav.account')}</Link>
-        </nav>
-
-        <div className="context-bar compact-context-bar">
-          <div className="context-copy">
-            <span className="eyebrow">{eyebrow}</span>
-            <h1>{t('header.context')}</h1>
-          </div>
-          <div className="context-switchers compact-switchers">
+          <div className="context-switchers compact-switchers canonical-context-switchers">
             <ActiveAccountSwitcher />
             <ActiveStrategySwitcher />
           </div>
