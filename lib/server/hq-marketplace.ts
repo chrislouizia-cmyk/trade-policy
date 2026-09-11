@@ -6,13 +6,14 @@ import type {MarketplaceListingSummary,MarketplaceReleasePreview} from '@/lib/ma
 
 export async function getHQMarketplaceContext(){
   const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)redirect('/hq/login');
-  const [{data:owner},{data:sales},{data:compliance},{data:role},{data:permissions}]=await Promise.all([
-    supabase.rpc('is_owner'),supabase.rpc('has_staff_permission',{p_permission:'sales.view'}),supabase.rpc('has_staff_permission',{p_permission:'compliance.view'}),supabase.rpc('current_staff_role'),supabase.rpc('current_staff_permissions'),
+  const [{data:allowed},{data:role},{data:permissions}]=await Promise.all([
+    supabase.rpc('has_staff_permission',{p_permission:'marketplace.lab'}),
+    supabase.rpc('current_staff_role'),
+    supabase.rpc('current_staff_permissions'),
   ]);
-  if(!(owner||sales||compliance))redirect('/hq/login?error=access');
+  if(!role||!allowed)redirect('/hq/login?error=access');
   const marketplacePermissions=(permissions??[]).map((row:any)=>String(row.permission_key));
-  marketplacePermissions.push('marketplace.lab');
-  return {supabase,user,role:String(role??'HQ'),displayName:await getUserDisplayName(supabase,user),permissions:marketplacePermissions};
+  return {supabase,user,role:String(role),displayName:await getUserDisplayName(supabase,user),permissions:marketplacePermissions};
 }
 
 const strings=(value:unknown)=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string').slice(0,12):[];
