@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import AppHeader from '@/components/AppHeader';
 import AffiliateShareLink from '@/components/AffiliateShareLink';
 import { getUserDisplayName } from '@/lib/user-display-name';
@@ -24,28 +23,7 @@ async function applyForAffiliate() {
 
   if (!user) redirect('/client/login?next=/account/affiliate');
 
-  const admin = createAdminClient();
-
-  const { data: existing, error: existingError } = await admin
-    .from('affiliate_profiles')
-    .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (existingError) throw new Error('Unable to verify affiliate application.');
-  if (existing) {
-    revalidatePath('/account/affiliate');
-    return;
-  }
-
-  const referralCode =
-    `TP${user.id.replaceAll('-', '').slice(0, 12)}`.toUpperCase();
-
-  const { error } = await admin.from('affiliate_profiles').insert({
-    user_id: user.id,
-    status: 'PENDING',
-    referral_code: referralCode,
-  });
+  const { error } = await supabase.rpc('apply_for_affiliate');
 
   if (error) throw new Error('Unable to create affiliate application.');
 
@@ -114,13 +92,11 @@ export default async function AffiliateAccountPage() {
     );
   }
 
-  const admin = createAdminClient();
-
   const [
     { data: referrals },
     { data: balances },
     { data: payouts },
-    { count: clicks },
+    { data: clicks },
   ] = await Promise.all([
       supabase
         .from('affiliate_referrals')
@@ -135,12 +111,9 @@ export default async function AffiliateAccountPage() {
         .eq('affiliate_id', affiliate.id)
         .order('created_at', { ascending: false })
         .limit(5),
-      admin
-        .from('affiliate_referral_touches')
-        .select('id', { count: 'exact', head: true })
-        .eq('affiliate_id', affiliate.id)
-        .eq('is_active', true)
-        .eq('is_self_referral', false),
+      supabase.rpc('affiliate_click_count', {
+        p_affiliate_id: affiliate.id,
+      }),
     ]);
 
   const referralRows = referrals ?? [];

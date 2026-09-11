@@ -57,8 +57,8 @@ test('affiliate dashboard exposes the real referral route', () => {
 });
 
 test('affiliate dashboard counts persisted first touches', () => {
-  assert.match(dashboard, /affiliate_referral_touches/);
-  assert.match(dashboard, /count: 'exact'/);
+  assert.match(dashboard, /rpc\('affiliate_click_count'/);
+  assert.doesNotMatch(dashboard, /affiliate_referral_touches/);
 });
 
 const foundation = fs.readFileSync(
