@@ -14,7 +14,7 @@ import {getRequestLocale} from '@/lib/i18n/server';
 import {getScreenCopy} from '@/lib/i18n/screen-copy';
 
 function LoginSurface({copy,next,mode}:{copy:ReturnType<typeof getScreenCopy>['auth'];next:string;mode:'login'|'signup'}) {
-  return <main className="auth-page client-login-page"><section className="auth-card portal-auth-card"><Image src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} priority/><span className="eyebrow">TRADE POLICE</span><h1>{copy.signIn}</h1><p>{copy.customerIntro}</p><ClientLoginForm next={next} initialMode={mode}/></section></main>;
+  return <main className="auth-page client-login-page"><section className="auth-card portal-auth-card"><Image src="/brand/trade-police-logo.png" alt="Trade Police" className="brand-logo-wordmark brand-logo-header" width={220} height={46} priority/><span className="eyebrow">TRADE POLICE</span><h1>{mode === 'signup' ? copy.create : copy.signIn}</h1><p>{copy.customerIntro}</p><ClientLoginForm next={next} initialMode={mode}/></section></main>;
 }
 
 export default async function ClientLoginPage({
