@@ -318,7 +318,7 @@ export async function POST(request:Request) {
 
   console.log(`APP_SOURCE_STRATEGY_REVISION_ID=${sourceStrategyRevisionId}`);
 
-  const { data: creationResult, error: creationError } = await supabase.rpc('create_internal_marketplace_release_v1', {
+  const { data: creationResult, error: creationError } = await supabase.rpc('staff_create_internal_marketplace_release_v2', {
     p_strategy_profile_id: sourceProfile.id,
     p_source_strategy_revision_id: sourceStrategyRevisionId,
     p_canonical_strategy_text: canonicalStrategyText,

@@ -35,15 +35,15 @@ export async function GET(_request:Request,{params}:{params:Promise<{listingId:s
 export async function PATCH(request:Request,{params}:{params:Promise<{listingId:string}>}){
   try{
     const context=await getHQMarketplaceContext();const {listingId}=await params;
-    const canReview=context.permissions.includes('compliance.view')||Boolean((await context.supabase.rpc('is_owner')).data);
-    if(!canReview)return NextResponse.json({error:'Compliance review permission required.'},{status:403});
+    const canReview=context.permissions.includes('compliance.manage');
+    if(!canReview)return NextResponse.json({error:'Compliance management permission required.'},{status:403});
     const body=await request.json().catch(()=>({}));const next=String(body.reviewStatus??'');const note=typeof body.note==='string'?body.note.trim().slice(0,1000):'';
     const admin=createAdminClient();const {data:current}=await admin.from('marketplace_listings').select('release_id,review_status').eq('id',listingId).single();
     if(!current)return NextResponse.json({error:'Marketplace listing not found.'},{status:404});
     if(!(transitions[current.review_status]??[]).includes(next))return NextResponse.json({error:`Transition from ${current.review_status} to ${next} is not allowed.`},{status:409});
     if((next==='APPROVED'||next==='REJECTED')&&!note)return NextResponse.json({error:'A review note is required.'},{status:400});
-    const {error:transitionError}=await admin.rpc('staff_marketplace_transition_listing',{
-      p_listing_id:listingId,p_review_status:next,p_note:note,p_actor_user_id:context.user.id,
+    const {error:transitionError}=await context.supabase.rpc('staff_review_marketplace_listing_v1',{
+      p_listing_id:listingId,p_review_status:next,p_note:note,
     });
     if(transitionError)throw transitionError;
     return NextResponse.json({ok:true,reviewStatus:next},{headers:{'Cache-Control':'private, no-store'}});

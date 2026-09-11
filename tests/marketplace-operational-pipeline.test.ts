@@ -33,7 +33,7 @@ test('Marketplace UI synchronizes every strategy and links cards by listing iden
 test('release review and installation are usable from a sanitized detail screen',()=>{
   const api=read('app/api/hq/marketplace/[listingId]/route.ts');const detail=read('components/hq/MarketplaceReleaseDetail.tsx');
   assert.doesNotMatch(api,/snapshot_json/);assert.match(api,/allowedTransitions/);assert.match(api,/refresh_marketplace_release_verified_metrics/);
-  assert.match(api,/staff_marketplace_transition_listing/);assert.match(migration,/callers cannot leave a half-reviewed listing/);
+  assert.match(api,/staff_review_marketplace_listing_v1/);assert.match(migration,/callers cannot leave a half-reviewed listing/);
   assert.match(detail,/Install internal test license/);assert.match(detail,/COMPLIANCE GATE/);assert.match(detail,/APPEND-ONLY AUDIT/);
 });
 
