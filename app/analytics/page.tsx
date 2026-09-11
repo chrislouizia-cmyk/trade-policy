@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function AnalyticsPage(){
- const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)redirect('/login');
+ const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)redirect('/client/login?next=/analytics');
  const [displayName,locale]=await Promise.all([getUserDisplayName(s,user),getRequestLocale()]);
  const c=getScreenCopy(locale).analytics;
  const [accountResult, tradeResult]=await Promise.all([

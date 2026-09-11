@@ -10,7 +10,7 @@ import {workspaceText} from '@/lib/i18n/workspace-copy';
 export default async function ProfilePage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user) redirect('/client/login?next=/profile');
   const [displayName,locale] = await Promise.all([getUserDisplayName(supabase, user),getRequestLocale()]);
   const planCode = (await getBillingState(user.id)).plan;
   return <main className="container builder-container"><AppHeader eyebrow={workspaceText(locale,'TRADE POLICE / TRADING RULES')} displayName={displayName} description={workspaceText(locale,'Define what Trade Police must check before you risk money.')} userId={user.id} /><StrategyBuilder userId={user.id} planCode={planCode} /></main>;

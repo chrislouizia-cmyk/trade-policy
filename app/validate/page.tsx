@@ -13,7 +13,7 @@ export default async function ValidatePage({ searchParams }: { searchParams: Pro
   const params = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user) redirect('/client/login?next=/validate');
   const [displayName,locale] = await Promise.all([getUserDisplayName(supabase, user),getRequestLocale()]);
   const c=getScreenCopy(locale).decision;
   const strategyId = params.strategy?.trim();
