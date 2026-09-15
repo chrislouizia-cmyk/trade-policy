@@ -4,6 +4,7 @@ import FeedbackWidget from '@/components/FeedbackWidget';
 import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import MobileBottomNav from '@/components/MobileBottomNav';
 import { createClient } from '@/lib/supabase/server';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -84,6 +85,8 @@ export default async function AppHeader({
           </div>
         ) : null}
       </header>
+
+      <MobileBottomNav activeTradeCount={activeTradeCount} />
       <FeedbackWidget userId={userId} />
     </>
   );

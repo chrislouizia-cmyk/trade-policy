@@ -1,6 +1,7 @@
 import './trade-police.css';
 import './product-premium.css';
 import './hq-premium.css';
+import './mobile-shell.css';
 import type { Metadata } from 'next';
 import AppFooter from '@/components/AppFooter';
 import LocaleProvider from '@/components/i18n/LocaleProvider';
