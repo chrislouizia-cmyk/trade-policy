@@ -83,11 +83,28 @@ test('mobile authenticated surfaces respect iPhone safe areas and dense content 
   assert.match(mobileCss,/overscroll-behavior: contain/);
 });
 
-test('mobile header uses a compact mark and two-column context controls',()=>{
+test('mobile header uses the transparent wordmark and progressive context controls',()=>{
   assert.match(header,/mobile-shell-brand/);
-  assert.match(header,/trade-police-mark-128\.png/);
+  assert.match(header,/trade-police-logo\.png/);
   assert.match(mobileCss,/\.canonical-shell-brand\s*\{[\s\S]*display: none !important/);
-  assert.match(mobileCss,/\.canonical-context-switchers\s*\{[\s\S]*grid-template-columns: repeat\(2/);
+  assert.match(header,/<details className="context-bar compact-context-bar canonical-context-bar">/);
+  assert.match(header,/Trading context/);
+  assert.match(mobileCss,/\.canonical-context-bar:not\(\[open\]\) \.canonical-context-switchers/);
+});
+
+test('mobile dashboard leads with one primary action and progressively discloses education',()=>{
+  assert.match(dashboardComponent,/dashboard-mobile-disclosure/);
+  assert.match(dashboardComponent,/How decisions work/);
+  assert.match(mobileCss,/\.dashboard-hero-copy > \.eyebrow/);
+  assert.match(mobileCss,/\.compact-dashboard-grid\s*\{[\s\S]*repeat\(2/);
+  assert.match(mobileCss,/\.workspace-summary\s*\{[\s\S]*display: none !important/);
+});
+
+test('mobile visual system is flat calm and edge anchored',()=>{
+  assert.match(mobileCss,/--mobile-surface:/);
+  assert.match(mobileCss,/background: var\(--mobile-surface\) !important/);
+  assert.match(mobileCss,/box-shadow: none !important/);
+  assert.match(mobileCss,/\.mobile-bottom-nav\s*\{[\s\S]*left: 0;[\s\S]*right: 0;[\s\S]*bottom: 0;/);
 });
 
 test('active trade is forced to one contained column on customer mobile',()=>{

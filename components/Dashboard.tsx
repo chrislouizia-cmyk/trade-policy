@@ -26,16 +26,22 @@ export default function Dashboard(p: Props) {
       <div className="dashboard-hero-actions"><a className="button-link primary dashboard-primary-action" href="/validate">{w('Check a setup')}</a><a className="button-link secondary dashboard-secondary-action" href="/active-trade">{w('Review active trade')}</a></div>
     </section>
 
-    {!setupComplete&&<OnboardingChecklist hasAccount={Boolean(p.account)} hasStrategy={Boolean(p.strategy)} hasTrade={p.hasTrade} locale={p.locale}/>}
-    <PrivateBetaCard />
-    <DecisionStateGuide locale={p.locale}/>
-
     <div className="grid grid-4 metric-grid compact-dashboard-grid">
       <Card label={w('Active account')} value={p.account?p.account.name:w('Not configured')} sub={p.account?`${p.account.currency} ${Number(p.account.current_balance).toLocaleString(p.locale)}`:w('Create an account to calculate risk')} href="/accounts"/>
       <Card label={w('Active strategy')} value={p.strategy?.name??w('Not configured')} sub={p.strategy?w('Rules used for every new decision'):w('Choose or create your trading rules')} href="/profile"/>
       <Card label={w('Open trades')} value={String(p.openTrades)} sub={w('Under active supervision')} href="/active-trade"/>
-      {p.closedTradesToday>0?<Card label={w('Today')} value={`${p.todayPnl>=0?'+':''}$${p.todayPnl.toFixed(2)}`} sub={`${p.wins} ${w('wins')} · ${p.losses} ${w('losses')} · ${p.discipline}% ${w('rules followed')}`}/>:<Card label={w('Today')} value={w('No closed trades')} sub={w('Results appear after you close a recorded trade')}/>}
+      {p.closedTradesToday>0
+        ? <Card label={w('Today')} value={`${p.todayPnl>=0?'+':''}$${p.todayPnl.toFixed(2)}`} sub={`${p.wins} ${w('wins')} · ${p.losses} ${w('losses')} · ${p.discipline}% ${w('rules followed')}`}/>
+        : <Card label={w('Today')} value={w('No closed trades')} sub={w('Results appear after you close a recorded trade')}/>
+      }
     </div>
+
+    {!setupComplete&&<OnboardingChecklist hasAccount={Boolean(p.account)} hasStrategy={Boolean(p.strategy)} hasTrade={p.hasTrade} locale={p.locale}/>}
+    <PrivateBetaCard />
+    <details className="dashboard-mobile-disclosure">
+      <summary>{w('How decisions work')}<span aria-hidden="true">›</span></summary>
+      <DecisionStateGuide locale={p.locale}/>
+    </details>
 
     <div className="card quick-actions">
       <div className="section-title"><div><span className="eyebrow">{w('NEXT MOVE')}</span><h2>{w('Workspace actions')}</h2></div></div>

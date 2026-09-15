@@ -53,13 +53,11 @@ export default async function AppHeader({
 
           <Link href="/dashboard" className="mobile-shell-brand" aria-label="Trade Police home">
             <Image
-              src="/brand/trade-police-mark-128.png"
-              alt=""
-              width={34}
-              height={34}
-              aria-hidden="true"
+              src="/brand/trade-police-logo.png"
+              alt="Trade Police"
+              width={148}
+              height={38}
             />
-            <strong>Trade Police</strong>
           </Link>
 
           <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
@@ -84,7 +82,12 @@ export default async function AppHeader({
         </nav>
 
         {showContext ? (
-          <div className="context-bar compact-context-bar canonical-context-bar">
+          <details className="context-bar compact-context-bar canonical-context-bar">
+            <summary className="mobile-context-summary">
+              <span>Trading context</span>
+              <small>Account &amp; strategy</small>
+              <b aria-hidden="true">⌄</b>
+            </summary>
             <div className="context-copy canonical-context-copy">
               <span className="eyebrow">{eyebrow}</span>
               <small>{description}</small>
@@ -93,7 +96,7 @@ export default async function AppHeader({
               <ActiveAccountSwitcher />
               <ActiveStrategySwitcher />
             </div>
-          </div>
+          </details>
         ) : null}
       </header>
 
