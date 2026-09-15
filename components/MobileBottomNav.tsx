@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import SignOutButton from '@/components/SignOutButton';
 
 type MobileBottomNavProps = {
   activeTradeCount?: number;
@@ -46,6 +47,7 @@ function isRouteActive(pathname: string, href: string) {
 export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMoreOpen(false);
@@ -55,8 +57,14 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
     if (!moreOpen) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previous;
+      window.removeEventListener('keydown', closeOnEscape);
     };
   }, [moreOpen]);
 
@@ -78,6 +86,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
                 <h2>More</h2>
               </div>
               <button
+                ref={closeButtonRef}
                 type="button"
                 className="mobile-more-close"
                 onClick={() => setMoreOpen(false)}
@@ -98,6 +107,9 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
                 </Link>
               ))}
             </nav>
+            <div className="mobile-more-session">
+              <SignOutButton />
+            </div>
           </section>
         </div>
       ) : null}

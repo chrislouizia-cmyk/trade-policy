@@ -390,6 +390,24 @@
     font-weight: 400;
   }
 
+  .mobile-more-session {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+
+  .mobile-more-session .sign-out-control,
+  .mobile-more-session .sign-out-control button {
+    width: 100%;
+  }
+
+  .mobile-more-session .sign-out-control button {
+    min-height: 48px;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 14px;
+    background: rgba(255,255,255,.035);
+  }
+
   /* Floating feedback cannot sit on top of mobile primary navigation. */
   .feedback-widget,
   .feedback-trigger,

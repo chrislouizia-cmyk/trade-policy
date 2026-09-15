@@ -8,6 +8,9 @@ const dashboardComponent=fs.readFileSync('components/Dashboard.tsx','utf8');
 const validate=fs.readFileSync('app/validate/page.tsx','utf8');
 const activeTrade=fs.readFileSync('app/active-trade/page.tsx','utf8');
 const css=fs.readFileSync('app/product-premium.css','utf8');
+const mobile=fs.readFileSync('components/MobileBottomNav.tsx','utf8');
+const mobileCss=fs.readFileSync('app/mobile-shell.css','utf8');
+const layout=fs.readFileSync('app/layout.tsx','utf8');
 
 test('context exists only on Dashboard Decision and Active Trade',()=>{
   assert.match(dashboard,/showContext/);
@@ -46,4 +49,18 @@ test('account strategy and user controls remain untouched in AppHeader',()=>{
   assert.match(header,/<TradePoliceShield \/>/);
   assert.match(header,/<KeyboardShortcuts \/>/);
   assert.match(header,/<SignOutButton \/>/);
+});
+
+test('mobile navigation remains a responsive child of the canonical shell',()=>{
+  assert.match(header,/<MobileBottomNav activeTradeCount=\{activeTradeCount\} \/>/);
+  assert.match(layout,/import '\.\/mobile-shell\.css'/);
+  assert.match(mobileCss,/@media \(max-width: 760px\)/);
+  assert.match(mobileCss,/\.canonical-visible-nav\s*\{[\s\S]*display: none !important/);
+});
+
+test('mobile More preserves account access and a visible sign-out path',()=>{
+  for(const href of ['/profile','/analytics','/accounts','/account']) assert.match(mobile,new RegExp(`href: '${href}'`));
+  assert.match(mobile,/<SignOutButton \/>/);
+  assert.match(mobile,/event\.key === 'Escape'/);
+  assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
