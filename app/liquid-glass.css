@@ -12,7 +12,7 @@ body:has(.mobile-bottom-nav) {
     radial-gradient(circle at 88% 28%, rgba(86, 125, 245, .14), transparent 34rem),
     radial-gradient(circle at 46% 92%, rgba(56, 190, 213, .08), transparent 32rem),
     #06090e;
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 body:has(.mobile-bottom-nav) .canonical-app-shell,
@@ -34,6 +34,9 @@ body:has(.mobile-bottom-nav) .market-position-chart-shell {
 }
 
 body:has(.mobile-bottom-nav) .canonical-app-shell {
+  position: relative;
+  z-index: 40;
+  isolation: isolate;
   overflow: visible;
   border-radius: 24px !important;
   background:
@@ -78,105 +81,94 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
   outline-offset: 2px;
 }
 
-/* Desktop and iPad: four core destinations, secondary tools in one glass menu. */
-.canonical-visible-nav {
-  position: relative;
-  display: grid !important;
-  grid-template-columns: repeat(4, minmax(96px, 1fr)) auto !important;
-  gap: 5px !important;
-  overflow: visible !important;
-}
+/* Desktop and iPad: every destination remains visible in one complete row. */
+@media (min-width: 761px) {
+  .canonical-visible-nav {
+    position: relative;
+    display: grid !important;
+    grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+    overflow: visible !important;
+    flex-wrap: nowrap !important;
+  }
 
-.canonical-visible-nav > a,
-.desktop-more-nav > summary {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 8px 13px;
-  border-radius: 10px;
-  color: #aab3c0;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  list-style: none;
-}
+  .canonical-visible-nav > a {
+    min-width: 0 !important;
+    min-height: 40px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 8px 6px !important;
+    border-radius: 10px;
+    color: #aab3c0 !important;
+    font-size: clamp(9px, .78vw, 11px) !important;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    white-space: nowrap;
+  }
 
-.desktop-more-nav > summary::-webkit-details-marker { display: none; }
-.canonical-visible-nav > a.active,
-.desktop-more-nav.active > summary,
-.desktop-more-nav[open] > summary {
-  background: rgba(255, 255, 255, .095) !important;
-  color: #fff !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 8px 20px rgba(0, 0, 0, .14) !important;
+  .canonical-visible-nav > a.active {
+    background: rgba(255, 255, 255, .095) !important;
+    color: #fff !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 8px 20px rgba(0, 0, 0, .14) !important;
+  }
 }
-
-.desktop-more-nav { position: relative; }
-.desktop-more-nav > summary span { transition: transform .18s ease; }
-.desktop-more-nav[open] > summary span { transform: rotate(180deg); }
-.desktop-more-nav > div {
-  position: absolute;
-  top: calc(100% + 9px);
-  right: 0;
-  z-index: 120;
-  display: grid;
-  gap: 5px;
-  width: 250px;
-  padding: 8px;
-  border: 1px solid var(--glass-line);
-  border-radius: 18px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, .075), transparent 35%),
-    rgba(8, 13, 20, .9);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 28px 70px rgba(0, 0, 0, .48);
-  backdrop-filter: blur(34px) saturate(160%);
-  -webkit-backdrop-filter: blur(34px) saturate(160%);
-}
-
-.desktop-more-nav > div a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 12px;
-  border-radius: 12px;
-}
-.desktop-more-nav > div a:hover,
-.desktop-more-nav > div a.active { background: rgba(255, 255, 255, .075); }
-.desktop-more-nav > div a span { display: grid; gap: 3px; }
-.desktop-more-nav > div a small { color: #8f99a8; font-size: 10px; font-weight: 500; }
-.desktop-more-nav > div a b { color: #8994a4; font-size: 18px; }
 
 @media (min-width: 761px) and (max-width: 1024px) {
   body:has(.mobile-bottom-nav) .container { width: min(100% - 28px, 1480px); }
   body:has(.mobile-bottom-nav) .canonical-app-shell { border-radius: 20px !important; }
-  .canonical-visible-nav { grid-template-columns: repeat(4, minmax(0, 1fr)) auto !important; }
-  .canonical-visible-nav > a,
-  .desktop-more-nav > summary { padding-inline: 9px; font-size: 11px; }
+  .canonical-visible-nav { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }
+  .canonical-visible-nav > a {
+    padding-inline: 3px !important;
+    font-size: 9px !important;
+    letter-spacing: -.01em !important;
+  }
 }
 
-/* iPhone: only the three core actions remain visible. */
+/* iPhone: a swipeable Liquid Glass rail keeps the first actions obvious. */
 @media (max-width: 760px) {
+  .canonical-visible-nav { display: none !important; }
+
   body:has(.mobile-bottom-nav) {
     --glass-shadow: 0 18px 46px rgba(0, 0, 0, .24);
+    background-attachment: scroll;
   }
-  body:has(.mobile-bottom-nav) .canonical-app-shell,
+
+  body:has(.mobile-bottom-nav) .canonical-app-shell {
+    border-radius: 18px !important;
+    backdrop-filter: blur(24px) saturate(145%);
+    -webkit-backdrop-filter: blur(24px) saturate(145%);
+  }
+
   body:has(.mobile-bottom-nav) .card,
   body:has(.mobile-bottom-nav) .trade-list,
   body:has(.mobile-bottom-nav) .monitor-hero,
   body:has(.mobile-bottom-nav) .decision-state-guide,
   body:has(.mobile-bottom-nav) .market-position-chart-shell {
     border-radius: 18px !important;
-    backdrop-filter: blur(24px) saturate(145%);
-    -webkit-backdrop-filter: blur(24px) saturate(145%);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
   .mobile-bottom-nav {
     left: max(10px, env(safe-area-inset-left)) !important;
     right: max(10px, env(safe-area-inset-right)) !important;
     bottom: max(8px, env(safe-area-inset-bottom)) !important;
     width: auto !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 4px !important;
+    grid-template-columns: none !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 7px;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
     padding: 7px !important;
     border: 1px solid var(--glass-line) !important;
     border-radius: 24px !important;
@@ -187,8 +179,20 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
     backdrop-filter: blur(34px) saturate(165%) !important;
     -webkit-backdrop-filter: blur(34px) saturate(165%) !important;
   }
+  .mobile-bottom-nav::-webkit-scrollbar { display: none; }
   .mobile-bottom-nav > a,
-  .mobile-bottom-nav > button { border-radius: 17px !important; }
+  .mobile-bottom-nav > button {
+    flex: 0 0 76px !important;
+    width: 76px !important;
+    min-width: 76px !important;
+    border-radius: 17px !important;
+    scroll-snap-align: start;
+  }
+  .mobile-bottom-nav > .mobile-nav-secondary {
+    flex-basis: 82px !important;
+    width: 82px !important;
+    min-width: 82px !important;
+  }
   .mobile-bottom-nav > .active { background: rgba(255, 255, 255, .1) !important; }
   .mobile-more-sheet {
     border-color: var(--glass-line) !important;
@@ -204,8 +208,7 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
   body:has(.mobile-bottom-nav) .canonical-app-shell,
   body:has(.mobile-bottom-nav) .card,
   body:has(.mobile-bottom-nav) .mobile-bottom-nav,
-  body:has(.mobile-bottom-nav) .mobile-more-sheet,
-  body:has(.mobile-bottom-nav) .desktop-more-nav > div {
+  body:has(.mobile-bottom-nav) .mobile-more-sheet {
     background: #101720 !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;

@@ -17,11 +17,11 @@ const primaryItems = [
 ] as const;
 
 const moreItems = [
-  { href: '/history', labelKey: 'nav.history', descriptionKey: 'nav.journalDescription' },
-  { href: '/profile', labelKey: 'nav.strategies', descriptionKey: 'nav.strategiesDescription' },
-  { href: '/analytics', labelKey: 'nav.analytics', descriptionKey: 'nav.analyticsDescription' },
-  { href: '/accounts', labelKey: 'nav.tradingAccounts', descriptionKey: 'nav.accountsDescription' },
-  { href: '/account', labelKey: 'nav.account', descriptionKey: 'nav.settingsDescription' },
+  { href: '/history', labelKey: 'nav.history', descriptionKey: 'nav.journalDescription', icon: 'history' },
+  { href: '/profile', labelKey: 'nav.strategies', descriptionKey: 'nav.strategiesDescription', icon: 'strategies' },
+  { href: '/analytics', labelKey: 'nav.analytics', descriptionKey: 'nav.analyticsDescription', icon: 'performance' },
+  { href: '/accounts', labelKey: 'nav.tradingAccounts', descriptionKey: 'nav.accountsDescription', icon: 'accounts' },
+  { href: '/account', labelKey: 'nav.account', descriptionKey: 'nav.settingsDescription', icon: 'settings' },
 ] as const;
 
 function NavIcon({ name }: { name: string }) {
@@ -37,6 +37,18 @@ function NavIcon({ name }: { name: string }) {
   if (name === 'history') {
     return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7v5h5M5.7 16.8A8 8 0 1 0 5 8.2L4 12M12 8v4l3 2" /></svg>;
   }
+  if (name === 'strategies') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v4H5zM5 11h14v8H5zM8 14h8M8 17h5" /></svg>;
+  }
+  if (name === 'performance') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V12M12 19V5M19 19V9" /></svg>;
+  }
+  if (name === 'accounts') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12H4zM4 10h16M7 15h4" /></svg>;
+  }
+  if (name === 'settings') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></svg>;
+  }
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>;
 }
 
@@ -50,9 +62,14 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
   const { t } = useLocale();
   const [moreOpen, setMoreOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
+  const secondaryRouteActive = moreItems.some((item) => isRouteActive(pathname, item.href));
 
   useEffect(() => {
     setMoreOpen(false);
+    navigationRef.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [pathname]);
 
   useEffect(() => {
@@ -126,7 +143,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
         </div>
       ) : null}
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
+      <nav ref={navigationRef} className="mobile-bottom-nav" aria-label="Mobile primary navigation">
         {primaryItems.map((item) => {
           const active = isRouteActive(pathname, item.href);
           return (
@@ -147,13 +164,28 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
 
         <button
           type="button"
-          className={moreOpen ? 'active' : ''}
+          className={moreOpen || secondaryRouteActive ? 'active' : ''}
           onClick={() => setMoreOpen(true)}
           aria-expanded={moreOpen}
         >
           <span className="mobile-nav-icon"><NavIcon name="more" /></span>
           <span>{t('nav.more')}</span>
         </button>
+
+        {moreItems.map((item) => {
+          const active = isRouteActive(pathname, item.href);
+          return (
+            <Link
+              key={`rail-${item.href}`}
+              href={item.href}
+              className={`mobile-nav-secondary ${active ? 'active' : ''}`}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className="mobile-nav-icon"><NavIcon name={item.icon} /></span>
+              <span>{t(item.labelKey)}</span>
+            </Link>
+          );
+        })}
       </nav>
     </>
   );

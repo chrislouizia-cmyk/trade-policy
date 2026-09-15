@@ -33,12 +33,13 @@ test('dashboard welcome stays below the header to preserve geometry',()=>{
   assert.doesNotMatch(header,/canonical-dashboard-greeting/);
 });
 
-test('desktop navigation prioritizes four core destinations and groups secondary tools',()=>{
+test('desktop and iPad navigation keep every destination in one aligned row',()=>{
   assert.match(header,/<AppPrimaryNavigation activeTradeCount=\{activeTradeCount\} \/>/);
-  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history']) assert.match(primaryNav,new RegExp(`labelKey: '${key}'`));
-  for(const href of ['/profile','/analytics','/accounts','/account']) assert.match(primaryNav,new RegExp(`href: '${href}'`));
-  assert.match(primaryNav,/desktop-more-nav/);
-  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(96px, 1fr\)\) auto/);
+  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history','nav.strategies','nav.analytics','nav.tradingAccounts','nav.account']) {
+    assert.match(primaryNav,new RegExp(`labelKey: '${key}'`));
+  }
+  assert.doesNotMatch(primaryNav,/desktop-more-nav/);
+  assert.match(glassCss,/grid-template-columns: repeat\(8, minmax\(0, 1fr\)\) !important/);
 });
 
 test('premium polish is visual only and scoped to authenticated container',()=>{
@@ -71,14 +72,27 @@ test('mobile More preserves account access and a visible sign-out path',()=>{
   assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
 
-test('mobile navigation keeps only three core actions visible',()=>{
+test('mobile Liquid Glass rail exposes core actions first and secondary routes by swipe',()=>{
   assert.match(mobile,/labelKey: 'nav.decision'/);
   assert.match(mobile,/labelKey: 'nav.activeTrade'/);
   assert.match(mobile,/labelKey: 'nav.history'/);
   assert.match(mobile,/<h2>\{t\('nav.more'\)\}<\/h2>/);
   const primaryItems=mobile.match(/const primaryItems = \[([\s\S]*?)\] as const/)?.[1]??'';
   assert.doesNotMatch(primaryItems,/nav\.history/);
-  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(0, 1fr\)\) !important/);
+  assert.match(mobile,/mobile-nav-secondary/);
+  assert.match(mobile,/scrollIntoView\(\{ behavior: 'smooth', block: 'nearest', inline: 'center' \}\)/);
+  assert.match(glassCss,/overflow-x: auto !important/);
+  assert.match(glassCss,/scroll-snap-type: x proximity/);
+  assert.match(glassCss,/flex: 0 0 76px !important/);
+});
+
+test('last-loaded glass CSS cannot restore the desktop header navigation on iPhone',()=>{
+  assert.match(glassCss,/@media \(max-width: 760px\) \{[\s\S]*?\.canonical-visible-nav \{ display: none !important; \}/);
+});
+
+test('iPhone glass avoids Safari fixed-background and nested-card blur artifacts',()=>{
+  assert.doesNotMatch(glassCss,/background-attachment: fixed/);
+  assert.match(glassCss,/@media \(max-width: 760px\) \{[\s\S]*?body:has\(\.mobile-bottom-nav\) \.card,[\s\S]*?backdrop-filter: none !important/);
 });
 
 test('mobile shell styles are isolated from public authentication and HQ surfaces',()=>{
