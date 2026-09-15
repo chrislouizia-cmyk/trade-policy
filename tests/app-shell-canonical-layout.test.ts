@@ -67,6 +67,14 @@ test('mobile More preserves account access and a visible sign-out path',()=>{
   assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
 
+test('mobile navigation uses plain action language',()=>{
+  assert.match(mobile,/label: 'Check'/);
+  assert.match(mobile,/label: 'Trade'/);
+  assert.match(mobile,/label: 'Journal'/);
+  assert.match(mobile,/Everything else/);
+  assert.doesNotMatch(mobile,/label: 'Decision'/);
+});
+
 test('mobile shell styles are isolated from public authentication and HQ surfaces',()=>{
   assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.app-document-content/);
   assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.container/);
@@ -114,11 +122,18 @@ test('mobile dashboard leads with one primary action and progressively discloses
   assert.match(mobileCss,/\.workspace-summary\s*\{[\s\S]*display: none !important/);
 });
 
-test('mobile visual system is flat calm and edge anchored',()=>{
+test('mobile visual system is calm and edge anchored',()=>{
   assert.match(mobileCss,/--mobile-surface:/);
-  assert.match(mobileCss,/background: var\(--mobile-surface\) !important/);
-  assert.match(mobileCss,/box-shadow: none !important/);
+  assert.match(mobileCss,/background: linear-gradient\(145deg, rgba\(18,24,33,\.88\), rgba\(11,16,23,\.8\)\) !important/);
   assert.match(mobileCss,/\.mobile-bottom-nav\s*\{[\s\S]*left: 0;[\s\S]*right: 0;[\s\S]*bottom: 0;/);
+});
+
+test('mobile glass system keeps high-opacity readable surfaces',()=>{
+  assert.match(mobileCss,/--mobile-glass-strong: rgba\(8,13,20,\.92\)/);
+  assert.match(mobileCss,/backdrop-filter: blur\(22px\) saturate\(135%\)/);
+  assert.match(mobileCss,/backdrop-filter: blur\(28px\) saturate\(145%\)/);
+  assert.match(mobileCss,/inset 0 1px 0 var\(--mobile-glass-highlight\)/);
+  assert.match(mobileCss,/prefers-reduced-transparency: reduce/);
 });
 
 test('active trade is forced to one contained column on customer mobile',()=>{

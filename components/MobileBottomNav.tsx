@@ -11,16 +11,16 @@ type MobileBottomNavProps = {
 
 const primaryItems = [
   { href: '/dashboard', label: 'Home', icon: 'home' },
-  { href: '/validate', label: 'Decision', icon: 'decision' },
-  { href: '/active-trade', label: 'Active', icon: 'active' },
-  { href: '/history', label: 'History', icon: 'history' },
+  { href: '/validate', label: 'Check', icon: 'decision' },
+  { href: '/active-trade', label: 'Trade', icon: 'active' },
+  { href: '/history', label: 'Journal', icon: 'history' },
 ] as const;
 
 const moreItems = [
-  { href: '/profile', label: 'Strategies', description: 'Playbooks and trading rules' },
-  { href: '/analytics', label: 'Analytics', description: 'Performance and discipline' },
-  { href: '/accounts', label: 'Trading accounts', description: 'Risk accounts and balances' },
-  { href: '/account', label: 'Account', description: 'Plan, language and settings' },
+  { href: '/profile', label: 'Strategies', description: 'Choose or edit your trading rules' },
+  { href: '/analytics', label: 'Performance', description: 'See results and discipline' },
+  { href: '/accounts', label: 'Accounts', description: 'Balances and risk settings' },
+  { href: '/account', label: 'Settings', description: 'Plan, language and account' },
 ] as const;
 
 function NavIcon({ name }: { name: string }) {
@@ -83,7 +83,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
             <header>
               <div>
                 <span className="eyebrow">TRADE POLICE</span>
-                <h2>More</h2>
+                <h2>Everything else</h2>
               </div>
               <button
                 ref={closeButtonRef}

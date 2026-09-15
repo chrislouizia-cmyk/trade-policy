@@ -85,7 +85,7 @@ export default async function AppHeader({
           <details className="context-bar compact-context-bar canonical-context-bar" open={decisionFocused || undefined}>
             <summary className="mobile-context-summary">
               <span>Trading context</span>
-              <small>Account &amp; strategy</small>
+              <small>{decisionFocused ? 'Ready to change' : 'Tap to change'}</small>
               <b aria-hidden="true">⌄</b>
             </summary>
             <div className="context-copy canonical-context-copy">
