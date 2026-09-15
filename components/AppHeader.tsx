@@ -82,7 +82,7 @@ export default async function AppHeader({
         </nav>
 
         {showContext ? (
-          <details className="context-bar compact-context-bar canonical-context-bar">
+          <details className="context-bar compact-context-bar canonical-context-bar" open={decisionFocused || undefined}>
             <summary className="mobile-context-summary">
               <span>Trading context</span>
               <small>Account &amp; strategy</small>

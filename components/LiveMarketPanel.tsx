@@ -265,13 +265,15 @@ export default function LiveMarketPanel({
         </div>
         <strong>{selectedInstrument}</strong>
       </div>
-      <div className="market-chart-stage">
-        <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartVisible?'is-hidden':''}`} aria-hidden={analyzedChartVisible} inert={analyzedChartVisible?true:undefined}>
-          <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
+      <div className="market-chart-composition">
+        <div className="market-chart-stage">
+          <div className={`market-chart-layer market-chart-reference-layer ${analyzedChartVisible?'is-hidden':''}`} aria-hidden={analyzedChartVisible} inert={analyzedChartVisible?true:undefined}>
+            <TradingViewReferenceChart instrument={selectedInstrument} timeframe={chartTimeframe}/>
+          </div>
+          {hasCompleteChartSeries&&displayedCandles&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartVisible?'is-ready':''}`} aria-hidden={!analyzedChartVisible} inert={!analyzedChartVisible?true:undefined} data-chart-current={analyzedChartReady}>
+            <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={chartData?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={(renderedCandleCount)=>{if(renderedCandleCount>=MINIMUM_DECISION_CHART_CANDLES)setPaintedChartKey(chartDataKey)}} />
+          </div>:null}
         </div>
-        {hasCompleteChartSeries&&displayedCandles&&chartDataKey?<div className={`market-chart-layer market-chart-analysis-layer ${analyzedChartVisible?'is-ready':''}`} aria-hidden={!analyzedChartVisible} inert={!analyzedChartVisible?true:undefined} data-chart-current={analyzedChartReady}>
-          <TradingViewChart instrument={selectedInstrument} timeframe={chartTimeframe} seedCandles={displayedCandles} seedProvider={chartData?.provider??null} overlay={positionOverlay?.currentGeometry.instrument === selectedInstrument ? positionOverlay : null} onOverlayClick={() => document.getElementById('position-geometry-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} onDataReady={(renderedCandleCount)=>{if(renderedCandleCount>=MINIMUM_DECISION_CHART_CANDLES)setPaintedChartKey(chartDataKey)}} />
-        </div>:null}
         {activeTradeOverlay&&activeTradeGeometry?<aside className={`market-active-trade-overlay direction-${activeTradeGeometry.direction.toLowerCase()}`} aria-label={`Active ${activeTradeGeometry.direction} trade on ${selectedInstrument}`}>
           <div className="market-active-trade-heading"><span>Active trade</span><strong>{activeTradeGeometry.direction} · {selectedInstrument}</strong></div>
           <dl>

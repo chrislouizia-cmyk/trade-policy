@@ -2,7 +2,7 @@ import './trade-police.css';
 import './product-premium.css';
 import './hq-premium.css';
 import './mobile-shell.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';
 import LocaleProvider from '@/components/i18n/LocaleProvider';
 import LocaleSynchronizer from '@/components/i18n/LocaleSynchronizer';
@@ -18,6 +18,12 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.png?v=2026-08-20',
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

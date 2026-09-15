@@ -20,6 +20,10 @@
   display: grid;
 }
 
+.market-chart-composition {
+  position: relative;
+}
+
 /* Native details are progressive disclosure on mobile only. Keep the existing
    information architecture fully expanded for desktop users. */
 @media (min-width: 761px) {
@@ -51,6 +55,18 @@
     overflow-x: clip;
   }
 
+  body:has(.mobile-bottom-nav)::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 95;
+    height: env(safe-area-inset-top);
+    background: #070a0f;
+    pointer-events: none;
+  }
+
   body:has(.mobile-bottom-nav) .app-document-content {
     min-width: 0;
     padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 44px);
@@ -59,7 +75,7 @@
   body:has(.mobile-bottom-nav) .container {
     width: 100% !important;
     max-width: none !important;
-    padding: max(10px, env(safe-area-inset-top)) max(var(--mobile-page-gutter), env(safe-area-inset-right)) 24px max(var(--mobile-page-gutter), env(safe-area-inset-left)) !important;
+    padding: calc(env(safe-area-inset-top) + 10px) max(var(--mobile-page-gutter), env(safe-area-inset-right)) 24px max(var(--mobile-page-gutter), env(safe-area-inset-left)) !important;
     margin: 0 !important;
   }
 
@@ -243,6 +259,10 @@
 
   .canonical-context-bar:not([open]) .canonical-context-switchers {
     display: none !important;
+  }
+
+  .decision-focused-header .canonical-context-bar:not([open]) .canonical-context-switchers {
+    display: grid !important;
   }
 
   .canonical-context-switchers > * {
@@ -541,6 +561,75 @@
     padding-inline: 6px;
   }
 
+  /* The active position remains useful context, but it must never cover the
+     chart or its controls on a phone. */
+  body:has(.mobile-bottom-nav) .market-chart-composition {
+    display: grid;
+    gap: 10px;
+  }
+
+  body:has(.mobile-bottom-nav) .market-active-trade-overlay {
+    position: static !important;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    width: 100% !important;
+    padding: 12px !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  body:has(.mobile-bottom-nav) .market-active-trade-overlay dl {
+    grid-column: 1 / -1 !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  /* iOS full-page capture and fast scrolling must paint real journal rows,
+     not the large intrinsic placeholders used on desktop. */
+  body:has(.mobile-bottom-nav) .history-journal-row {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+  }
+
+  /* Strategy detail was inheriting the generic one-column button rule. Keep
+     the actions compact and let the content use natural page height. */
+  body:has(.mobile-bottom-nav) .strategy-detail-title-row h1 {
+    font-size: clamp(25px, 7vw, 31px) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-title-row .button-row {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-title-row .button-row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-title-row .button-row > *,
+  body:has(.mobile-bottom-nav) .strategy-detail-tabs > * {
+    min-height: 42px !important;
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-tabs > :disabled {
+    display: none;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-detail-panel,
+  body:has(.mobile-bottom-nav) .strategy-detail-tab-panel {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
   body:has(.mobile-bottom-nav) .event-row > div:last-child,
   body:has(.mobile-bottom-nav) .narrative-provenance {
     max-width: 100%;
@@ -601,7 +690,7 @@
     border: 0;
     border-top: 1px solid rgba(255,255,255,.1);
     border-radius: 18px 18px 0 0;
-    background: rgba(8, 12, 17, .92);
+    background: #080c11;
     box-shadow: 0 -12px 36px rgba(0,0,0,.28);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);

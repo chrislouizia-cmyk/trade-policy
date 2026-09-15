@@ -12,6 +12,7 @@ const mobile=fs.readFileSync('components/MobileBottomNav.tsx','utf8');
 const mobileCss=fs.readFileSync('app/mobile-shell.css','utf8');
 const layout=fs.readFileSync('app/layout.tsx','utf8');
 const feedback=fs.readFileSync('components/FeedbackWidget.tsx','utf8');
+const liveMarket=fs.readFileSync('components/LiveMarketPanel.tsx','utf8');
 
 test('context exists only on Dashboard Decision and Active Trade',()=>{
   assert.match(dashboard,/showContext/);
@@ -87,9 +88,22 @@ test('mobile header uses the transparent wordmark and progressive context contro
   assert.match(header,/mobile-shell-brand/);
   assert.match(header,/trade-police-logo\.png/);
   assert.match(mobileCss,/\.canonical-shell-brand\s*\{[\s\S]*display: none !important/);
-  assert.match(header,/<details className="context-bar compact-context-bar canonical-context-bar">/);
+  assert.match(header,/<details className="context-bar compact-context-bar canonical-context-bar" open=\{decisionFocused \|\| undefined\}>/);
   assert.match(header,/Trading context/);
   assert.match(mobileCss,/\.canonical-context-bar:not\(\[open\]\) \.canonical-context-switchers/);
+});
+
+test('iPhone viewport and overlays respect browser chrome and chart content',()=>{
+  assert.match(layout,/viewportFit: 'cover'/);
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\)::before/);
+  assert.match(liveMarket,/market-chart-composition/);
+  assert.match(mobileCss,/\.market-active-trade-overlay\s*\{[\s\S]*position: static !important/);
+});
+
+test('mobile history and strategy detail avoid blank and oversized inherited layouts',()=>{
+  assert.match(mobileCss,/\.history-journal-row\s*\{[\s\S]*content-visibility: visible !important/);
+  assert.match(mobileCss,/\.strategy-detail-tabs\s*\{[\s\S]*repeat\(3/);
+  assert.match(mobileCss,/\.strategy-detail-panel,[\s\S]*height: auto !important/);
 });
 
 test('mobile dashboard leads with one primary action and progressively discloses education',()=>{
