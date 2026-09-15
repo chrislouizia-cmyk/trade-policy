@@ -4,23 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import SignOutButton from '@/components/SignOutButton';
+import { useLocale } from '@/components/i18n/LocaleProvider';
 
 type MobileBottomNavProps = {
   activeTradeCount?: number;
 };
 
 const primaryItems = [
-  { href: '/dashboard', label: 'Home', icon: 'home' },
-  { href: '/validate', label: 'Check', icon: 'decision' },
-  { href: '/active-trade', label: 'Trade', icon: 'active' },
-  { href: '/history', label: 'Journal', icon: 'history' },
+  { href: '/dashboard', labelKey: 'nav.dashboard', icon: 'home' },
+  { href: '/validate', labelKey: 'nav.decision', icon: 'decision' },
+  { href: '/active-trade', labelKey: 'nav.activeTrade', icon: 'active' },
 ] as const;
 
 const moreItems = [
-  { href: '/profile', label: 'Strategies', description: 'Choose or edit your trading rules' },
-  { href: '/analytics', label: 'Performance', description: 'See results and discipline' },
-  { href: '/accounts', label: 'Accounts', description: 'Balances and risk settings' },
-  { href: '/account', label: 'Settings', description: 'Plan, language and account' },
+  { href: '/history', labelKey: 'nav.history', descriptionKey: 'nav.journalDescription' },
+  { href: '/profile', labelKey: 'nav.strategies', descriptionKey: 'nav.strategiesDescription' },
+  { href: '/analytics', labelKey: 'nav.analytics', descriptionKey: 'nav.analyticsDescription' },
+  { href: '/accounts', labelKey: 'nav.tradingAccounts', descriptionKey: 'nav.accountsDescription' },
+  { href: '/account', labelKey: 'nav.account', descriptionKey: 'nav.settingsDescription' },
 ] as const;
 
 function NavIcon({ name }: { name: string }) {
@@ -46,6 +47,7 @@ function isRouteActive(pathname: string, href: string) {
 
 export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const { t } = useLocale();
   const [moreOpen, setMoreOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -83,7 +85,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
             <header>
               <div>
                 <span className="eyebrow">TRADE POLICE</span>
-                <h2>Everything else</h2>
+                <h2>{t('nav.more')}</h2>
               </div>
               <button
                 ref={closeButtonRef}
@@ -100,8 +102,8 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
               {moreItems.map((item) => (
                 <Link key={item.href} href={item.href} className={isRouteActive(pathname, item.href) ? 'active' : ''}>
                   <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
+                    <strong>{t(item.labelKey)}</strong>
+                    <small>{t(item.descriptionKey)}</small>
                   </span>
                   <b aria-hidden="true">›</b>
                 </Link>
@@ -138,7 +140,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
                 <NavIcon name={item.icon} />
                 {item.href === '/active-trade' && activeTradeCount > 0 ? <i>{activeTradeCount}</i> : null}
               </span>
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
             </Link>
           );
         })}
@@ -150,7 +152,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
           aria-expanded={moreOpen}
         >
           <span className="mobile-nav-icon"><NavIcon name="more" /></span>
-          <span>More</span>
+          <span>{t('nav.more')}</span>
         </button>
       </nav>
     </>

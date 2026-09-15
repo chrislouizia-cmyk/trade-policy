@@ -10,6 +10,8 @@ const activeTrade=fs.readFileSync('app/active-trade/page.tsx','utf8');
 const css=fs.readFileSync('app/product-premium.css','utf8');
 const mobile=fs.readFileSync('components/MobileBottomNav.tsx','utf8');
 const mobileCss=fs.readFileSync('app/mobile-shell.css','utf8');
+const glassCss=fs.readFileSync('app/liquid-glass.css','utf8');
+const primaryNav=fs.readFileSync('components/AppPrimaryNavigation.tsx','utf8');
 const layout=fs.readFileSync('app/layout.tsx','utf8');
 const feedback=fs.readFileSync('components/FeedbackWidget.tsx','utf8');
 const liveMarket=fs.readFileSync('components/LiveMarketPanel.tsx','utf8');
@@ -31,10 +33,12 @@ test('dashboard welcome stays below the header to preserve geometry',()=>{
   assert.doesNotMatch(header,/canonical-dashboard-greeting/);
 });
 
-test('primary navigation stays explicit and fully visible',()=>{
-  assert.match(header,/canonical-visible-nav/);
-  assert.match(css,/flex-wrap:wrap!important/);
-  assert.match(css,/overflow:visible!important/);
+test('desktop navigation prioritizes four core destinations and groups secondary tools',()=>{
+  assert.match(header,/<AppPrimaryNavigation activeTradeCount=\{activeTradeCount\} \/>/);
+  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history']) assert.match(primaryNav,new RegExp(`labelKey: '${key}'`));
+  for(const href of ['/profile','/analytics','/accounts','/account']) assert.match(primaryNav,new RegExp(`href: '${href}'`));
+  assert.match(primaryNav,/desktop-more-nav/);
+  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(96px, 1fr\)\) auto/);
 });
 
 test('premium polish is visual only and scoped to authenticated container',()=>{
@@ -67,12 +71,14 @@ test('mobile More preserves account access and a visible sign-out path',()=>{
   assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
 
-test('mobile navigation uses plain action language',()=>{
-  assert.match(mobile,/label: 'Check'/);
-  assert.match(mobile,/label: 'Trade'/);
-  assert.match(mobile,/label: 'Journal'/);
-  assert.match(mobile,/Everything else/);
-  assert.doesNotMatch(mobile,/label: 'Decision'/);
+test('mobile navigation keeps only three core actions visible',()=>{
+  assert.match(mobile,/labelKey: 'nav.decision'/);
+  assert.match(mobile,/labelKey: 'nav.activeTrade'/);
+  assert.match(mobile,/labelKey: 'nav.history'/);
+  assert.match(mobile,/<h2>\{t\('nav.more'\)\}<\/h2>/);
+  const primaryItems=mobile.match(/const primaryItems = \[([\s\S]*?)\] as const/)?.[1]??'';
+  assert.doesNotMatch(primaryItems,/nav\.history/);
+  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(0, 1fr\)\) !important/);
 });
 
 test('mobile shell styles are isolated from public authentication and HQ surfaces',()=>{
@@ -134,6 +140,16 @@ test('mobile glass system keeps high-opacity readable surfaces',()=>{
   assert.match(mobileCss,/backdrop-filter: blur\(28px\) saturate\(145%\)/);
   assert.match(mobileCss,/inset 0 1px 0 var\(--mobile-glass-highlight\)/);
   assert.match(mobileCss,/prefers-reduced-transparency: reduce/);
+});
+
+test('liquid glass is shared by desktop iPad and iPhone authenticated surfaces',()=>{
+  assert.match(layout,/import '\.\/liquid-glass\.css'/);
+  assert.match(glassCss,/body:has\(\.mobile-bottom-nav\) \.canonical-app-shell/);
+  assert.match(glassCss,/body:has\(\.mobile-bottom-nav\) \.card/);
+  assert.match(glassCss,/min-width: 761px\) and \(max-width: 1024px/);
+  assert.match(glassCss,/@media \(max-width: 760px\)/);
+  assert.match(glassCss,/backdrop-filter: blur\(30px\) saturate\(155%\)/);
+  assert.match(glassCss,/prefers-reduced-transparency: reduce/);
 });
 
 test('active trade is forced to one contained column on customer mobile',()=>{

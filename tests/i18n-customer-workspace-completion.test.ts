@@ -19,12 +19,14 @@ test('dashboard, strategy creation, and trading accounts have Spanish and French
 
 test('trading accounts are permanently discoverable after onboarding',()=>{
   const header=read('components/AppHeader.tsx');
+  const navigation=read('components/AppPrimaryNavigation.tsx');
   const account=read('app/account/page.tsx');
   const accounts=read('components/TradingAccounts.tsx');
-  assert.equal(translate('es','nav.tradingAccounts'),'Cuentas de trading');
-  assert.match(header,/href="\/accounts">\{t\('nav\.tradingAccounts'\)\}/);
-  const navigationOrder=['/dashboard','/validate','/active-trade','/accounts','/profile','/history','/analytics','/account'];
-  navigationOrder.slice(1).forEach((href,index)=>assert.ok(header.indexOf(`href="${navigationOrder[index]}"`)<header.indexOf(`href="${href}"`)));
+  assert.equal(translate('es','nav.tradingAccounts'),'Cuentas');
+  assert.match(header,/AppPrimaryNavigation/);
+  assert.match(navigation,/href: '\/accounts'/);
+  const coreOrder=['/dashboard','/validate','/active-trade','/history'];
+  coreOrder.slice(1).forEach((href,index)=>assert.ok(navigation.indexOf(`href: '${coreOrder[index]}'`)<navigation.indexOf(`href: '${href}'`)));
   assert.match(account,/href="\/accounts"/);
   assert.match(accounts,/Add another account whenever you need one/);
   assert.match(accounts,/No broker login or password is required/);

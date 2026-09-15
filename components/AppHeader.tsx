@@ -5,6 +5,7 @@ import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import AppPrimaryNavigation from '@/components/AppPrimaryNavigation';
 import { createClient } from '@/lib/supabase/server';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -67,19 +68,7 @@ export default async function AppHeader({
           </div>
         </div>
 
-        <nav className="primary-nav shell-primary-nav canonical-shell-nav canonical-visible-nav" aria-label={t('nav.primary')}>
-          <Link href="/dashboard">{t('nav.dashboard')}</Link>
-          <Link href="/validate">{t('nav.decision')}</Link>
-          <Link href="/active-trade">
-            {t('nav.activeTrade') || 'Active Trade'}
-            {activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}
-          </Link>
-          <Link href="/accounts">{t('nav.tradingAccounts')}</Link>
-          <Link href="/profile">{t('nav.strategies')}</Link>
-          <Link href="/history">{t('nav.history')}</Link>
-          <Link href="/analytics">{t('nav.analytics')}</Link>
-          <Link href="/account">{t('nav.account')}</Link>
-        </nav>
+        <AppPrimaryNavigation activeTradeCount={activeTradeCount} />
 
         {showContext ? (
           <details className="context-bar compact-context-bar canonical-context-bar" open={decisionFocused || undefined}>

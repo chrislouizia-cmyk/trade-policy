@@ -33,6 +33,6 @@ test('all supported locales have a complete catalog', () => {
   for (const locale of SUPPORTED_LOCALES) {
     assert.deepEqual(Object.keys(messages[locale]).sort(), englishKeys);
   }
-  assert.equal(translate('es', 'nav.history'), 'Historial');
-  assert.equal(translate('fr', 'nav.analytics'), 'Analyses');
+  assert.equal(translate('es', 'nav.history'), 'Diario');
+  assert.equal(translate('fr', 'nav.analytics'), 'Performance');
 });

@@ -2,6 +2,7 @@ import './trade-police.css';
 import './product-premium.css';
 import './hq-premium.css';
 import './mobile-shell.css';
+import './liquid-glass.css';
 import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';
 import LocaleProvider from '@/components/i18n/LocaleProvider';

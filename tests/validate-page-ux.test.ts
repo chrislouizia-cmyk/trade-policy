@@ -81,7 +81,7 @@ test('Validate uses the canonical authenticated shell without restoring the lega
 
   assert.match(header, /<Link href="\/dashboard" className="app-brand canonical-shell-brand"/);
   assert.match(header, /canonical-shell-top/);
-  assert.match(header, /canonical-visible-nav/);
+  assert.match(header, /AppPrimaryNavigation/);
   assert.doesNotMatch(header, /Good morning|Good afternoon|Good evening/);
   assert.match(header, /No trade without evidence\./);
   assert.match(header, /KeyboardShortcuts/);

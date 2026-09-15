@@ -1,0 +1,213 @@
+/* Trade Police M2 — one authenticated Liquid Glass system across every viewport. */
+body:has(.mobile-bottom-nav) {
+  --glass-bg: rgba(15, 22, 31, .72);
+  --glass-bg-strong: rgba(9, 14, 21, .86);
+  --glass-bg-soft: rgba(255, 255, 255, .045);
+  --glass-line: rgba(255, 255, 255, .14);
+  --glass-line-soft: rgba(255, 255, 255, .075);
+  --glass-highlight: rgba(255, 255, 255, .09);
+  --glass-shadow: 0 22px 60px rgba(0, 0, 0, .28);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(70, 219, 190, .18), transparent 30rem),
+    radial-gradient(circle at 88% 28%, rgba(86, 125, 245, .14), transparent 34rem),
+    radial-gradient(circle at 46% 92%, rgba(56, 190, 213, .08), transparent 32rem),
+    #06090e;
+  background-attachment: fixed;
+}
+
+body:has(.mobile-bottom-nav) .canonical-app-shell,
+body:has(.mobile-bottom-nav) .card,
+body:has(.mobile-bottom-nav) .trade-list,
+body:has(.mobile-bottom-nav) .monitor-hero,
+body:has(.mobile-bottom-nav) .decision-state-guide,
+body:has(.mobile-bottom-nav) .market-position-chart-shell {
+  border: 1px solid var(--glass-line) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .075), transparent 34%),
+    linear-gradient(160deg, rgba(17, 25, 35, .82), rgba(8, 13, 20, .7)) !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 0 0 1px rgba(255, 255, 255, .018),
+    var(--glass-shadow) !important;
+  backdrop-filter: blur(30px) saturate(155%);
+  -webkit-backdrop-filter: blur(30px) saturate(155%);
+}
+
+body:has(.mobile-bottom-nav) .canonical-app-shell {
+  overflow: visible;
+  border-radius: 24px !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .09), transparent 32%),
+    var(--glass-bg-strong) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav,
+body:has(.mobile-bottom-nav) .canonical-context-bar,
+body:has(.mobile-bottom-nav) .decision-panel-metrics > div,
+body:has(.mobile-bottom-nav) .metric,
+body:has(.mobile-bottom-nav) .event-row,
+body:has(.mobile-bottom-nav) .strategy-list-item,
+body:has(.mobile-bottom-nav) .trade-list-item {
+  border-color: var(--glass-line-soft) !important;
+  background: var(--glass-bg-soft) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+body:has(.mobile-bottom-nav) button,
+body:has(.mobile-bottom-nav) .button-link,
+body:has(.mobile-bottom-nav) input,
+body:has(.mobile-bottom-nav) select,
+body:has(.mobile-bottom-nav) textarea {
+  border: 1px solid var(--glass-line-soft);
+  background: rgba(255, 255, 255, .055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045), 0 8px 24px rgba(0, 0, 0, .12);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+body:has(.mobile-bottom-nav) .primary,
+body:has(.mobile-bottom-nav) .button-link.primary {
+  border-color: rgba(255, 255, 255, .72) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(226, 238, 244, .91)) !important;
+  color: #071016 !important;
+  box-shadow: inset 0 1px 0 #fff, 0 12px 30px rgba(0, 0, 0, .22) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
+  outline: 3px solid rgba(105, 223, 201, .42);
+  outline-offset: 2px;
+}
+
+/* Desktop and iPad: four core destinations, secondary tools in one glass menu. */
+.canonical-visible-nav {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(96px, 1fr)) auto !important;
+  gap: 5px !important;
+  overflow: visible !important;
+}
+
+.canonical-visible-nav > a,
+.desktop-more-nav > summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  color: #aab3c0;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.desktop-more-nav > summary::-webkit-details-marker { display: none; }
+.canonical-visible-nav > a.active,
+.desktop-more-nav.active > summary,
+.desktop-more-nav[open] > summary {
+  background: rgba(255, 255, 255, .095) !important;
+  color: #fff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 8px 20px rgba(0, 0, 0, .14) !important;
+}
+
+.desktop-more-nav { position: relative; }
+.desktop-more-nav > summary span { transition: transform .18s ease; }
+.desktop-more-nav[open] > summary span { transform: rotate(180deg); }
+.desktop-more-nav > div {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 120;
+  display: grid;
+  gap: 5px;
+  width: 250px;
+  padding: 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .075), transparent 35%),
+    rgba(8, 13, 20, .9);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 28px 70px rgba(0, 0, 0, .48);
+  backdrop-filter: blur(34px) saturate(160%);
+  -webkit-backdrop-filter: blur(34px) saturate(160%);
+}
+
+.desktop-more-nav > div a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+}
+.desktop-more-nav > div a:hover,
+.desktop-more-nav > div a.active { background: rgba(255, 255, 255, .075); }
+.desktop-more-nav > div a span { display: grid; gap: 3px; }
+.desktop-more-nav > div a small { color: #8f99a8; font-size: 10px; font-weight: 500; }
+.desktop-more-nav > div a b { color: #8994a4; font-size: 18px; }
+
+@media (min-width: 761px) and (max-width: 1024px) {
+  body:has(.mobile-bottom-nav) .container { width: min(100% - 28px, 1480px); }
+  body:has(.mobile-bottom-nav) .canonical-app-shell { border-radius: 20px !important; }
+  .canonical-visible-nav { grid-template-columns: repeat(4, minmax(0, 1fr)) auto !important; }
+  .canonical-visible-nav > a,
+  .desktop-more-nav > summary { padding-inline: 9px; font-size: 11px; }
+}
+
+/* iPhone: only the three core actions remain visible. */
+@media (max-width: 760px) {
+  body:has(.mobile-bottom-nav) {
+    --glass-shadow: 0 18px 46px rgba(0, 0, 0, .24);
+  }
+  body:has(.mobile-bottom-nav) .canonical-app-shell,
+  body:has(.mobile-bottom-nav) .card,
+  body:has(.mobile-bottom-nav) .trade-list,
+  body:has(.mobile-bottom-nav) .monitor-hero,
+  body:has(.mobile-bottom-nav) .decision-state-guide,
+  body:has(.mobile-bottom-nav) .market-position-chart-shell {
+    border-radius: 18px !important;
+    backdrop-filter: blur(24px) saturate(145%);
+    -webkit-backdrop-filter: blur(24px) saturate(145%);
+  }
+  .mobile-bottom-nav {
+    left: max(10px, env(safe-area-inset-left)) !important;
+    right: max(10px, env(safe-area-inset-right)) !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    padding: 7px !important;
+    border: 1px solid var(--glass-line) !important;
+    border-radius: 24px !important;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, .08), transparent 38%),
+      rgba(7, 12, 18, .86) !important;
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 22px 60px rgba(0, 0, 0, .46) !important;
+    backdrop-filter: blur(34px) saturate(165%) !important;
+    -webkit-backdrop-filter: blur(34px) saturate(165%) !important;
+  }
+  .mobile-bottom-nav > a,
+  .mobile-bottom-nav > button { border-radius: 17px !important; }
+  .mobile-bottom-nav > .active { background: rgba(255, 255, 255, .1) !important; }
+  .mobile-more-sheet {
+    border-color: var(--glass-line) !important;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, .08), transparent 34%),
+      rgba(9, 15, 22, .9) !important;
+    backdrop-filter: blur(36px) saturate(165%) !important;
+    -webkit-backdrop-filter: blur(36px) saturate(165%) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body:has(.mobile-bottom-nav) .canonical-app-shell,
+  body:has(.mobile-bottom-nav) .card,
+  body:has(.mobile-bottom-nav) .mobile-bottom-nav,
+  body:has(.mobile-bottom-nav) .mobile-more-sheet,
+  body:has(.mobile-bottom-nav) .desktop-more-nav > div {
+    background: #101720 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}

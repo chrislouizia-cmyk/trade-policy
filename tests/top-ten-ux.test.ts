@@ -99,6 +99,7 @@ test('trade validator seeds required form fields before the final risk check can
 test('trade lifecycle uses explicit take and missed actions with source linkage',()=>{
   const validator=read('components/TradeValidator.tsx');
   const header=read('components/AppHeader.tsx');
+  const navigation=read('components/AppPrimaryNavigation.tsx');
   assert.match(validator,/setTradeActionMode\(activationUiState\.activationMode==='READY'\?'ACTIVATE':'OVERRIDE'\)/);
   assert.match(validator,/setTradeActionMode\('MISSED'\)/);
   assert.match(validator,/Take trade/);
@@ -106,8 +107,9 @@ test('trade lifecycle uses explicit take and missed actions with source linkage'
   assert.match(validator,/Mark as missed/);
   assert.match(validator,/Save setup/);
   assert.match(validator,/Apply to order ticket/);
-  assert.match(header,/href="\/active-trade"/);
-  assert.match(header,/Active Trade/);
+  assert.match(header,/AppPrimaryNavigation/);
+  assert.match(navigation,/href: '\/active-trade'/);
+  assert.match(navigation,/labelKey: 'nav\.activeTrade'/);
   assert.match(validator,/sourceDecisionId:result\.reportSourceId/);
   assert.match(validator,/sourceReportId:reportSave\.reportId \?\? undefined/);
   assert.doesNotMatch(validator,/sourceReportId:result\.reportSourceId/);
