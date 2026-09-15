@@ -20,29 +20,40 @@
     background: #070a0f;
   }
 
-  body {
+  body:has(.mobile-bottom-nav) {
     min-width: 0;
+    width: 100%;
+    overflow-x: hidden;
     overflow-x: clip;
   }
 
-  .app-document-content {
+  body:has(.mobile-bottom-nav) .app-document-content {
     min-width: 0;
     padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 18px);
   }
 
-  .container {
+  body:has(.mobile-bottom-nav) .container {
     width: 100% !important;
     max-width: none !important;
-    padding: 10px var(--mobile-page-gutter) 24px !important;
+    padding: max(10px, env(safe-area-inset-top)) max(var(--mobile-page-gutter), env(safe-area-inset-right)) 24px max(var(--mobile-page-gutter), env(safe-area-inset-left)) !important;
     margin: 0 !important;
   }
 
-  .container > *,
-  .card,
-  .grid,
-  .stack {
+  body:has(.mobile-bottom-nav) .container > *,
+  body:has(.mobile-bottom-nav) .card,
+  body:has(.mobile-bottom-nav) .grid,
+  body:has(.mobile-bottom-nav) .stack {
     min-width: 0;
     max-width: 100%;
+  }
+
+  body:has(.mobile-bottom-nav) h1,
+  body:has(.mobile-bottom-nav) h2,
+  body:has(.mobile-bottom-nav) h3,
+  body:has(.mobile-bottom-nav) p,
+  body:has(.mobile-bottom-nav) strong,
+  body:has(.mobile-bottom-nav) small {
+    overflow-wrap: anywhere;
   }
 
   /* Customer shell */
@@ -158,22 +169,117 @@
   }
 
   /* Touch system */
-  button,
-  .button-link,
-  input,
-  select,
-  textarea {
+  body:has(.mobile-bottom-nav) button,
+  body:has(.mobile-bottom-nav) .button-link,
+  body:has(.mobile-bottom-nav) input,
+  body:has(.mobile-bottom-nav) select,
+  body:has(.mobile-bottom-nav) textarea {
     min-height: 44px;
   }
 
-  button,
-  .button-link,
-  a {
+  body:has(.mobile-bottom-nav) button,
+  body:has(.mobile-bottom-nav) .button-link,
+  body:has(.mobile-bottom-nav) a {
     -webkit-tap-highlight-color: transparent;
   }
 
-  .card {
+  body:has(.mobile-bottom-nav) .card {
     border-radius: 16px;
+  }
+
+  /* Customer content — collapse dense desktop compositions without affecting
+     marketing, authentication or HQ pages. */
+  body:has(.mobile-bottom-nav) .dashboard-hero,
+  body:has(.mobile-bottom-nav) .monitor-hero,
+  body:has(.mobile-bottom-nav) .analytics-hero,
+  body:has(.mobile-bottom-nav) .history-header-row,
+  body:has(.mobile-bottom-nav) .history-list-header,
+  body:has(.mobile-bottom-nav) .section-title,
+  body:has(.mobile-bottom-nav) .narrative-workspace-head,
+  body:has(.mobile-bottom-nav) .event-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: start !important;
+  }
+
+  body:has(.mobile-bottom-nav) .dashboard-hero,
+  body:has(.mobile-bottom-nav) .analytics-cockpit-hero,
+  body:has(.mobile-bottom-nav) .card {
+    padding: 16px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .dashboard-hero h1,
+  body:has(.mobile-bottom-nav) .analytics-cockpit-hero h1 {
+    font-size: clamp(30px, 10vw, 42px) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .button-row,
+  body:has(.mobile-bottom-nav) .monitor-actions,
+  body:has(.mobile-bottom-nav) .dashboard-hero-actions,
+  body:has(.mobile-bottom-nav) .history-filter-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100%;
+  }
+
+  body:has(.mobile-bottom-nav) .button-row > *,
+  body:has(.mobile-bottom-nav) .monitor-actions > *,
+  body:has(.mobile-bottom-nav) .dashboard-hero-actions > *,
+  body:has(.mobile-bottom-nav) .history-filter-actions > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body:has(.mobile-bottom-nav) .analysis-strip,
+  body:has(.mobile-bottom-nav) .price-field-grid,
+  body:has(.mobile-bottom-nav) .decision-hero-metrics,
+  body:has(.mobile-bottom-nav) .discipline-summary-grid,
+  body:has(.mobile-bottom-nav) .history-event-detail-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .analysis-strip-item-wide,
+  body:has(.mobile-bottom-nav) .decision-hero-readiness {
+    grid-column: auto !important;
+  }
+
+  body:has(.mobile-bottom-nav) .market-chart-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body:has(.mobile-bottom-nav) .market-timeframe-rail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body:has(.mobile-bottom-nav) .market-timeframe-rail button {
+    min-width: 0;
+    padding-inline: 6px;
+  }
+
+  body:has(.mobile-bottom-nav) .event-row > div:last-child,
+  body:has(.mobile-bottom-nav) .narrative-provenance {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  body:has(.mobile-bottom-nav) .modal-backdrop,
+  body:has(.mobile-bottom-nav) .full-report-overlay {
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  }
+
+  body:has(.mobile-bottom-nav) .modal-card,
+  body:has(.mobile-bottom-nav) .full-report-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    border-radius: 14px;
+  }
+
+  body:has(.mobile-bottom-nav) .full-report-header,
+  body:has(.mobile-bottom-nav) .full-report-body {
+    padding: 14px;
   }
 
   /* Mobile primary navigation */
@@ -182,7 +288,7 @@
     left: max(8px, env(safe-area-inset-left));
     right: max(8px, env(safe-area-inset-right));
     bottom: max(8px, env(safe-area-inset-bottom));
-    z-index: 2147482000;
+    z-index: 80;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     min-height: var(--mobile-bottom-nav-height);
@@ -286,7 +392,7 @@
   .mobile-more-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 2147482500;
+    z-index: 90;
     display: flex;
     align-items: flex-end;
     padding: 12px;
@@ -298,8 +404,10 @@
 
   .mobile-more-sheet {
     width: 100%;
-    max-height: min(72dvh, 620px);
+    max-height: min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px), 620px);
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: 9px 12px 14px;
     border: 1px solid rgba(255,255,255,.11);
     border-radius: 22px;

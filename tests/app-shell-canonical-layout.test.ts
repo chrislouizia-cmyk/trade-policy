@@ -64,3 +64,20 @@ test('mobile More preserves account access and a visible sign-out path',()=>{
   assert.match(mobile,/event\.key === 'Escape'/);
   assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
+
+test('mobile shell styles are isolated from public authentication and HQ surfaces',()=>{
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.app-document-content/);
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.container/);
+  assert.doesNotMatch(mobileCss,/\n  \.container \{/);
+  assert.doesNotMatch(mobileCss,/\n  button,\n/);
+});
+
+test('mobile authenticated surfaces respect iPhone safe areas and dense content widths',()=>{
+  assert.match(mobileCss,/env\(safe-area-inset-top\)/);
+  assert.match(mobileCss,/env\(safe-area-inset-bottom\)/);
+  assert.match(mobileCss,/\.decision-hero-metrics/);
+  assert.match(mobileCss,/\.history-event-detail-grid/);
+  assert.match(mobileCss,/\.market-chart-toolbar/);
+  assert.match(mobileCss,/\.full-report-modal/);
+  assert.match(mobileCss,/overscroll-behavior: contain/);
+});
