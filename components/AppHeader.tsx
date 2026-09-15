@@ -51,6 +51,17 @@ export default async function AppHeader({
             </span>
           </Link>
 
+          <Link href="/dashboard" className="mobile-shell-brand" aria-label="Trade Police home">
+            <Image
+              src="/brand/trade-police-mark-128.png"
+              alt=""
+              width={34}
+              height={34}
+              aria-hidden="true"
+            />
+            <strong>Trade Police</strong>
+          </Link>
+
           <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
             <TradePoliceShield />
             <KeyboardShortcuts />

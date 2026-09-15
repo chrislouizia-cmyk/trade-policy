@@ -107,6 +107,16 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
                 </Link>
               ))}
             </nav>
+            <button
+              type="button"
+              className="mobile-more-feedback"
+              onClick={() => {
+                setMoreOpen(false);
+                window.dispatchEvent(new Event('trade-police:feedback-open'));
+              }}
+            >
+              Send feedback
+            </button>
             <div className="mobile-more-session">
               <SignOutButton />
             </div>

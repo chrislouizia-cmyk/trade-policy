@@ -6,14 +6,15 @@
  */
 
 .mobile-bottom-nav,
-.mobile-more-backdrop {
+.mobile-more-backdrop,
+.mobile-shell-brand {
   display: none;
 }
 
 @media (max-width: 760px) {
   :root {
     --mobile-page-gutter: 12px;
-    --mobile-bottom-nav-height: 66px;
+    --mobile-bottom-nav-height: 60px;
   }
 
   html {
@@ -29,7 +30,7 @@
 
   body:has(.mobile-bottom-nav) .app-document-content {
     min-width: 0;
-    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 18px);
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 44px);
   }
 
   body:has(.mobile-bottom-nav) .container {
@@ -58,9 +59,10 @@
 
   /* Customer shell */
   .canonical-app-shell {
-    margin: 0 0 12px !important;
-    padding: 10px 11px !important;
-    border-radius: 16px !important;
+    gap: 8px !important;
+    margin: 0 0 14px !important;
+    padding: 8px !important;
+    border-radius: 14px !important;
     overflow: visible !important;
   }
 
@@ -73,17 +75,33 @@
     grid-template-columns: minmax(0, 1fr) auto !important;
     align-items: center !important;
     gap: 10px !important;
-    min-height: 46px;
+    min-height: 42px;
   }
 
   .canonical-shell-brand {
-    min-width: 0;
+    display: none !important;
   }
 
-  .brand-logo-header {
-    width: 154px !important;
-    height: auto !important;
-    max-width: 100%;
+  .mobile-shell-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 3px 5px;
+  }
+
+  .mobile-shell-brand img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+  }
+
+  .mobile-shell-brand strong {
+    overflow: hidden;
+    font-size: 15px;
+    letter-spacing: -.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .canonical-shell-brand .brand-caption {
@@ -106,9 +124,9 @@
   /* Keep the status visible, but turn it into one compact operational signal. */
   .canonical-shell-user .shield-status {
     min-width: 0 !important;
-    max-width: 150px;
-    min-height: 36px;
-    padding: 7px 9px !important;
+    max-width: 132px;
+    min-height: 34px;
+    padding: 6px 8px !important;
     border-radius: 11px !important;
   }
 
@@ -123,15 +141,7 @@
   }
 
   .canonical-shell-user .shield-status small {
-    display: block !important;
-    max-width: 118px;
-    margin-top: 1px;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 9px !important;
-    line-height: 1.15;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none !important;
   }
 
   .canonical-shell-user .shield-dot {
@@ -146,10 +156,10 @@
   .canonical-context-bar {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
-    gap: 10px !important;
-    margin-top: 10px !important;
-    padding: 10px !important;
-    border-radius: 12px !important;
+    gap: 6px !important;
+    margin-top: 0 !important;
+    padding: 8px !important;
+    border-radius: 11px !important;
   }
 
   .canonical-context-copy {
@@ -158,14 +168,33 @@
 
   .canonical-context-switchers {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    gap: 8px !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
     width: 100%;
   }
 
   .canonical-context-switchers > * {
     min-width: 0;
     width: 100%;
+  }
+
+  .canonical-context-switchers .header-switcher {
+    gap: 4px !important;
+  }
+
+  .canonical-context-switchers .header-switcher > span {
+    overflow: hidden;
+    font-size: 8px !important;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .canonical-context-switchers select {
+    min-height: 40px !important;
+    padding: 8px 26px 8px 9px !important;
+    font-size: 11px !important;
+    text-overflow: ellipsis;
   }
 
   /* Touch system */
@@ -210,7 +239,19 @@
 
   body:has(.mobile-bottom-nav) .dashboard-hero h1,
   body:has(.mobile-bottom-nav) .analytics-cockpit-hero h1 {
-    font-size: clamp(30px, 10vw, 42px) !important;
+    font-size: clamp(30px, 8.8vw, 36px) !important;
+    line-height: 1.03 !important;
+  }
+
+  body:has(.mobile-bottom-nav) .history-journal-hero h1 {
+    font-size: clamp(30px, 8.8vw, 36px) !important;
+    line-height: 1.04;
+  }
+
+  body:has(.mobile-bottom-nav) .history-journal-hero > header p,
+  body:has(.mobile-bottom-nav) .dashboard-hero p {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
   }
 
   body:has(.mobile-bottom-nav) .button-row,
@@ -264,6 +305,28 @@
     text-align: left;
   }
 
+  /* Product premium re-declares the desktop monitor columns after its mobile
+     rules. This final-layer override is intentionally explicit. */
+  body:has(.mobile-bottom-nav) .monitor-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body:has(.mobile-bottom-nav) .monitor-layout > *,
+  body:has(.mobile-bottom-nav) .monitor-layout > .stack,
+  body:has(.mobile-bottom-nav) .trade-list {
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body:has(.mobile-bottom-nav) .trade-list-item {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+
   body:has(.mobile-bottom-nav) .modal-backdrop,
   body:has(.mobile-bottom-nav) .full-report-overlay {
     padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
@@ -287,12 +350,12 @@
     position: fixed;
     left: max(8px, env(safe-area-inset-left));
     right: max(8px, env(safe-area-inset-right));
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: max(4px, env(safe-area-inset-bottom));
     z-index: 80;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     min-height: var(--mobile-bottom-nav-height);
-    padding: 5px;
+    padding: 4px;
     border: 1px solid rgba(255,255,255,.11);
     border-radius: 20px;
     background: rgba(10, 15, 22, .94);
@@ -309,7 +372,7 @@
     align-content: center;
     gap: 3px;
     min-width: 0;
-    min-height: 54px;
+    min-height: 50px;
     padding: 5px 2px !important;
     border: 0;
     border-radius: 14px;
@@ -404,7 +467,7 @@
 
   .mobile-more-sheet {
     width: 100%;
-    max-height: min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px), 620px);
+    max-height: min(72dvh, 580px);
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -504,6 +567,16 @@
     border-top: 1px solid rgba(255,255,255,.08);
   }
 
+  .mobile-more-feedback {
+    width: 100%;
+    min-height: 48px;
+    margin-top: 10px;
+    border: 1px solid rgba(85,217,186,.22);
+    border-radius: 14px;
+    background: rgba(85,217,186,.055);
+    color: #bff5e7;
+  }
+
   .mobile-more-session .sign-out-control,
   .mobile-more-session .sign-out-control button {
     width: 100%;
@@ -517,10 +590,8 @@
   }
 
   /* Floating feedback cannot sit on top of mobile primary navigation. */
-  .feedback-widget,
-  .feedback-trigger,
-  [class*="feedback-widget"] {
-    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 20px) !important;
+  body:has(.mobile-bottom-nav) .feedback-fab {
+    display: none !important;
   }
 }
 
@@ -529,16 +600,8 @@
     --mobile-page-gutter: 9px;
   }
 
-  .brand-logo-header {
-    width: 142px !important;
-  }
-
   .canonical-shell-user .shield-status {
-    max-width: 128px;
-  }
-
-  .canonical-shell-user .shield-status small {
-    max-width: 96px;
+    max-width: 118px;
   }
 
   .mobile-bottom-nav {

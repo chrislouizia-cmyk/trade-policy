@@ -11,6 +11,7 @@ const css=fs.readFileSync('app/product-premium.css','utf8');
 const mobile=fs.readFileSync('components/MobileBottomNav.tsx','utf8');
 const mobileCss=fs.readFileSync('app/mobile-shell.css','utf8');
 const layout=fs.readFileSync('app/layout.tsx','utf8');
+const feedback=fs.readFileSync('components/FeedbackWidget.tsx','utf8');
 
 test('context exists only on Dashboard Decision and Active Trade',()=>{
   assert.match(dashboard,/showContext/);
@@ -80,4 +81,23 @@ test('mobile authenticated surfaces respect iPhone safe areas and dense content 
   assert.match(mobileCss,/\.market-chart-toolbar/);
   assert.match(mobileCss,/\.full-report-modal/);
   assert.match(mobileCss,/overscroll-behavior: contain/);
+});
+
+test('mobile header uses a compact mark and two-column context controls',()=>{
+  assert.match(header,/mobile-shell-brand/);
+  assert.match(header,/trade-police-mark-128\.png/);
+  assert.match(mobileCss,/\.canonical-shell-brand\s*\{[\s\S]*display: none !important/);
+  assert.match(mobileCss,/\.canonical-context-switchers\s*\{[\s\S]*grid-template-columns: repeat\(2/);
+});
+
+test('active trade is forced to one contained column on customer mobile',()=>{
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.monitor-layout\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important/);
+  assert.match(mobileCss,/\.monitor-layout > \*/);
+});
+
+test('feedback leaves the viewport and remains available from More',()=>{
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.feedback-fab\s*\{[\s\S]*display: none !important/);
+  assert.match(mobile,/trade-police:feedback-open/);
+  assert.match(mobile,/Send feedback/);
+  assert.match(feedback,/addEventListener\('trade-police:feedback-open'/);
 });
