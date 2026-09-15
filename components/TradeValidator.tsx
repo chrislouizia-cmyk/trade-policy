@@ -164,8 +164,23 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
     const handler=(event: Event)=>{
-      const detail = (event as CustomEvent<{ strategy?: StrategyProfile; strategyId?: string }>).detail;
+      const detail = (event as CustomEvent<{ strategy?: StrategyProfile; strategyId?: string | null; deletedStrategyId?: string }>).detail;
       const nextStrategy = detail?.strategy ?? null;
+      if (detail?.deletedStrategyId) {
+        setStrategyApplying(true);
+        setStrategySelectionMode('ACTIVE');
+        setActiveStrategyRevisionId(null);
+        setAnalysis(null);
+        setResult(null);
+        setAutoChecks({});
+        setSessionHistory([]);
+        setLastAnalysisInput(null);
+        setFeedbackAnalysisId(null);
+        setTypedMessage('');
+        setError('The selected strategy was deleted. Trade Police cleared the previous analysis and is applying the fallback strategy.');
+        void loadStrategy();
+        return;
+      }
       // A save, archive, or list refresh also emits strategy-changed with only an id.
       // It must not replace a strategy selected explicitly through /validate?strategy=….
       // The active-strategy switcher includes the authoritative strategy payload after

@@ -31,6 +31,7 @@ import { normalizePersistableStrategyRules, strategyRulePersistenceRows } from '
 import { resolveStrategyBuilderBootstrapRenderState, runStrategyBuilderBootstrap, summarizeStrategyBuilderBootstrapFailure } from '@/lib/strategy-builder-bootstrap';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
+import {writeUserScopedSelection} from '@/lib/user-session-state';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -546,6 +547,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       if (!response.ok) throw new Error(apiErrorMessage(result, 'Could not delete strategy.'));
       const deletedId = deleteTarget.id;
       const deletedName = deleteTarget.name;
+      const fallbackStrategyId = typeof result.fallbackStrategyId === 'string' ? result.fallbackStrategyId : null;
 
       setProfiles((current) => current.filter((item) => item.id !== deletedId));
 
@@ -554,13 +556,41 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
       if (profile.id === deletedId) {
         setProfile(createEmptyStrategyProfile());
+        setSessions([]);
+        setRules([]);
+        setStopLimits([]);
+        setStrategyRuns([]);
+        setV2State(undefined);
+        setV2Baseline(null);
+        setV2Draft(null);
+        setV2EntryOpen(false);
+        setSavedStrategy(null);
+        setCanonicalCompletion(null);
+        setLearningConfirmation(null);
+        setVerification(null);
+        setPendingNavigation(null);
+        setDirtyPrompt(false);
       }
 
-      await loadAll(undefined, { preserveCurrentSelection: false });
+      window.localStorage.removeItem(`trade-police-methodology-confirmed:${deletedId}`);
+      const persistedDraft = window.localStorage.getItem('trade-police-strategy-draft');
+      if (persistedDraft) {
+        try {
+          const draft = JSON.parse(persistedDraft) as { profile?: { id?: string } };
+          if (draft.profile?.id === deletedId) window.localStorage.removeItem('trade-police-strategy-draft');
+        } catch {
+          window.localStorage.removeItem('trade-police-strategy-draft');
+        }
+      }
+      writeUserScopedSelection('trade-police:active-strategy', userId, fallbackStrategyId);
+
+      await loadAll(fallbackStrategyId ?? undefined, { preserveCurrentSelection: false });
 
       setMessage(`${deletedName} was deleted. Historical trades, reports, and backtests were preserved.`);
       void trackBetaEvent('PLAYBOOK_DELETED', deletedId);
-      window.dispatchEvent(new CustomEvent('trade-police:strategy-changed'));
+      window.dispatchEvent(new CustomEvent('trade-police:strategy-changed', {
+        detail: { deletedStrategyId: deletedId, strategyId: fallbackStrategyId },
+      }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not delete strategy.');
     } finally {

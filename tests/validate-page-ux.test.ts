@@ -75,12 +75,14 @@ test('strategy timeframe sentence reflects the active strategy and shows Not con
   assert.doesNotMatch(strategyTimeframeContext(strategyC as any), /macro D1|confirmation H1|trigger M5/);
 });
 
-test('header order keeps the brand, greeting, and question in the required left-to-right sequence', () => {
+test('Validate uses the canonical authenticated shell without restoring the legacy greeting canvas', () => {
   const header = readFileSync(new URL('../components/AppHeader.tsx', import.meta.url), 'utf8');
   const page = readFileSync(new URL('../app/validate/page.tsx', import.meta.url), 'utf8');
 
-  assert.match(header, /<Link href="\/dashboard" className="app-brand"/);
-  assert.match(header, /Good morning|Good afternoon|Good evening/);
+  assert.match(header, /<Link href="\/dashboard" className="app-brand canonical-shell-brand"/);
+  assert.match(header, /canonical-shell-top/);
+  assert.match(header, /canonical-visible-nav/);
+  assert.doesNotMatch(header, /Good morning|Good afternoon|Good evening/);
   assert.match(header, /No trade without evidence\./);
   assert.match(header, /KeyboardShortcuts/);
   assert.match(header, /SignOutButton/);

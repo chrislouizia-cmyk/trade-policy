@@ -52,6 +52,24 @@ test('delete telemetry captures the id before clearing modal state', () => {
   assert.ok(capture >= 0 && clear > capture && track > clear);
 });
 
+test('delete clears client references and selects the server fallback', () => {
+  assert.match(builder, /fallbackStrategyId = typeof result\.fallbackStrategyId === 'string'/);
+  assert.match(builder, /setV2Baseline\(null\)/);
+  assert.match(builder, /setV2Draft\(null\)/);
+  assert.match(builder, /trade-police-strategy-draft/);
+  assert.match(builder, /writeUserScopedSelection\('trade-police:active-strategy', userId, fallbackStrategyId\)/);
+  assert.match(builder, /loadAll\(fallbackStrategyId \?\? undefined, \{ preserveCurrentSelection: false \}\)/);
+  assert.match(builder, /deletedStrategyId: deletedId/);
+});
+
+test('Validate discards analysis when its strategy is deleted', () => {
+  const validator = readFileSync(new URL('../components/TradeValidator.tsx', import.meta.url), 'utf8');
+  assert.match(validator, /if \(detail\?\.deletedStrategyId\)/);
+  assert.match(validator, /setAnalysis\(null\)/);
+  assert.match(validator, /setResult\(null\)/);
+  assert.match(validator, /void loadStrategy\(\)/);
+});
+
 test('backtests survive source strategy deletion through their immutable snapshot', () => {
   assert.match(migration, /alter column strategy_profile_id drop not null/);
   assert.match(migration, /backtest_runs_strategy_profile_id_fkey/);
