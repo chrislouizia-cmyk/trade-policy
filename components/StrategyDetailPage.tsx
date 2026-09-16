@@ -10,6 +10,7 @@ import styles from './StrategyDetailPage.module.css';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
 import MarketplaceObservationCard from '@/components/MarketplaceObservationCard';
+import StrategyShareDialog from '@/components/StrategyShareDialog';
 
 type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
 
@@ -476,6 +477,7 @@ setReportLoading(false);
                 <button type="button" className="button-link secondary strategy-detail-back-link" onClick={handleBackToStrategies}>{w('Back to Strategies')}</button>
                 <button type="button" className="button-link secondary" onClick={handleEditStrategy}>{w('Edit strategy')}</button>
                 <button type="button" className="button-link secondary" onClick={handleDuplicateStrategy}>{w('Duplicate')}</button>
+                <StrategyShareDialog strategyId={strategy.id} strategyName={strategy.name} />
               </div>
             </div>
             <small className="muted strategy-detail-subtitle">{strategy.description || w('No description saved.')}</small>
