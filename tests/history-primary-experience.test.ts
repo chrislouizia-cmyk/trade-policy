@@ -23,6 +23,16 @@ test('filter submissions preserve every non-default History view', () => {
   assert.match(page, /const clearHref = tabHref\(selectedView\)/);
 });
 
+test('History is paginated instead of rendering an endless timeline', () => {
+  assert.match(page, /const pageSize = 6/);
+  assert.match(page, /const pageItems = visibleItems\.slice/);
+  assert.match(page, /className="history-pagination"/);
+  assert.match(page, /pageHref\(filters, currentPage - 1\)/);
+  assert.match(page, /pageHref\(filters, currentPage \+ 1\)/);
+  assert.match(page, /pageItems\.map/);
+  assert.doesNotMatch(page, /visibleItems\.map/);
+});
+
 test('H1 preserves canonical sources and lifecycle deduplication', () => {
   assert.match(page, /from\('active_trades'\)/);
   assert.match(page, /from\('decision_reports'\)/);

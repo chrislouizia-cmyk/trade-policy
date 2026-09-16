@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import SignOutButton from '@/components/SignOutButton';
 import { useLocale } from '@/components/i18n/LocaleProvider';
 
@@ -59,17 +59,20 @@ function isRouteActive(pathname: string, href: string) {
 
 export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [pressedIndex, setPressedIndex] = useState<number | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
+  const gestureHandledRef = useRef(false);
   const secondaryRouteActive = moreItems.some((item) => isRouteActive(pathname, item.href));
+  const routeIndex = primaryItems.findIndex((item) => isRouteActive(pathname, item.href));
+  const activeIndex = routeIndex >= 0 ? routeIndex : 3;
+  const liquidIndex = pressedIndex ?? activeIndex;
 
   useEffect(() => {
     setMoreOpen(false);
-    navigationRef.current
-      ?.querySelector<HTMLElement>('[aria-current="page"]')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [pathname]);
 
   useEffect(() => {
@@ -86,6 +89,36 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [moreOpen]);
+
+  function indexAtPointer(event: ReactPointerEvent<HTMLElement>) {
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-nav-index]');
+    if (!target || !navigationRef.current?.contains(target)) return null;
+    const index = Number(target.dataset.navIndex);
+    return Number.isInteger(index) ? index : null;
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    const index = indexAtPointer(event);
+    if (index === null) return;
+    gestureHandledRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setPressedIndex(index);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    if (pressedIndex === null) return;
+    const index = indexAtPointer(event);
+    if (index !== null && index !== pressedIndex) setPressedIndex(index);
+  }
+
+  function handlePointerEnd(event: ReactPointerEvent<HTMLElement>) {
+    if (pressedIndex === null) return;
+    const selectedIndex = indexAtPointer(event) ?? pressedIndex;
+    setPressedIndex(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (selectedIndex === 3) setMoreOpen(true);
+    else if (selectedIndex >= 0 && selectedIndex < primaryItems.length) router.push(primaryItems[selectedIndex].href);
+  }
 
   return (
     <>
@@ -143,15 +176,35 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
         </div>
       ) : null}
 
-      <nav ref={navigationRef} className="mobile-bottom-nav" aria-label="Mobile primary navigation">
-        {primaryItems.map((item) => {
+      <div className="mobile-nav-backplate" aria-hidden="true" />
+      <nav
+        ref={navigationRef}
+        className={`mobile-bottom-nav ${pressedIndex === null ? '' : 'is-tracking'}`}
+        aria-label="Mobile primary navigation"
+        style={{ '--liquid-index': liquidIndex } as CSSProperties}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={() => {
+          gestureHandledRef.current = false;
+          setPressedIndex(null);
+        }}
+      >
+        <span className="mobile-liquid-selection" aria-hidden="true" />
+        {primaryItems.map((item, index) => {
           const active = isRouteActive(pathname, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
+              data-nav-index={index}
               className={active ? 'active' : ''}
               aria-current={active ? 'page' : undefined}
+              onClick={(event) => {
+                if (!gestureHandledRef.current) return;
+                event.preventDefault();
+                gestureHandledRef.current = false;
+              }}
             >
               <span className="mobile-nav-icon">
                 <NavIcon name={item.icon} />
@@ -164,28 +217,21 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
 
         <button
           type="button"
+          data-nav-index={3}
           className={moreOpen || secondaryRouteActive ? 'active' : ''}
-          onClick={() => setMoreOpen(true)}
+          onClick={() => {
+            if (gestureHandledRef.current) {
+              gestureHandledRef.current = false;
+              return;
+            }
+            setMoreOpen(true);
+          }}
           aria-expanded={moreOpen}
         >
           <span className="mobile-nav-icon"><NavIcon name="more" /></span>
           <span>{t('nav.more')}</span>
         </button>
 
-        {moreItems.map((item) => {
-          const active = isRouteActive(pathname, item.href);
-          return (
-            <Link
-              key={`rail-${item.href}`}
-              href={item.href}
-              className={`mobile-nav-secondary ${active ? 'active' : ''}`}
-              aria-current={active ? 'page' : undefined}
-            >
-              <span className="mobile-nav-icon"><NavIcon name={item.icon} /></span>
-              <span>{t(item.labelKey)}</span>
-            </Link>
-          );
-        })}
       </nav>
     </>
   );

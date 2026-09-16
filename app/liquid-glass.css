@@ -127,7 +127,7 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
   }
 }
 
-/* iPhone: a swipeable Liquid Glass rail keeps the first actions obvious. */
+/* iPhone: four stable destinations with one finger-tracking Liquid Glass lens. */
 @media (max-width: 760px) {
   .canonical-visible-nav { display: none !important; }
 
@@ -156,19 +156,13 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
     right: max(10px, env(safe-area-inset-right)) !important;
     bottom: max(8px, env(safe-area-inset-bottom)) !important;
     width: auto !important;
-    display: flex !important;
+    display: grid !important;
     align-items: stretch !important;
-    justify-content: flex-start !important;
     gap: 4px !important;
-    grid-template-columns: none !important;
-    overflow-x: auto !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    scroll-padding-inline: 7px;
-    scrollbar-width: none;
-    touch-action: pan-x;
-    -webkit-overflow-scrolling: touch;
+    touch-action: none;
     padding: 7px !important;
     border: 1px solid var(--glass-line) !important;
     border-radius: 24px !important;
@@ -179,21 +173,60 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
     backdrop-filter: blur(34px) saturate(165%) !important;
     -webkit-backdrop-filter: blur(34px) saturate(165%) !important;
   }
-  .mobile-bottom-nav::-webkit-scrollbar { display: none; }
+  .mobile-nav-backplate {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 79;
+    display: block;
+    height: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 28px);
+    background: linear-gradient(180deg, rgba(6, 9, 14, 0), #06090e 30%, #06090e 100%);
+    pointer-events: none;
+  }
+  .mobile-liquid-selection {
+    position: absolute;
+    top: 7px;
+    bottom: 7px;
+    left: 7px;
+    z-index: 0;
+    display: block;
+    width: calc((100% - 26px) / 4);
+    border: 1px solid rgba(255, 255, 255, .17);
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 50% 0, rgba(255, 255, 255, .18), transparent 48%),
+      linear-gradient(145deg, rgba(255, 255, 255, .12), rgba(126, 191, 255, .055) 52%, rgba(85, 217, 186, .07));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, .2),
+      inset 0 -1px 0 rgba(255, 255, 255, .035),
+      0 9px 24px rgba(0, 0, 0, .26),
+      0 0 22px rgba(89, 173, 255, .05);
+    transform: translateX(calc(var(--liquid-index) * (100% + 4px)));
+    transition: transform .38s cubic-bezier(.2, .9, .2, 1.12), border-radius .24s ease;
+    pointer-events: none;
+  }
+  .mobile-bottom-nav.is-tracking .mobile-liquid-selection {
+    border-radius: 23px 15px 23px 15px;
+    transition: transform .12s cubic-bezier(.2, .8, .2, 1), border-radius .18s ease;
+  }
   .mobile-bottom-nav > a,
   .mobile-bottom-nav > button {
-    flex: 0 0 76px !important;
-    width: 76px !important;
-    min-width: 76px !important;
+    z-index: 1;
+    width: auto !important;
+    min-width: 0 !important;
     border-radius: 17px !important;
-    scroll-snap-align: start;
   }
-  .mobile-bottom-nav > .mobile-nav-secondary {
-    flex-basis: 82px !important;
-    width: 82px !important;
-    min-width: 82px !important;
+  .mobile-bottom-nav > .active {
+    background: transparent !important;
+    box-shadow: none !important;
   }
-  .mobile-bottom-nav > .active { background: rgba(255, 255, 255, .1) !important; }
+  .mobile-bottom-nav > .active::before { display: none !important; }
+  .mobile-more-backdrop {
+    background: rgba(3, 6, 10, .94) !important;
+    backdrop-filter: blur(22px) saturate(120%) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(120%) !important;
+  }
   .mobile-more-sheet {
     border-color: var(--glass-line) !important;
     background:
@@ -201,6 +234,14 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
       rgba(9, 15, 22, .9) !important;
     backdrop-filter: blur(36px) saturate(165%) !important;
     -webkit-backdrop-filter: blur(36px) saturate(165%) !important;
+  }
+  .history-pagination {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 7px;
+  }
+  .history-pagination > a {
+    min-width: 0;
+    padding-inline: 10px;
   }
 }
 

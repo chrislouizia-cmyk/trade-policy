@@ -30,6 +30,7 @@ type Search = {
   result?: string;
   from?: string;
   to?: string;
+  page?: string;
 };
 
 const views = ['all', 'trades', 'decisions'] as const;
@@ -60,6 +61,16 @@ function toneForVerdict(verdict: string | null) {
 
 function tabHref(view: (typeof views)[number]) {
   return view === 'trades' ? '/history' : `/history?view=${view}`;
+}
+
+function pageHref(filters: Search, page: number) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (key !== 'page' && value) params.set(key, value);
+  }
+  if (page > 1) params.set('page', String(page));
+  const query = params.toString();
+  return query ? `/history?${query}` : '/history';
 }
 
 function TradeJournalRow({ item, c, locale }: { item: HistoryTradeItem; c: ScreenCopy['history']; locale: Locale }) {
@@ -238,6 +249,11 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const summary = summarizeHistoryJournal(journal.trades, journal.decisions);
   const selectedItems = selectedView === 'trades' ? journal.trades : selectedView === 'decisions' ? journal.decisions : journal.all;
   const visibleItems = filterHistoryJournal(selectedItems, filters);
+  const pageSize = 6;
+  const requestedPage = Number.parseInt(filters.page ?? '1', 10);
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / pageSize));
+  const currentPage = Math.min(Math.max(Number.isFinite(requestedPage) ? requestedPage : 1, 1), pageCount);
+  const pageItems = visibleItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const loadError = tradeResult.error ?? decisionResult.error ?? eventResult.error;
   if (loadError) {
     console.error('History journal load failed', {
@@ -250,6 +266,11 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const strategies = [...new Map([...journal.trades, ...journal.decisions].filter((item) => item.strategyId).map((item) => [item.strategyId as string, item.strategyName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const hasFilters = Boolean(filters.q || filters.verdict || filters.instrument || filters.strategy || filters.status || filters.result || filters.from || filters.to);
   const clearHref = tabHref(selectedView);
+  const paginationCopy = locale === 'es'
+    ? { previous: 'Anterior', next: 'Siguiente', page: 'Página', of: 'de' }
+    : locale === 'fr'
+      ? { previous: 'Précédent', next: 'Suivant', page: 'Page', of: 'sur' }
+      : { previous: 'Previous', next: 'Next', page: 'Page', of: 'of' };
 
   return (
     <main className="container history-page-shell">
@@ -304,7 +325,18 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             <p>{hasFilters ? c.noMatchesBody : c.noActivityBody}</p>
             {hasFilters ? <a className="button-link secondary" href={clearHref}>{c.clearFilters}</a> : <a className="button-link primary" href="/validate">{c.reviewLive}</a>}
           </div>
-        ) : <div className="history-row-list">{visibleItems.map((item) => <JournalRow key={`${item.kind}:${item.id}`} item={item} c={c} locale={locale} />)}</div>}
+        ) : (
+          <>
+            <div className="history-row-list">{pageItems.map((item) => <JournalRow key={`${item.kind}:${item.id}`} item={item} c={c} locale={locale} />)}</div>
+            {pageCount > 1 ? (
+              <nav className="history-pagination" aria-label="History pages">
+                {currentPage > 1 ? <a className="button-link secondary" href={pageHref(filters, currentPage - 1)}>{paginationCopy.previous}</a> : <span />}
+                <strong>{paginationCopy.page} {currentPage} {paginationCopy.of} {pageCount}</strong>
+                {currentPage < pageCount ? <a className="button-link secondary" href={pageHref(filters, currentPage + 1)}>{paginationCopy.next}</a> : <span />}
+              </nav>
+            ) : null}
+          </>
+        )}
       </section>
     </main>
   );

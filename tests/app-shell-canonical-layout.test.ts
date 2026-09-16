@@ -72,18 +72,27 @@ test('mobile More preserves account access and a visible sign-out path',()=>{
   assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
 });
 
-test('mobile Liquid Glass rail exposes core actions first and secondary routes by swipe',()=>{
+test('mobile Liquid Glass dock keeps four stable actions and tracks the pointer',()=>{
   assert.match(mobile,/labelKey: 'nav.decision'/);
   assert.match(mobile,/labelKey: 'nav.activeTrade'/);
   assert.match(mobile,/labelKey: 'nav.history'/);
   assert.match(mobile,/<h2>\{t\('nav.more'\)\}<\/h2>/);
   const primaryItems=mobile.match(/const primaryItems = \[([\s\S]*?)\] as const/)?.[1]??'';
   assert.doesNotMatch(primaryItems,/nav\.history/);
-  assert.match(mobile,/mobile-nav-secondary/);
-  assert.match(mobile,/scrollIntoView\(\{ behavior: 'smooth', block: 'nearest', inline: 'center' \}\)/);
-  assert.match(glassCss,/overflow-x: auto !important/);
-  assert.match(glassCss,/scroll-snap-type: x proximity/);
-  assert.match(glassCss,/flex: 0 0 76px !important/);
+  assert.doesNotMatch(mobile,/mobile-nav-secondary/);
+  assert.match(mobile,/mobile-liquid-selection/);
+  assert.match(mobile,/onPointerDown=\{handlePointerDown\}/);
+  assert.match(mobile,/onPointerMove=\{handlePointerMove\}/);
+  assert.match(mobile,/document\.elementFromPoint/);
+  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(0, 1fr\)\) !important/);
+  assert.match(glassCss,/transform: translateX\(calc\(var\(--liquid-index\)/);
+  assert.match(glassCss,/touch-action: none/);
+});
+
+test('mobile dock hides page content below its closed visual base',()=>{
+  assert.match(mobile,/mobile-nav-backplate/);
+  assert.match(glassCss,/\.mobile-nav-backplate\s*\{[\s\S]*position: fixed;[\s\S]*background: linear-gradient/);
+  assert.match(glassCss,/\.mobile-more-backdrop\s*\{[\s\S]*rgba\(3, 6, 10, \.94\)/);
 });
 
 test('last-loaded glass CSS cannot restore the desktop header navigation on iPhone',()=>{
