@@ -29,5 +29,5 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getRequestLocale();
-  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><div className="app-document-content">{children}</div><AppFooter /></LocaleProvider></body></html>;
+  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><div className="app-document-content">{children}<AppFooter /></div></LocaleProvider></body></html>;
 }

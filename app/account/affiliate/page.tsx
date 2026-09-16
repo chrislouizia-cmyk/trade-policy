@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import AppHeader from '@/components/AppHeader';
+import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
 import AffiliateShareLink from '@/components/AffiliateShareLink';
 import { getUserDisplayName } from '@/lib/user-display-name';
 
@@ -56,13 +56,12 @@ export default async function AffiliateAccountPage() {
 
   if (!affiliate) {
     return (
-      <main className="container">
-        <AppHeader
-          eyebrow="ACCOUNT"
-          displayName={displayName}
-          description="Affiliate Program"
-          userId={user.id}
-        />
+      <AuthenticatedAppShell
+        eyebrow="ACCOUNT"
+        displayName={displayName}
+        description="Affiliate Program"
+        userId={user.id}
+      >
 
         <section className="card">
           <p className="eyebrow">AFFILIATE PROGRAM</p>
@@ -88,7 +87,7 @@ export default async function AffiliateAccountPage() {
             Back to Account
           </Link>
         </p>
-      </main>
+      </AuthenticatedAppShell>
     );
   }
 
@@ -124,13 +123,12 @@ export default async function AffiliateAccountPage() {
   const balance = Array.isArray(balances) ? balances[0] : balances;
 
   return (
-    <main className="container">
-      <AppHeader
-        eyebrow="ACCOUNT"
-        displayName={displayName}
-        description="Affiliate Program"
-        userId={user.id}
-      />
+    <AuthenticatedAppShell
+      eyebrow="ACCOUNT"
+      displayName={displayName}
+      description="Affiliate Program"
+      userId={user.id}
+    >
 
       <section className="card">
         <p className="eyebrow">AFFILIATE PROGRAM</p>
@@ -215,6 +213,6 @@ export default async function AffiliateAccountPage() {
           Back to Account
         </Link>
       </p>
-    </main>
+    </AuthenticatedAppShell>
   );
 }

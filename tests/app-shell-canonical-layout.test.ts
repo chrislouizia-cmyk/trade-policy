@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 
 const header=fs.readFileSync('components/AppHeader.tsx','utf8');
+const shell=fs.readFileSync('components/AuthenticatedAppShell.tsx','utf8');
 const dashboard=fs.readFileSync('app/dashboard/page.tsx','utf8');
 const dashboardComponent=fs.readFileSync('components/Dashboard.tsx','utf8');
 const validate=fs.readFileSync('app/validate/page.tsx','utf8');
@@ -59,10 +60,45 @@ test('account strategy and user controls remain untouched in AppHeader',()=>{
 });
 
 test('mobile navigation remains a responsive child of the canonical shell',()=>{
-  assert.match(header,/<MobileBottomNav activeTradeCount=\{activeTradeCount\} \/>/);
+  assert.match(shell,/<MobileBottomNav activeTradeCount=\{activeTradeCount\} \/>/);
+  assert.doesNotMatch(header,/MobileBottomNav|FeedbackWidget|createClient/);
   assert.match(layout,/import '\.\/mobile-shell\.css'/);
   assert.match(mobileCss,/@media \(max-width: 760px\)/);
   assert.match(mobileCss,/\.canonical-visible-nav\s*\{[\s\S]*display: none !important/);
+});
+
+test('authenticated routes use one shell instead of mounting header and navigation independently',()=>{
+  const routes = [
+    'app/dashboard/page.tsx',
+    'app/validate/page.tsx',
+    'app/active-trade/page.tsx',
+    'app/history/page.tsx',
+    'app/history/[reportId]/page.tsx',
+    'app/analytics/page.tsx',
+    'app/profile/page.tsx',
+    'app/strategies/[id]/page.tsx',
+    'app/accounts/page.tsx',
+    'app/account/page.tsx',
+    'app/account/affiliate/page.tsx',
+    'app/share/strategy/[code]/page.tsx',
+  ];
+  for (const path of routes) {
+    const source=fs.readFileSync(path,'utf8');
+    assert.match(source,/AuthenticatedAppShell/,`${path} must use the shared shell`);
+    assert.doesNotMatch(source,/<AppHeader/,`${path} must not mount its own header`);
+  }
+  assert.match(shell,/<AppHeader/);
+  assert.match(shell,/<div className="authenticated-shell-content">/);
+  assert.match(shell,/<FeedbackWidget userId=\{userId\} \/>/);
+});
+
+test('the shared shell owns viewport height safe spacing and document layers',()=>{
+  assert.match(mobileCss,/\.authenticated-app-shell[\s\S]*min-height: 100dvh/);
+  assert.match(mobileCss,/\.authenticated-app-shell > \.canonical-app-shell[\s\S]*z-index: 40/);
+  assert.match(mobileCss,/\.mobile-more-backdrop[\s\S]*z-index: 100/);
+  assert.match(mobileCss,/\.mobile-bottom-nav[\s\S]*z-index: 80/);
+  assert.match(mobileCss,/\.authenticated-app-shell[\s\S]*padding-bottom: calc\(var\(--mobile-bottom-nav-height\)/);
+  assert.match(layout,/\{children\}<AppFooter \/>/);
 });
 
 test('mobile More preserves account access and a visible sign-out path',()=>{

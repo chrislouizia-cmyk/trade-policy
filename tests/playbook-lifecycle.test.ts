@@ -57,9 +57,20 @@ test('delete clears client references and selects the server fallback', () => {
   assert.match(builder, /setV2Baseline\(null\)/);
   assert.match(builder, /setV2Draft\(null\)/);
   assert.match(builder, /trade-police-strategy-draft/);
-  assert.match(builder, /writeUserScopedSelection\('trade-police:active-strategy', userId, fallbackStrategyId\)/);
-  assert.match(builder, /loadAll\(fallbackStrategyId \?\? undefined, \{ preserveCurrentSelection: false \}\)/);
+  assert.match(builder, /reconcileStrategyDeletion/);
+  assert.match(builder, /if \(resolution\.nextActiveStrategyId !== undefined\)/);
+  assert.match(builder, /loadAll\(resolution\.nextSelectedStrategyId \?\? undefined, \{ preserveCurrentSelection: false \}\)/);
+  assert.match(builder, /router\.refresh\(\)/);
   assert.match(builder, /deletedStrategyId: deletedId/);
+});
+
+test('delete response exposes active-state and all preserved-history detach counts', () => {
+  assert.match(route, /deletedWasActive: existing\.is_default === true/);
+  assert.match(route, /detachedDecisionReports/);
+  assert.match(route, /detachedBacktestRuns/);
+  assert.match(route, /revalidatePath\('\/profile'\)/);
+  assert.match(route, /revalidatePath\('\/dashboard'\)/);
+  assert.match(route, /revalidatePath\('\/validate'\)/);
 });
 
 test('Validate discards analysis when its strategy is deleted', () => {

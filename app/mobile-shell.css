@@ -25,6 +25,34 @@
   position: relative;
 }
 
+.authenticated-app-shell {
+  position: relative;
+  z-index: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.authenticated-app-shell > .canonical-app-shell {
+  position: relative;
+  z-index: 40;
+}
+
+.authenticated-shell-content {
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+}
+
+.authenticated-shell-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-footer {
+  position: relative;
+  z-index: 0;
+}
+
 /* Native details are progressive disclosure on mobile only. Keep the existing
    information architecture fully expanded for desktop users. */
 @media (min-width: 761px) {
@@ -79,7 +107,14 @@
 
   body:has(.mobile-bottom-nav) .app-document-content {
     min-width: 0;
-    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 44px);
+  }
+
+  .authenticated-app-shell {
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 44px) !important;
+  }
+
+  .app-document-content > .app-footer {
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 20px);
   }
 
   body:has(.mobile-bottom-nav) .container {
@@ -803,7 +838,7 @@
   .mobile-more-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    z-index: 100;
     display: flex;
     align-items: flex-end;
     padding: 12px;

@@ -87,7 +87,7 @@ test('Validate uses the canonical authenticated shell without restoring the lega
   assert.match(header, /KeyboardShortcuts/);
   assert.match(header, /SignOutButton/);
   assert.match(page, /description=\{c\.description\}/);
-  assert.match(page, /AppHeader/);
+  assert.match(page, /AuthenticatedAppShell/);
 });
 
 test('session-scoped strategy IDs are isolated per user and stale IDs are discarded', () => {

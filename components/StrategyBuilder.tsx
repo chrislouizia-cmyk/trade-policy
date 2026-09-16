@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import InstrumentSelector, { CatalogInstrument } from '@/components/InstrumentSelector';
 import SessionSelector, { PRESET_SESSIONS } from '@/components/SessionSelector';
@@ -32,6 +32,7 @@ import { resolveStrategyBuilderBootstrapRenderState, runStrategyBuilderBootstrap
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
 import {writeUserScopedSelection} from '@/lib/user-session-state';
+import {reconcileStrategyDeletion} from '@/lib/strategy-deletion-state';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -119,6 +120,7 @@ function profileFromRow(row: any): StrategyProfile {
 export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId: string; planCode?: string }) {
   const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [profiles, setProfiles] = useState<StrategyProfile[]>([]);
   const [profile, setProfile] = useState<StrategyProfile>(createEmptyStrategyProfile);
   const [catalog, setCatalog] = useState<CatalogInstrument[]>(FALLBACK_CATALOG);
@@ -548,13 +550,19 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       const deletedId = deleteTarget.id;
       const deletedName = deleteTarget.name;
       const fallbackStrategyId = typeof result.fallbackStrategyId === 'string' ? result.fallbackStrategyId : null;
+      const resolution = reconcileStrategyDeletion({
+        deletedStrategyId: deletedId,
+        fallbackStrategyId,
+        selectedStrategyId: profile.id ?? null,
+        deletedWasActive: result.deletedWasActive === true,
+      });
 
       setProfiles((current) => current.filter((item) => item.id !== deletedId));
 
       setDeleteTarget(null);
       setDeleteConfirmation('');
 
-      if (profile.id === deletedId) {
+      if (resolution.selectedWasDeleted) {
         setProfile(createEmptyStrategyProfile());
         setSessions([]);
         setRules([]);
@@ -582,15 +590,25 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
           window.localStorage.removeItem('trade-police-strategy-draft');
         }
       }
-      writeUserScopedSelection('trade-police:active-strategy', userId, fallbackStrategyId);
+      if (resolution.nextActiveStrategyId !== undefined) {
+        writeUserScopedSelection('trade-police:active-strategy', userId, resolution.nextActiveStrategyId);
+      }
 
-      await loadAll(fallbackStrategyId ?? undefined, { preserveCurrentSelection: false });
+      await loadAll(resolution.nextSelectedStrategyId ?? undefined, { preserveCurrentSelection: false });
+
+      const nextUrl = new URL(window.location.href);
+      if (nextUrl.searchParams.get('strategy') === deletedId) {
+        nextUrl.searchParams.delete('strategy');
+        nextUrl.searchParams.delete('mode');
+        window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      }
 
       setMessage(`${deletedName} was deleted. Historical trades, reports, and backtests were preserved.`);
       void trackBetaEvent('PLAYBOOK_DELETED', deletedId);
       window.dispatchEvent(new CustomEvent('trade-police:strategy-changed', {
         detail: { deletedStrategyId: deletedId, strategyId: fallbackStrategyId },
       }));
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not delete strategy.');
     } finally {

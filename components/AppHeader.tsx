@@ -1,12 +1,9 @@
 import ActiveStrategySwitcher from '@/components/ActiveStrategySwitcher';
 import ActiveAccountSwitcher from '@/components/ActiveAccountSwitcher';
-import FeedbackWidget from '@/components/FeedbackWidget';
 import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
-import MobileBottomNav from '@/components/MobileBottomNav';
 import AppPrimaryNavigation from '@/components/AppPrimaryNavigation';
-import { createClient } from '@/lib/supabase/server';
 import Image from 'next/image';
 import Link from 'next/link';
 import { getServerTranslator } from '@/lib/i18n/server';
@@ -15,25 +12,18 @@ export default async function AppHeader({
   eyebrow,
   displayName,
   description,
-  userId,
+  activeTradeCount = 0,
   decisionFocused = false,
   showContext = false,
 }: {
   eyebrow: string;
   displayName: string;
   description: string;
-  userId: string;
+  activeTradeCount?: number;
   decisionFocused?: boolean;
   showContext?: boolean;
 }) {
-  const supabase = await createClient();
   const { t } = await getServerTranslator();
-  const { count } = await supabase
-    .from('active_trades')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('status', 'OPEN');
-  const activeTradeCount = count ?? 0;
 
   return (
     <>
@@ -89,8 +79,6 @@ export default async function AppHeader({
         ) : null}
       </header>
 
-      <MobileBottomNav activeTradeCount={activeTradeCount} />
-      <FeedbackWidget userId={userId} />
     </>
   );
 }

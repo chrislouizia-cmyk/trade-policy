@@ -9,7 +9,7 @@ test('Validate alone uses the decision-focused compact application header', () =
   const validate = read('app/validate/page.tsx');
   const dashboard = read('app/dashboard/page.tsx');
   assert.match(header, /decisionFocused \? 'decision-focused-header' : ''/);
-  assert.match(validate, /<AppHeader[^>]*decisionFocused/);
+  assert.match(validate, /<AuthenticatedAppShell[^>]*decisionFocused/);
   assert.doesNotMatch(dashboard, /decisionFocused/);
 });
 

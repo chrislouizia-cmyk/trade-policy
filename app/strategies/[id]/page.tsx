@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import StrategyDetailPage from '@/components/StrategyDetailPage';
-import AppHeader from '@/components/AppHeader';
+import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
 import { getBillingState } from '@/lib/billing/entitlements';
@@ -42,8 +42,7 @@ export default async function StrategyDetailRoute({ params }: { params: Promise<
   const planCode = (await getBillingState(user.id)).plan;
 
   return (
-    <main className="container builder-container">
-      <AppHeader eyebrow="TRADE POLICE / STRATEGY DETAIL" displayName={displayName} description="Review rules, execute backtests, and keep the strategy context in one place." userId={user.id} />
+    <AuthenticatedAppShell className="builder-container" eyebrow="TRADE POLICE / STRATEGY DETAIL" displayName={displayName} description="Review rules, execute backtests, and keep the strategy context in one place." userId={user.id}>
       <StrategyDetailPage
         strategy={{
           id: strategy.id,
@@ -72,6 +71,6 @@ export default async function StrategyDetailRoute({ params }: { params: Promise<
         initialRuns={backtestsResult.data ?? []}
         planCode={planCode}
       />
-    </main>
+    </AuthenticatedAppShell>
   );
 }

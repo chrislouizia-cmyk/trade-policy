@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 
-import AppHeader from '@/components/AppHeader';
+import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
 import SharedStrategyInstall from '@/components/SharedStrategyInstall';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
@@ -16,8 +16,7 @@ export default async function SharedStrategyPage({ params }: { params: Promise<{
   if (!user) redirect(`/login?next=${encodeURIComponent(`/share/strategy/${code}`)}`);
 
   const displayName = await getUserDisplayName(supabase, user);
-  return <main className="container builder-container">
-    <AppHeader eyebrow="TRADE POLICE / SHARED STRATEGY" displayName={displayName} description="Review the strategy and its license before adding a private copy." userId={user.id} />
+  return <AuthenticatedAppShell className="builder-container" eyebrow="TRADE POLICE / SHARED STRATEGY" displayName={displayName} description="Review the strategy and its license before adding a private copy." userId={user.id}>
     <SharedStrategyInstall code={code} />
-  </main>;
+  </AuthenticatedAppShell>;
 }

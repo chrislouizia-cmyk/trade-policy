@@ -1,5 +1,5 @@
 import ActiveTradeMonitor from '@/components/ActiveTradeMonitor';
-import AppHeader from '@/components/AppHeader';
+import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
 import { redirect } from 'next/navigation';
@@ -12,5 +12,5 @@ export default async function ActiveTradePage() {
   if (!user) redirect('/client/login?next=/active-trade');
   const [displayName, locale] = await Promise.all([getUserDisplayName(supabase, user), getRequestLocale()]);
   const copy = getScreenCopy(locale).active;
-  return <main className="container"><AppHeader eyebrow={copy.eyebrow} displayName={displayName} description={copy.description} userId={user.id} showContext /><ActiveTradeMonitor userId={user.id} /></main>;
+  return <AuthenticatedAppShell eyebrow={copy.eyebrow} displayName={displayName} description={copy.description} userId={user.id} showContext><ActiveTradeMonitor userId={user.id} /></AuthenticatedAppShell>;
 }

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import AppHeader from '@/components/AppHeader';
+import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
 import {
   buildHistoryJournal,
   filterHistoryJournal,
@@ -273,8 +273,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       : { previous: 'Previous', next: 'Next', page: 'Page', of: 'of' };
 
   return (
-    <main className="container history-page-shell">
-      <AppHeader eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} />
+    <AuthenticatedAppShell className="history-page-shell" eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id}>
 
       <section className="card history-overview-card history-journal-hero">
         <header className="history-header-row">
@@ -338,6 +337,6 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
           </>
         )}
       </section>
-    </main>
+    </AuthenticatedAppShell>
   );
 }

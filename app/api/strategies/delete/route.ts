@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { apiError } from '@/lib/server/public-error';
+import { revalidatePath } from 'next/cache';
 
 const schema = z.object({
   strategyId: z.string().uuid(),
@@ -15,6 +16,8 @@ type DeleteStrategyResult = {
   detachedTradeRecords?: number;
   detachedActiveTrades?: number;
   detachedMarketScans?: number;
+  detachedDecisionReports?: number;
+  detachedBacktestRuns?: number;
 };
 
 export async function POST(request: Request) {
@@ -60,13 +63,21 @@ export async function POST(request: Request) {
     return apiError('STRATEGY_DELETE_INCOMPLETE', 'Strategy deletion did not complete.', 500);
   }
 
+  revalidatePath('/profile');
+  revalidatePath('/dashboard');
+  revalidatePath('/validate');
+  revalidatePath('/strategies/[id]', 'page');
+
   return NextResponse.json({
     ok: true,
     deleted: true,
     strategyId,
+    deletedWasActive: existing.is_default === true,
     fallbackStrategyId: result.fallbackStrategyId ?? null,
     detachedTradeRecords: result.detachedTradeRecords ?? 0,
     detachedActiveTrades: result.detachedActiveTrades ?? 0,
     detachedMarketScans: result.detachedMarketScans ?? 0,
+    detachedDecisionReports: result.detachedDecisionReports ?? 0,
+    detachedBacktestRuns: result.detachedBacktestRuns ?? 0,
   }, { headers: { 'Cache-Control': 'no-store' } });
 }
