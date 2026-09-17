@@ -7,6 +7,7 @@ const route = readFileSync(new URL('../app/api/strategies/delete/route.ts', impo
 const builder = readFileSync(new URL('../components/StrategyBuilder.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/107_repair_strategy_hard_delete.sql', import.meta.url), 'utf8');
 const immutableHistoryRepair = readFileSync(new URL('../supabase/migrations/20260917061002_allow_strategy_delete_to_detach_immutable_history.sql', import.meta.url), 'utf8');
+const marketplaceGuardRepair = readFileSync(new URL('../supabase/migrations/20260917062358_repair_strategy_delete_marketplace_guard.sql', import.meta.url), 'utf8');
 
 test('deleting an unrelated strategy preserves selected and active strategy state', () => {
   assert.deepEqual(reconcileStrategyDeletion({
@@ -90,4 +91,13 @@ test('delete failures are visible inside the confirmation dialog', () => {
   assert.match(builder, /readApiResponse\(response\)/);
   assert.match(builder, /setDeleteError\(nextError\)/);
   assert.match(builder, /role="alert">\{deleteError\}/);
+});
+
+test('delete does not require authenticated access to protected Marketplace release tables', () => {
+  assert.match(marketplaceGuardRepair, /security invoker/);
+  assert.doesNotMatch(marketplaceGuardRepair, /from public\.marketplace_strategy_releases/);
+  assert.doesNotMatch(marketplaceGuardRepair, /grant select on (?:table )?public\.marketplace_strategy_releases to authenticated/);
+  assert.match(marketplaceGuardRepair, /when foreign_key_violation/);
+  assert.match(marketplaceGuardRepair, /v_constraint_name like 'marketplace_%'/);
+  assert.match(marketplaceGuardRepair, /Marketplace release/);
 });
