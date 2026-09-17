@@ -93,6 +93,14 @@ test('delete failures are visible inside the confirmation dialog', () => {
   assert.match(builder, /role="alert">\{deleteError\}/);
 });
 
+test('delete endpoint identifies stalled data calls and always returns a response', () => {
+  assert.match(route, /STRATEGY_DELETE_DIAGNOSTIC/);
+  assert.match(route, /stage: 'request_threw'/);
+  assert.match(route, /AbortSignal\.timeout\(15_000\)/);
+  assert.match(route, /AbortSignal\.timeout\(20_000\)/);
+  assert.match(route, /STRATEGY_DELETE_UNAVAILABLE/);
+});
+
 test('delete does not require authenticated access to protected Marketplace release tables', () => {
   assert.match(marketplaceGuardRepair, /security invoker/);
   assert.doesNotMatch(marketplaceGuardRepair, /from public\.marketplace_strategy_releases/);
