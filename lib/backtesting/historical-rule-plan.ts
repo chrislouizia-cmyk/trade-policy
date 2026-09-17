@@ -1,7 +1,7 @@
 import type { StrategyProfile, StrategyRule, TimeframeRole } from '../../types/trade.ts';
 import { isHistoricalTimeframe, normalizeHistoricalTimeframe } from './historical-timeframes.ts';
 
-export const HISTORICAL_RULE_PLAN_VERSION = '1.0.0';
+export const HISTORICAL_RULE_PLAN_VERSION = '2.0.0';
 
 export type HistoricalDetectorId =
   | 'market-structure.swing'
@@ -11,11 +11,24 @@ export type HistoricalDetectorId =
   | 'price-action.range-break'
   | 'price-action.breakout-confirmation'
   | 'market-structure.trend-alignment'
+  | 'market-structure.state'
+  | 'market-structure.level'
   | 'smart-money.order-block'
-  | 'smart-money.fair-value-gap';
+  | 'smart-money.fair-value-gap'
+  | 'smart-money.zone'
+  | 'indicator.technical'
+  | 'price-action.pattern'
+  | 'price-action.range-state'
+  | 'volume.signal'
+  | 'session.window'
+  | 'risk.policy';
 
 export type ParameterSource = Readonly<{ source: 'EXPLICIT' | 'DEFAULT'; version: string }>;
-export type CanonicalHistoricalOperator = 'EVENT_CONFIRMED' | 'EVENT_NOT_CONFIRMED' | 'ACTIVE_EXISTS' | 'ACTIVE_MISSING' | 'NEWLY_CONFIRMED';
+export type CanonicalHistoricalOperator =
+  | 'EVENT_CONFIRMED' | 'EVENT_NOT_CONFIRMED'
+  | 'ACTIVE_EXISTS' | 'ACTIVE_MISSING' | 'NEWLY_CONFIRMED'
+  | 'GREATER_THAN' | 'LESS_THAN' | 'GREATER_THAN_OR_EQUAL' | 'LESS_THAN_OR_EQUAL'
+  | 'CROSSES_ABOVE' | 'CROSSES_BELOW' | 'BETWEEN' | 'OUTSIDE' | 'WITHIN';
 export type CanonicalHistoricalRule = Readonly<{
   id: string;
   detectorId: HistoricalDetectorId;
@@ -48,6 +61,7 @@ export type HistoricalRulePlan = Readonly<{
   version: typeof HISTORICAL_RULE_PLAN_VERSION;
   rules: readonly CanonicalHistoricalRule[];
   unsupportedRequiredRules: readonly UnsupportedHistoricalRule[];
+  unsupportedRules: readonly UnsupportedHistoricalRule[];
 }>;
 
 type DecodedCondition = { ruleId?: string; operator?: string; inputs?: Record<string, unknown>; operands?: unknown[] };
@@ -59,8 +73,17 @@ const DETECTOR_VERSION: Record<HistoricalDetectorId, string> = {
   'price-action.range-break': '1.0.0',
   'price-action.breakout-confirmation': '1.0.0',
   'market-structure.trend-alignment': '1.0.0',
+  'market-structure.state': '1.0.0',
+  'market-structure.level': '1.0.0',
   'smart-money.order-block': '1.0.0',
   'smart-money.fair-value-gap': '1.0.0',
+  'smart-money.zone': '1.0.0',
+  'indicator.technical': '1.0.0',
+  'price-action.pattern': '1.0.0',
+  'price-action.range-state': '1.0.0',
+  'volume.signal': '1.0.0',
+  'session.window': '1.0.0',
+  'risk.policy': '1.0.0',
 };
 
 const aliases: Record<string, HistoricalDetectorId> = {
@@ -73,6 +96,20 @@ const aliases: Record<string, HistoricalDetectorId> = {
   trendalignment: 'market-structure.trend-alignment', h4trendaligned: 'market-structure.trend-alignment', h1trendaligned: 'market-structure.trend-alignment', structuretrendalignment: 'market-structure.trend-alignment',
   orderblock: 'smart-money.order-block', smartmoneyorderblock: 'smart-money.order-block',
   fairvaluegap: 'smart-money.fair-value-gap', fvg: 'smart-money.fair-value-gap', smartmoneyfairvaluegap: 'smart-money.fair-value-gap',
+  trendema: 'indicator.technical', trendsma: 'indicator.technical', trendvwap: 'indicator.technical', trendsupertrend: 'indicator.technical', trendmaribbon: 'indicator.technical',
+  momentumrsi: 'indicator.technical', momentummacd: 'indicator.technical', momentumadx: 'indicator.technical', momentumstochastic: 'indicator.technical', momentumcci: 'indicator.technical',
+  ema: 'indicator.technical', sma: 'indicator.technical', vwap: 'indicator.technical', supertrend: 'indicator.technical', movingaverageribbon: 'indicator.technical', rsi: 'indicator.technical', macd: 'indicator.technical', adx: 'indicator.technical', stochastic: 'indicator.technical', cci: 'indicator.technical',
+  structuremss: 'market-structure.state', structurehigherhigh: 'market-structure.state', structurehigherlow: 'market-structure.state', structurelowerhigh: 'market-structure.state', structurelowerlow: 'market-structure.state',
+  mss: 'market-structure.state', marketstructureshift: 'market-structure.state', higherhigh: 'market-structure.state', higherlow: 'market-structure.state', lowerhigh: 'market-structure.state', lowerlow: 'market-structure.state',
+  support: 'market-structure.level', supportzone: 'market-structure.level', resistance: 'market-structure.level', resistancezone: 'market-structure.level', pivot: 'market-structure.level', pivotpoint: 'market-structure.level',
+  smartmoneybreakerblock: 'smart-money.zone', smartmoneymitigationblock: 'smart-money.zone', smartmoneyequalhigh: 'smart-money.zone', smartmoneyequallow: 'smart-money.zone', smartmoneypremium: 'smart-money.zone', smartmoneydiscount: 'smart-money.zone',
+  breakerblock: 'smart-money.zone', mitigationblock: 'smart-money.zone', equalhigh: 'smart-money.zone', equallow: 'smart-money.zone', premium: 'smart-money.zone', discount: 'smart-money.zone',
+  priceactionstrongrejection: 'price-action.pattern', priceactionengulfing: 'price-action.pattern', priceactionpinbar: 'price-action.pattern', priceactioninsidebar: 'price-action.pattern', priceactionoutsidebar: 'price-action.pattern',
+  strongrejection: 'price-action.pattern', engulfing: 'price-action.pattern', pinbar: 'price-action.pattern', insidebar: 'price-action.pattern', outsidebar: 'price-action.pattern',
+  priceactionbreakout: 'price-action.range-state', priceactionretest: 'price-action.range-state', priceactionconsolidation: 'price-action.range-state', breakout: 'price-action.range-state', retest: 'price-action.range-state', consolidation: 'price-action.range-state',
+  volumespike: 'volume.signal', volumeaboveaverage: 'volume.signal', volumedeltaconfirmation: 'volume.signal', volumedivergence: 'volume.signal', aboveaveragevolume: 'volume.signal', deltaconfirmation: 'volume.signal',
+  sessionlondon: 'session.window', sessionnewyork: 'session.window', sessionasia: 'session.window', sessionoverlap: 'session.window', sessionkillzones: 'session.window', smartmoneykillzone: 'session.window', london: 'session.window', newyork: 'session.window', asia: 'session.window', killzone: 'session.window', killzones: 'session.window',
+  riskminimumrr: 'risk.policy', riskmaximumrisk: 'risk.policy', riskmaximumdailyexposure: 'risk.policy', minimumrr: 'risk.policy', maximumrisk: 'risk.policy', maximumdailyexposure: 'risk.policy',
 };
 
 const EVENT_OPERATORS: Readonly<Record<string, CanonicalHistoricalOperator>> = Object.freeze({
@@ -81,6 +118,12 @@ const EVENT_OPERATORS: Readonly<Record<string, CanonicalHistoricalOperator>> = O
 const LIFECYCLE_OPERATORS: Readonly<Record<string, CanonicalHistoricalOperator>> = Object.freeze({
   CONFIRMED: 'NEWLY_CONFIRMED', IS_TRUE: 'ACTIVE_EXISTS', EXISTS: 'ACTIVE_EXISTS', WITHIN: 'ACTIVE_EXISTS', IS_FALSE: 'ACTIVE_MISSING', MISSING: 'ACTIVE_MISSING',
 });
+const VALUE_OPERATORS: Readonly<Record<string, CanonicalHistoricalOperator>> = Object.freeze({
+  GREATER_THAN: 'GREATER_THAN', LESS_THAN: 'LESS_THAN', GREATER_THAN_OR_EQUAL: 'GREATER_THAN_OR_EQUAL', LESS_THAN_OR_EQUAL: 'LESS_THAN_OR_EQUAL',
+  CROSSES_ABOVE: 'CROSSES_ABOVE', CROSSES_BELOW: 'CROSSES_BELOW', BETWEEN: 'BETWEEN', OUTSIDE: 'OUTSIDE',
+  IS_TRUE: 'EVENT_CONFIRMED', IS_FALSE: 'EVENT_NOT_CONFIRMED', CONFIRMED: 'EVENT_CONFIRMED',
+});
+const WINDOW_OPERATORS: Readonly<Record<string, CanonicalHistoricalOperator>> = Object.freeze({ WITHIN: 'WITHIN', OUTSIDE: 'OUTSIDE', IS_TRUE: 'WITHIN', IS_FALSE: 'OUTSIDE' });
 
 export const HISTORICAL_OPERATOR_MATRIX: Readonly<Record<HistoricalDetectorId, Readonly<Record<string, CanonicalHistoricalOperator>>>> = Object.freeze({
   'market-structure.swing': EVENT_OPERATORS,
@@ -90,8 +133,17 @@ export const HISTORICAL_OPERATOR_MATRIX: Readonly<Record<HistoricalDetectorId, R
   'price-action.range-break': EVENT_OPERATORS,
   'price-action.breakout-confirmation': EVENT_OPERATORS,
   'market-structure.trend-alignment': EVENT_OPERATORS,
+  'market-structure.state': EVENT_OPERATORS,
+  'market-structure.level': EVENT_OPERATORS,
   'smart-money.order-block': LIFECYCLE_OPERATORS,
   'smart-money.fair-value-gap': LIFECYCLE_OPERATORS,
+  'smart-money.zone': EVENT_OPERATORS,
+  'indicator.technical': VALUE_OPERATORS,
+  'price-action.pattern': EVENT_OPERATORS,
+  'price-action.range-state': EVENT_OPERATORS,
+  'volume.signal': VALUE_OPERATORS,
+  'session.window': WINDOW_OPERATORS,
+  'risk.policy': VALUE_OPERATORS,
 });
 
 const roleField: Record<TimeframeRole, keyof StrategyProfile> = { MACRO: 'macroTimeframe', TREND: 'trendTimeframe', CONFIRMATION: 'confirmationTimeframe', ENTRY: 'entryTimeframe', TRIGGER: 'triggerTimeframe' };
@@ -162,7 +214,12 @@ function canonicalRule(strategy: StrategyProfile, rule: StrategyRule, index: num
   const sources: Record<string, ParameterSource> = Object.fromEntries(Object.keys(inputs).map((key) => [key, explicit()]));
   sources.timeframe = resolvedTimeframe.source;
   const direction = directionValue(inputs, sources);
-  const parameters: Record<string, unknown> = { ...inputs };
+  const parameters: Record<string, unknown> = {
+    ...inputs,
+    ruleId: decoded?.ruleId ?? rule.ruleKey,
+    concept: rule.label,
+    operands: decoded?.operands ?? [],
+  };
   let lookback: number | null = null;
   let timeframes: string[] = [resolvedTimeframe.timeframe];
   if (['market-structure.swing', 'market-structure.bos', 'market-structure.choch', 'market-structure.liquidity-sweep'].includes(detectorId)) {
@@ -224,6 +281,44 @@ function canonicalRule(strategy: StrategyProfile, rule: StrategyRule, index: num
       parameters.relativeTolerance = numberValue(inputs, ['relativeTolerance'], 0, sources);
       parameters.minimumGapAbsolute = numberValue(inputs, ['minimumGapAbsolute', 'threshold'], 0, sources);
       break;
+    case 'indicator.technical':
+      parameters.period = numberValue(inputs, ['period'], 14, sources);
+      parameters.threshold = numberValue(inputs, ['threshold'], 0, sources);
+      parameters.source = inputs.source ?? 'close'; sources.source = inputs.source ? explicit() : defaulted();
+      parameters.multiplier = numberValue(inputs, ['multiplier'], 3, sources);
+      parameters.periods = inputs.periods ?? '8,13,21,55'; sources.periods = inputs.periods ? explicit() : defaulted();
+      break;
+    case 'market-structure.state':
+    case 'market-structure.level':
+    case 'smart-money.zone':
+      parameters.leftBars = numberValue(inputs, ['leftBars'], 2, sources);
+      parameters.rightBars = numberValue(inputs, ['rightBars'], 2, sources);
+      parameters.lookback = numberValue(inputs, ['lookback', 'period'], 20, sources);
+      break;
+    case 'price-action.pattern':
+      parameters.bodyRatio = numberValue(inputs, ['bodyRatio', 'threshold'], 0.6, sources);
+      break;
+    case 'price-action.range-state':
+      lookback = numberValue(inputs, ['lookback', 'period'], 20, sources, 'lookback'); parameters.lookback = lookback;
+      parameters.tolerance = numberValue(inputs, ['tolerance', 'threshold'], 0, sources);
+      break;
+    case 'volume.signal':
+      lookback = numberValue(inputs, ['lookback', 'period'], 20, sources, 'lookback'); parameters.lookback = lookback;
+      parameters.threshold = numberValue(inputs, ['threshold'], 1.5, sources);
+      break;
+    case 'session.window':
+      parameters.window = inputs.window ?? inputs.session ?? decoded?.ruleId ?? rule.label; sources.window = inputs.window || inputs.session ? explicit() : defaulted();
+      break;
+    case 'risk.policy': {
+      const ruleId = String(parameters.ruleId);
+      const policyValue = ruleId.includes('minimum-rr')
+        ? numberValue(inputs, ['minimumRR', 'ratio'], strategy.minimumRR, sources, 'policyValue')
+        : ruleId.includes('daily-exposure')
+          ? numberValue(inputs, ['percent'], strategy.maximumDailyRiskPercent ?? strategy.maximumRiskPercent, sources, 'policyValue')
+          : numberValue(inputs, ['percent'], strategy.maximumRiskPercent, sources, 'policyValue');
+      parameters.policyValue = policyValue;
+      break;
+    }
   }
   return Object.freeze({ id: `historical-rule:${index}:${detectorId}`, detectorId, detectorVersion: DETECTOR_VERSION[detectorId], configurationVersion: HISTORICAL_RULE_PLAN_VERSION, originalRuleKey: rule.ruleKey, originalLabel: rule.label, required: rule.mandatory, timeframeRole: rule.timeframeRole, timeframe: resolvedTimeframe.timeframe, timeframes: Object.freeze(timeframes), direction, operator, originalOperator, lookback, parameters: Object.freeze(parameters), parameterSources: Object.freeze(sources) });
 }
@@ -231,19 +326,23 @@ function canonicalRule(strategy: StrategyProfile, rule: StrategyRule, index: num
 export function buildHistoricalRulePlan(strategy: StrategyProfile): HistoricalRulePlan {
   const rules: CanonicalHistoricalRule[] = [];
   const unsupportedRequiredRules: UnsupportedHistoricalRule[] = [];
+  const unsupportedRules: UnsupportedHistoricalRule[] = [];
   for (const [index, rule] of (strategy.rules ?? []).entries()) {
     if (!rule.enabled) continue;
-    const executable = (rule.evaluationMode ?? 'AUTOMATIC') === 'AUTOMATIC';
-    if (!executable) {
-      if (rule.mandatory) unsupportedRequiredRules.push({ ruleKey: rule.ruleKey, label: rule.label, canonicalCandidate: null, reason: `Required ${rule.evaluationMode ?? 'MANUAL'} rule is not historically executable.`, timeframe: String(strategy[roleField[rule.timeframeRole]] ?? ''), parameters: {} });
+    const evaluationMode = rule.evaluationMode ?? 'AUTOMATIC';
+    if (evaluationMode === 'EXTERNAL') {
+      const unsupported = { ruleKey: rule.ruleKey, label: rule.label, canonicalCandidate: null, reason: 'External historical evidence is not configured for this rule.', timeframe: String(strategy[roleField[rule.timeframeRole]] ?? ''), parameters: {} };
+      unsupportedRules.push(unsupported);
+      if (rule.mandatory) unsupportedRequiredRules.push(unsupported);
       continue;
     }
     const result = canonicalRule(strategy, rule, index);
     if ('reason' in result) {
+      unsupportedRules.push(result);
       if (rule.mandatory) unsupportedRequiredRules.push(result);
     } else rules.push(result);
   }
-  return Object.freeze({ version: HISTORICAL_RULE_PLAN_VERSION, rules: Object.freeze(rules), unsupportedRequiredRules: Object.freeze(unsupportedRequiredRules) });
+  return Object.freeze({ version: HISTORICAL_RULE_PLAN_VERSION, rules: Object.freeze(rules), unsupportedRequiredRules: Object.freeze(unsupportedRequiredRules), unsupportedRules: Object.freeze(unsupportedRules) });
 }
 
 export function assertHistoricalRulePlanSupported(plan: HistoricalRulePlan): void {

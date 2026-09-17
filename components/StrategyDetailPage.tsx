@@ -86,6 +86,14 @@ type OpportunityFunnel = {
   completed_trades?: number;
 };
 
+type BacktestReadinessRule = { label: string; reason: string; timeframe?: string };
+type BacktestReadiness = {
+  ready: boolean;
+  executableRuleCount: number;
+  unsupportedRules: BacktestReadinessRule[];
+  unsupportedRequiredRules: BacktestReadinessRule[];
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -215,6 +223,8 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [readiness, setReadiness] = useState<BacktestReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRuns[0]?.id ?? null);
   const [reportResult, setReportResult] = useState<BacktestResultRow | null>(null);
   const [reportTrades, setReportTrades] = useState<BacktestTradeRow[]>([]);
@@ -296,6 +306,26 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       });
     }
   }
+
+  async function refreshBacktestReadiness() {
+    if (!strategy.id) return;
+    setReadinessLoading(true);
+    try {
+      const response = await fetch(`/api/backtests/readiness?strategyProfileId=${encodeURIComponent(strategy.id)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error?.message || 'Backtest readiness could not be checked.');
+      setReadiness(payload as BacktestReadiness);
+    } catch {
+      setMessage('Backtest readiness could not be checked. Please try again.');
+      setReadiness(null);
+    } finally {
+      setReadinessLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'backtests') void refreshBacktestReadiness();
+  }, [tab, strategy.id]);
 
   useEffect(() => {
     const hasActiveRun = runs.some((run) => run.status === 'QUEUED' || run.status === 'RUNNING');
@@ -443,7 +473,10 @@ setReportLoading(false);
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result?.error?.message || 'Backtest creation failed.');
+        const blockers = Array.isArray(result?.error?.details?.unsupportedRules)
+          ? result.error.details.unsupportedRules.map((rule: BacktestReadinessRule) => `${rule.label}: ${rule.reason}`).join(' · ')
+          : '';
+        throw new Error(blockers || result?.error?.message || 'Backtest creation failed.');
       }
 
       setFormOpen(false);
@@ -609,6 +642,15 @@ setReportLoading(false);
 
                 {formOpen && (
                   <form onSubmit={handleCreateBacktest} style={{ marginTop: 20, display: 'grid', gap: 16, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="card" aria-live="polite" style={{ margin: 0, padding: 14 }}>
+                      <strong>{readinessLoading ? 'Checking historical rule coverage…' : readiness?.ready ? 'Ready for deterministic backtesting' : 'Backtest setup needs attention'}</strong>
+                      {readiness && <small className="muted" style={{ display: 'block', marginTop: 6 }}>{readiness.executableRuleCount} rules have historical detectors.</small>}
+                      {readiness?.unsupportedRules.map((rule) => (
+                        <small key={`${rule.label}-${rule.reason}`} style={{ display: 'block', marginTop: 6 }}>
+                          {rule.label}: {rule.reason}{rule.timeframe ? ` (${rule.timeframe})` : ''}
+                        </small>
+                      ))}
+                    </div>
                     <div className="grid grid-2">
                       <label>
                         {w('Instrument')}
@@ -658,7 +700,7 @@ setReportLoading(false);
                     )}
 
                     <div className="button-row" style={{ marginTop: 0 }}>
-                      <button type="submit" className="primary" disabled={saving || enabledBacktestInstruments.length === 0}>{w(saving ? 'Queueing…' : 'Queue Backtest')}</button>
+                      <button type="submit" className="primary" disabled={saving || readinessLoading || readiness?.ready === false || enabledBacktestInstruments.length === 0}>{w(saving ? 'Queueing…' : 'Queue Backtest')}</button>
                       <button type="button" className="secondary" onClick={() => setFormOpen(false)}>{w('Cancel')}</button>
                     </div>
                   </form>

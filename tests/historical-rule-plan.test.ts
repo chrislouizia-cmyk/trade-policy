@@ -4,6 +4,8 @@ import test from 'node:test';
 
 import { evaluateHistoricalRulePlan } from '../lib/backtesting/historical-detectors.ts';
 import { buildHistoricalRulePlan } from '../lib/backtesting/historical-rule-plan.ts';
+import { TRADING_DNA_RULES } from '../lib/trading-dna/registry.ts';
+import { getTradingDnaOperator } from '../lib/trading-dna/operators.ts';
 import type { StrategyProfile, StrategyRule } from '../types/trade.ts';
 
 const rule = (label: string, ruleKey = label, patch: Partial<StrategyRule> = {}): StrategyRule => ({
@@ -58,6 +60,57 @@ test('unknown required concepts remain structured unsupported rules while descri
   assert.equal(plan.rules.length, 0);
   assert.equal(plan.unsupportedRequiredRules.length, 1);
   assert.equal(plan.unsupportedRequiredRules[0]?.label, 'Astrology Confluence');
+  assert.equal(plan.unsupportedRules.length, 2);
+});
+
+test('every registered automatic Strategy DNA rule compiles to a historical detector', () => {
+  for (const definition of TRADING_DNA_RULES.filter((item) => item.evaluationType === 'AUTOMATIC')) {
+    const operator = definition.supportedOperators[0]!;
+    const operandCount = getTradingDnaOperator(operator)?.operandCount ?? 0;
+    const inputs = { ...definition.defaultValues, ...(definition.supportedTimeframes.length ? { timeframe: 'M15' } : {}) };
+    const encoded = `dna.v1.${encodeURIComponent(JSON.stringify({ condition: { ruleId: definition.id, operator, inputs, operands: Array.from({ length: operandCount }, (_, index) => index + 1) } }))}`;
+    const plan = buildHistoricalRulePlan(strategy([rule(definition.displayName, encoded)]));
+    assert.equal(plan.unsupportedRequiredRules.length, 0, definition.id);
+    assert.equal(plan.rules.length, 1, definition.id);
+  }
+});
+
+test('GBPUSD London Pullback legacy rules compile, including historical proxies for manual levels', () => {
+  const plan = buildHistoricalRulePlan(strategy([
+    rule('Trend Alignment'), rule('Support Zone', 'support-zone', { evaluationMode: 'MANUAL' }),
+    rule('Resistance Zone', 'resistance-zone', { evaluationMode: 'MANUAL' }), rule('CHoCH'), rule('BOS'),
+    rule('Retest'), rule('Order Block', 'order-block', { mandatory: false }),
+    rule('Fair Value Gap', 'fair-value-gap', { mandatory: false }), rule('Pivot', 'pivot', { mandatory: false }),
+    rule('Engulfing', 'engulfing', { mandatory: false }), rule('Liquidity Sweep', 'liquidity-sweep', { mandatory: false }),
+  ]));
+  assert.equal(plan.unsupportedRequiredRules.length, 0);
+  assert.equal(plan.unsupportedRules.length, 0);
+  assert.deepEqual(plan.rules.map((item) => item.originalLabel), [
+    'Trend Alignment', 'Support Zone', 'Resistance Zone', 'CHoCH', 'BOS', 'Retest',
+    'Order Block', 'Fair Value Gap', 'Pivot', 'Engulfing', 'Liquidity Sweep',
+  ]);
+});
+
+test('all automatic registry detectors evaluate deterministically without reading future candles', () => {
+  const source = Array.from({ length: 90 }, (_, index) => ({
+    datetime: new Date(Date.UTC(2025, 0, 1, 0, index * 15)).toISOString(),
+    open: 100 + index * 0.05,
+    high: 100.4 + index * 0.05 + (index % 5 === 0 ? 0.2 : 0),
+    low: 99.7 + index * 0.05 - (index % 7 === 0 ? 0.2 : 0),
+    close: 100.1 + index * 0.05,
+    volume: 1000 + index * 10,
+  }));
+  for (const definition of TRADING_DNA_RULES.filter((item) => item.evaluationType === 'AUTOMATIC')) {
+    const operator = definition.supportedOperators[0]!;
+    const operandCount = getTradingDnaOperator(operator)?.operandCount ?? 0;
+    const encoded = `dna.v1.${encodeURIComponent(JSON.stringify({ condition: { ruleId: definition.id, operator, inputs: { ...definition.defaultValues, timeframe: 'M15' }, operands: Array.from({ length: operandCount }, () => 1) } }))}`;
+    const plan = buildHistoricalRulePlan(strategy([rule(definition.displayName, encoded)]));
+    const before = evaluateHistoricalRulePlan(plan, { M15: source }, 'GBPUSD');
+    const future = { ...source.at(-1)!, datetime: new Date(Date.UTC(2025, 0, 2, 0, 0)).toISOString(), close: 1, low: 0.5 };
+    const unchanged = evaluateHistoricalRulePlan(plan, { M15: [...source, future].slice(0, -1) }, 'GBPUSD');
+    assert.deepEqual(before, unchanged, definition.id);
+    assert.equal(before.evaluations.length, 1, definition.id);
+  }
 });
 
 test('unsupported required operators are rejected structurally while optional rules remain non-blocking', () => {
@@ -141,7 +194,7 @@ test('explicit DNA parameters and direction are preserved and defaults are recor
   assert.equal(item.lookback, 3);
   assert.equal(item.direction, 'BULLISH');
   assert.equal(item.parameterSources.lookback?.source, 'EXPLICIT');
-  assert.equal(item.configurationVersion, '1.0.0');
+  assert.equal(item.configurationVersion, '2.0.0');
 });
 
 test('range break and breakout confirmation evaluate deterministically without future candles', () => {
@@ -183,6 +236,18 @@ test('API capability validation occurs before entitlement lookup and atomic run 
   assert.match(source, /BACKTEST_RULES_UNSUPPORTED/);
   assert.match(source, /unsupportedRules/);
   assert.match(fs.readFileSync('lib/backtesting/historical-rule-plan.ts', 'utf8'), /Historical timeframe.*not supported by the production provider/);
+});
+
+test('backtest readiness is visible before queueing and API errors retain exact blockers', () => {
+  const readiness = fs.readFileSync('app/api/backtests/readiness/route.ts', 'utf8');
+  const detail = fs.readFileSync('components/StrategyDetailPage.tsx', 'utf8');
+  assert.match(readiness, /buildHistoricalRulePlan/);
+  assert.match(readiness, /unsupportedRequiredRules/);
+  assert.match(readiness, /Cache-Control.*no-store/);
+  assert.match(detail, /refreshBacktestReadiness/);
+  assert.match(detail, /Ready for deterministic backtesting/);
+  assert.match(detail, /error\?\.details\?\.unsupportedRules/);
+  assert.match(detail, /readiness\?\.ready === false/);
 });
 
 test('frozen snapshots and trade evidence carry the canonical plan and evaluations', () => {
