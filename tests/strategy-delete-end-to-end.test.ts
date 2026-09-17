@@ -54,6 +54,16 @@ test('delete removes the item immediately, refetches canonical data and invalida
   assert.match(route, /revalidatePath\('\/profile'\)/);
 });
 
+test('delete confirmation dialog is mounted from the selected-strategy branch', () => {
+  assert.match(builder, /const deleteDialog = deleteTarget/);
+  const selectedBranch = builder.slice(
+    builder.indexOf('if (selectedProfile) {'),
+    builder.indexOf("return (\n    <div className=\"strategy-builder-layout\">", builder.indexOf('if (selectedProfile) {')),
+  );
+  assert.match(selectedBranch, /\{deleteDialog\}/);
+  assert.doesNotMatch(builder, /deleteTarget&&createPortal/);
+});
+
 test('hard delete remains server-authorized and preserves historical evidence', () => {
   assert.match(route, /supabase\.auth\.getUser\(\)/);
   assert.match(route, /\.eq\('user_id', user\.id\)/);

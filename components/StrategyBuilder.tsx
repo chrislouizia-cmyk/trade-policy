@@ -619,6 +619,19 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const selectedProfile = useMemo(() => profiles.find((item) => item.id === profile.id), [profiles, profile.id]);
   const activeProfiles = useMemo(() => profiles.filter((item) => !item.isArchived), [profiles]);
   const archivedProfiles = useMemo(() => profiles.filter((item) => item.isArchived), [profiles]);
+  const deleteDialog = deleteTarget && typeof document !== 'undefined'
+    ? createPortal(
+        <div className="modal-backdrop strategy-delete-modal-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget){setDeleteTarget(null);setDeleteConfirmation('')}}}>
+          <section className="card modal-card playbook-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-playbook-title" onMouseDown={(event)=>event.stopPropagation()}>
+            <div className="modal-head"><div><p className="muted">DELETE STRATEGY</p><h2 id="delete-playbook-title">Delete strategy?</h2></div><button type="button" aria-label="Close delete dialog" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>×</button></div>
+            <p>Delete {deleteTarget.name}? This permanently removes the strategy from your strategy library. Historical trades, reports, and backtests will be preserved. If this is your active strategy, Trade Police will activate another available strategy automatically.</p>
+            <label>Type <strong>DELETE</strong> to confirm<input autoFocus value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} /></label>
+            <div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete strategy'}</button></div>
+          </section>
+        </div>,
+        document.body,
+      )
+    : null;
 
   if (initialLoading) return <div className="strategy-builder-skeleton" aria-live="polite" aria-busy="true"><span className="sr-only">Loading Strategy Builder.</span><div className="card skeleton-panel"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div><div className="card skeleton-panel skeleton-panel-wide"><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/><i className="skeleton-block"/></div></div>;
   if (resolveStrategyBuilderBootstrapRenderState({ loading: initialLoading, bootstrapError }) === 'error') {
@@ -633,6 +646,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
   if (selectedProfile) {
     return (
+      <>
       <div className="strategy-builder-layout">
         <aside className="card strategy-sidebar">
           <div className="sidebar-head"><div><p className="muted">{w('MY STRATEGIES')}</p><h2>{w('My Strategies')}</h2></div><button type="button" onClick={startNew}>{w('Create New Strategy')}</button></div>
@@ -682,6 +696,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
           />
         </div>
       </div>
+      {deleteDialog}
+      </>
     );
   }
 
@@ -738,7 +754,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
         <div className="button-row sticky-actions"><button type="button" onClick={()=>{const index=BUILDER_STEPS.findIndex(([key])=>key===builderStep);if(index>0)setBuilderStep(BUILDER_STEPS[index-1][0]);}} disabled={builderStep==='identity'}>{w('Back')}</button>{builderStep!=='review'?<button className="primary" type="button" onClick={()=>{const index=BUILDER_STEPS.findIndex(([key])=>key===builderStep);setBuilderStep(BUILDER_STEPS[Math.min(index+1,BUILDER_STEPS.length-1)][0]);}}>{w('Continue')}</button>:<button className="primary" type="button" onClick={() => void save()} disabled={saving||Boolean(finalReviewNameError)||!finalReview.canSave} aria-describedby={saveDisabledReason ? 'save-disabled-reason' : undefined} title={saveDisabledReason ?? undefined}>{w(saving ? 'Saving…' : 'Save strategy')}</button>}{profile.id ? <a className="button-link" href={`/validate?strategy=${encodeURIComponent(profile.id)}`}>{w('Check a setup')}</a> : <button type="button" className="button-link" disabled onClick={() => setMessage('Save the strategy first before checking a setup.')}>{w('Check a setup')}</button>}</div>
         {message && <p className={message==='Saved' || message.includes('active strategy') ? 'success' : 'warning'}>{message}</p>}
       </div>
-      {deleteTarget&&createPortal(<div className="modal-backdrop strategy-delete-modal-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget){setDeleteTarget(null);setDeleteConfirmation('')}}}><section className="card modal-card playbook-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-playbook-title" onMouseDown={(event)=>event.stopPropagation()}><div className="modal-head"><div><p className="muted">DELETE STRATEGY</p><h2 id="delete-playbook-title">Delete strategy?</h2></div><button type="button" aria-label="Close delete dialog" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>×</button></div><p>Delete {deleteTarget.name}? This permanently removes the strategy from your strategy library. Historical trades, reports, and backtests will be preserved. If this is your active strategy, Trade Police will activate another available strategy automatically.</p><label>Type <strong>DELETE</strong> to confirm<input autoFocus value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} /></label><div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete strategy'}</button></div></section></div>,document.body)}
+      {deleteDialog}
     </div>
   );
 }
