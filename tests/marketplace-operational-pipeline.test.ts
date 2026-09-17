@@ -39,7 +39,7 @@ test('release review and installation are usable from a sanitized detail screen'
 
 test('strategy owner gets an explicit consent gate after qualification',()=>{
   const card=read('components/MarketplaceObservationCard.tsx');const api=read('app/api/strategies/[id]/marketplace/route.ts');
-  assert.match(card,/Nothing becomes public without your permission/);assert.match(card,/Authorize internal review/);
+  assert.match(card,/Your rules stay private until you explicitly authorize review/);assert.match(card,/Request listing review/);
   assert.match(card,/marketplace-consent-check/);assert.match(card,/MARKETPLACE · PRIVADO/);assert.match(card,/MARKETPLACE · PRIVÉ/);
   assert.match(api,/set_marketplace_strategy_owner_consent/);assert.match(api,/MARKETPLACE_OWNER_TERMS_V1/);
   assert.match(migration,/'CUSTOMER_BETA'/);assert.match(migration,/'INTERNAL','IN_REVIEW'/);assert.match(migration,/OWNER_CONSENT_SUBMITTED/);

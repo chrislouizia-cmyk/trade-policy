@@ -793,17 +793,27 @@ setReportLoading(false);
                     </div>
                     <span className={styles.statusPill}>{selectedRun.status}</span>
                   </div>
+                  <div className={`button-row ${styles.reportActions}`}>
+                    <a className="secondary button" href={`/api/backtests/${selectedRun.id}/export`} download>Download Excel</a>
+                    <button type="button" className="secondary" onClick={()=>window.print()}>Print / Save PDF</button>
+                  </div>
                   {reportLoading && <p className="muted">Loading persisted backtest result…</p>}
                   {reportError && <p className={styles.reportNotice}>{reportError}</p>}
                   {reportResult && (
                     <>
+                      {numberValue(reportResult.total_trades ?? reportTrades.length)===0&&selectedRun.status==='COMPLETED'&&(
+                        <div className={styles.reportSuccessNotice} role="status">
+                          <strong>Backtest completed successfully — no valid setup was found.</strong>
+                          <div>The engine finished the requested historical replay. Zero trades means no candidate passed every saved strategy rule and execution check; it does not mean the backtest failed.</div>
+                        </div>
+                      )}
                       <div className={styles.reportMetrics}>
-                        <div><small>Net return</small><strong>{reportResult.net_return_percent ?? '—'}%</strong></div>
+                        <div><small>Net return</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.net_return_percent ?? '—'}%`}</strong></div>
                         <div><small>Ending balance</small><strong>{reportResult.ending_balance ?? '—'}</strong></div>
                         <div><small>Total trades</small><strong>{reportResult.total_trades ?? reportTrades.length}</strong></div>
-                        <div><small>Win rate</small><strong>{reportResult.win_rate ?? '—'}%</strong></div>
+                        <div><small>Win rate</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.win_rate ?? '—'}%`}</strong></div>
                         <div><small>Wins / losses</small><strong>{reportResult.wins ?? '—'} / {reportResult.losses ?? '—'}</strong></div>
-                        <div><small>Max drawdown</small><strong>{reportResult.max_drawdown_percent ?? '—'}%</strong></div>
+                        <div><small>Max drawdown</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.max_drawdown_percent ?? '—'}%`}</strong></div>
                         <div><small>Profit factor</small><strong>{reportResult.profit_factor ?? '—'}</strong></div>
                         <div><small>Expectancy</small><strong>{reportResult.expectancy_r ?? '—'} R</strong></div>
                       </div>

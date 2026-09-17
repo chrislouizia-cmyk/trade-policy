@@ -17,14 +17,15 @@ test('first-time canonical creation starts with plain-language intent instead of
 test('canonical clarification is action-only and remains visible even when no rule was understood', () => {
   assert.match(v2, /copilotReviewVisible && \(/);
   assert.match(v2, /copilotAssessment\.clarifications\.length > 0/);
-  assert.match(v2, /A few details are still needed/);
+  assert.match(v2, /One thing still needs your input/);
+  assert.match(v2, /A few things still need your input/);
   assert.match(v2, /No trading conditions understood yet/);
   assert.doesNotMatch(v2, /assessment\.clarifications\.map\(\(item\) => item\.question\)\.join/);
 });
 
 test('canonical describe path exposes exactly one final confirmation with human review language', () => {
-  assert.equal((v2.match(/This matches how I trade, including the risk and whether it will be active\./g) ?? []).length, 1);
-  assert.match(v2, /Review what Trade Police understood/);
+  assert.equal((v2.match(/Yes — this matches how I trade\./g) ?? []).length, 2);
+  assert.match(v2, /Review what I understood below/);
   assert.match(v2, /Required' : 'Optional/);
   assert.match(v2, /All required conditions must be met/);
   assert.match(v2, /One of these alternatives may be enough/);

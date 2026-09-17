@@ -23,7 +23,8 @@ test('completed analysis requests replay their original scan before any provider
   assert.match(analyze,/ANALYSIS_REQUEST_REUSED/);
   assert.match(analyze,/finalizeAnalysis\(user\.id,requestKey,true,scan\.id\)/);
   assert.match(entitlements,/result_analysis_id/);
-  assert.match(entitlements,/error\.code === '23505'/);
+  assert.match(entitlements,/reserve_analysis_usage_atomic/);
+  assert.doesNotMatch(entitlements,/error\.code === '23505'/);
 });
 
 test('all interactive provider routes require explicit idempotency keys',()=>{

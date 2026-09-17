@@ -101,6 +101,26 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+.reportActions { margin: 14px 0 18px; }
+.reportActions a { text-decoration: none; }
+.reportSuccessNotice {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(72, 220, 178, .35);
+  border-radius: 16px;
+  background: rgba(72, 220, 178, .09);
+  color: #dffcf3;
+}
+.reportSuccessNotice div { margin-top: 6px; color: #aebbc9; line-height: 1.5; }
+
+@media print {
+  .reportModalBackdrop { position: static; display: block; padding: 0; background: #fff; color: #111; }
+  .reportModalShell { width: 100%; height: auto; border: 0; box-shadow: none; background: #fff; }
+  .reportModalCard { overflow: visible !important; color: #111 !important; }
+  .reportModalClose, .reportActions { display: none !important; }
+  .reportModalCard :global(.muted), .reportModalCard small { color: #444 !important; }
+}
+
 @media (max-width: 760px) {
   .reportModalBackdrop {
     padding: 10px;

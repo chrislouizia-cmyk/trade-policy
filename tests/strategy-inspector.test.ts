@@ -12,6 +12,6 @@ test('Strategy detail renders the canonical single-card experience for saved str
   assert.doesNotMatch(detail,/This tab will be wired/i);
   const builder=readFileSync(new URL('../components/StrategyBuilder.tsx',import.meta.url),'utf8');
   assert.doesNotMatch(builder,/selectedProfile&&<StrategyInspector/);
-  assert.match(builder,/if\s*\(\s*selectedProfile\s*\)\s*\{\s*return\s*\(\s*<div\s+className="strategy-builder-layout">/);
+  assert.match(builder,/if\s*\(\s*selectedProfile\s*\)\s*\{\s*return\s*\(\s*<>[\s\S]*<div\s+className="strategy-builder-layout">/);
   assert.match(builder,/<StrategyDetailPage[\s\S]*planCode=\{planCode\}/);
 });
