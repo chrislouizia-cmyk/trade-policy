@@ -6,6 +6,7 @@ import { reconcileStrategyDeletion } from '../lib/strategy-deletion-state.ts';
 const route = readFileSync(new URL('../app/api/strategies/delete/route.ts', import.meta.url), 'utf8');
 const builder = readFileSync(new URL('../components/StrategyBuilder.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/107_repair_strategy_hard_delete.sql', import.meta.url), 'utf8');
+const immutableHistoryRepair = readFileSync(new URL('../supabase/migrations/20260917061002_allow_strategy_delete_to_detach_immutable_history.sql', import.meta.url), 'utf8');
 
 test('deleting an unrelated strategy preserves selected and active strategy state', () => {
   assert.deepEqual(reconcileStrategyDeletion({
@@ -69,8 +70,24 @@ test('hard delete remains server-authorized and preserves historical evidence', 
   assert.match(route, /\.eq\('user_id', user\.id\)/);
   assert.match(migration, /security invoker/);
   assert.match(migration, /auth\.uid\(\)/);
-  for (const table of ['trade_records', 'active_trades', 'market_scans', 'decision_reports', 'backtest_runs']) {
+  for (const table of ['trade_records', 'active_trades', 'market_scans', 'backtest_runs']) {
     assert.match(migration, new RegExp(`update public\\.${table}`));
     assert.doesNotMatch(migration, new RegExp(`delete from public\\.${table}`));
   }
+  assert.doesNotMatch(immutableHistoryRepair, /delete from public\.decision_reports/);
+});
+
+test('immutable Decision Reports detach only through the strategy FK delete', () => {
+  assert.match(immutableHistoryRepair, /old\.strategy_id is not null/);
+  assert.match(immutableHistoryRepair, /new\.strategy_id is null/);
+  assert.match(immutableHistoryRepair, /to_jsonb\(new\) - 'strategy_id'/);
+  assert.match(immutableHistoryRepair, /not exists[\s\S]*from public\.strategy_profiles/);
+  assert.match(immutableHistoryRepair, /select count\(\*\)::integer[\s\S]*from public\.decision_reports/);
+  assert.doesNotMatch(immutableHistoryRepair, /update public\.decision_reports/);
+});
+
+test('delete failures are visible inside the confirmation dialog', () => {
+  assert.match(builder, /readApiResponse\(response\)/);
+  assert.match(builder, /setDeleteError\(nextError\)/);
+  assert.match(builder, /role="alert">\{deleteError\}/);
 });

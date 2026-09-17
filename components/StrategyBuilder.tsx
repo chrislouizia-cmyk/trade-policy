@@ -19,7 +19,7 @@ import { DEFAULT_STRATEGY_PROFILE } from '@/types/trade';
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
 import { deriveRequiredEvidence, normalizeStrategyProfile } from '@/lib/strategy-policy';
 import { resolveBuilderEntryMode } from '@/lib/strategy-builder-entry';
-import { apiErrorMessage } from '@/lib/api-error';
+import { apiErrorMessage, readApiResponse } from '@/lib/api-error';
 import { trackBetaEvent, trackBetaEventOnce } from '@/lib/beta-intelligence';
 import { buildFinalReviewSummary } from '@/lib/final-review-summary';
 import { buildPayloadInstruments, buildPayloadStopLimits, createNewStrategyDraft, createStarterStrategyDraft, createStarterTemplateSelection, hydrateDraftFromSavedProfile, deriveStopLimitsForInstruments } from '@/lib/strategy-builder-draft';
@@ -136,6 +136,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const [builderStep, setBuilderStep] = useState<BuilderStep>('identity');
   const [deleteTarget, setDeleteTarget] = useState<StrategyProfile|null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleteError, setDeleteError] = useState<string|null>(null);
   const [learningConfirmation, setLearningConfirmation] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [verification, setVerification] = useState<{profile:StrategyProfile;rules:StrategyRule[]}|null>(null);
   const [refinementRequested, setRefinementRequested] = useState(false);
@@ -538,6 +539,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
   async function deletePlaybook() {
     if (!deleteTarget?.id || deleteConfirmation !== 'DELETE') return;
+    setDeleteError(null);
     setSaving(true);
     try {
       const response = await fetch('/api/strategies/delete', {
@@ -545,16 +547,18 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ strategyId: deleteTarget.id, confirmation: deleteConfirmation }),
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok) throw new Error(apiErrorMessage(result, 'Could not delete strategy.'));
+      if (!result || typeof result !== 'object') throw new Error('The server returned an invalid deletion response.');
+      const deleteResult = result as { fallbackStrategyId?: unknown; deletedWasActive?: unknown };
       const deletedId = deleteTarget.id;
       const deletedName = deleteTarget.name;
-      const fallbackStrategyId = typeof result.fallbackStrategyId === 'string' ? result.fallbackStrategyId : null;
+      const fallbackStrategyId = typeof deleteResult.fallbackStrategyId === 'string' ? deleteResult.fallbackStrategyId : null;
       const resolution = reconcileStrategyDeletion({
         deletedStrategyId: deletedId,
         fallbackStrategyId,
         selectedStrategyId: profile.id ?? null,
-        deletedWasActive: result.deletedWasActive === true,
+        deletedWasActive: deleteResult.deletedWasActive === true,
       });
 
       setProfiles((current) => current.filter((item) => item.id !== deletedId));
@@ -610,7 +614,9 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       }));
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not delete strategy.');
+      const nextError = error instanceof Error ? error.message : 'Could not delete strategy.';
+      setDeleteError(nextError);
+      setMessage(nextError);
     } finally {
       setSaving(false);
     }
@@ -626,7 +632,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
             <div className="modal-head"><div><p className="muted">DELETE STRATEGY</p><h2 id="delete-playbook-title">Delete strategy?</h2></div><button type="button" aria-label="Close delete dialog" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>×</button></div>
             <p>Delete {deleteTarget.name}? This permanently removes the strategy from your strategy library. Historical trades, reports, and backtests will be preserved. If this is your active strategy, Trade Police will activate another available strategy automatically.</p>
             <label>Type <strong>DELETE</strong> to confirm<input autoFocus value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} /></label>
-            <div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('')}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete strategy'}</button></div>
+            {deleteError ? <p className="warning" role="alert">{deleteError}</p> : null}
+            <div className="button-row"><button type="button" onClick={()=>{setDeleteTarget(null);setDeleteConfirmation('');setDeleteError(null)}}>Cancel</button><button className="danger" type="button" disabled={deleteConfirmation!=='DELETE'||saving} onClick={()=>void deletePlaybook()}>{saving?'Deleting…':'Delete strategy'}</button></div>
           </section>
         </div>,
         document.body,

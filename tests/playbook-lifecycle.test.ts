@@ -53,7 +53,7 @@ test('delete telemetry captures the id before clearing modal state', () => {
 });
 
 test('delete clears client references and selects the server fallback', () => {
-  assert.match(builder, /fallbackStrategyId = typeof result\.fallbackStrategyId === 'string'/);
+  assert.match(builder, /fallbackStrategyId = typeof deleteResult\.fallbackStrategyId === 'string'/);
   assert.match(builder, /setV2Baseline\(null\)/);
   assert.match(builder, /setV2Draft\(null\)/);
   assert.match(builder, /trade-police-strategy-draft/);
