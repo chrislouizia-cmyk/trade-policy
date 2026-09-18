@@ -41,6 +41,7 @@ test('public install is authenticated, server-authorized, free, inactive, and id
 });
 
 test('delete archives discovery but preserves immutable releases and historical evidence', () => {
+  assert.match(migration, /disable trigger marketplace_release_immutable_update[\s\S]*update public\.marketplace_strategy_releases set source_strategy_origin_id=source_strategy_id[\s\S]*enable trigger marketplace_release_immutable_update/);
   assert.match(migration, /on delete set null/);
   assert.match(migration, /source_strategy_origin_id/);
   assert.match(migration, /SOURCE_STRATEGY_DELETED/);

@@ -126,7 +126,9 @@ grant execute on function public.evaluate_marketplace_strategy_candidate(uuid,te
 
 -- Preserve the immutable release and its snapshot when its editable source is deleted.
 alter table public.marketplace_strategy_releases add column if not exists source_strategy_origin_id uuid;
+alter table public.marketplace_strategy_releases disable trigger marketplace_release_immutable_update;
 update public.marketplace_strategy_releases set source_strategy_origin_id=source_strategy_id where source_strategy_origin_id is null;
+alter table public.marketplace_strategy_releases enable trigger marketplace_release_immutable_update;
 alter table public.marketplace_strategy_releases alter column source_strategy_origin_id set not null;
 alter table public.marketplace_strategy_releases alter column source_strategy_id drop not null;
 alter table public.marketplace_strategy_releases drop constraint if exists marketplace_strategy_releases_source_strategy_id_fkey;
