@@ -36,11 +36,13 @@ test('dashboard welcome stays below the header to preserve geometry',()=>{
 
 test('desktop and iPad navigation keep every destination in one aligned row',()=>{
   assert.match(header,/<AppPrimaryNavigation activeTradeCount=\{activeTradeCount\} \/>/);
-  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history','nav.strategies','nav.analytics','nav.tradingAccounts','nav.account']) {
+  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history','nav.strategies','nav.analytics','nav.marketplace','nav.tradingAccounts','nav.account']) {
     assert.match(primaryNav,new RegExp(`labelKey: '${key}'`));
   }
+  assert.ok(primaryNav.indexOf("labelKey: 'nav.analytics'") < primaryNav.indexOf("labelKey: 'nav.marketplace'"));
   assert.doesNotMatch(primaryNav,/desktop-more-nav/);
-  assert.match(glassCss,/grid-template-columns: repeat\(8, minmax\(0, 1fr\)\) !important/);
+  assert.match(glassCss,/grid-template-columns: repeat\(9, minmax\(0, 1fr\)\) !important/);
+  assert.match(glassCss,/grid-template-rows: minmax\(40px, auto\) !important/);
 });
 
 test('premium polish is visual only and scoped to authenticated container',()=>{

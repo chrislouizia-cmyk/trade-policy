@@ -86,7 +86,9 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
   .canonical-visible-nav {
     position: relative;
     display: grid !important;
-    grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(9, minmax(0, 1fr)) !important;
+    grid-template-rows: minmax(40px, auto) !important;
+    grid-auto-flow: column !important;
     gap: 4px !important;
     overflow: visible !important;
     flex-wrap: nowrap !important;
@@ -119,7 +121,7 @@ body:has(.mobile-bottom-nav) :is(button, .button-link, a):focus-visible {
 @media (min-width: 761px) and (max-width: 1024px) {
   body:has(.mobile-bottom-nav) .container { width: min(100% - 28px, 1480px); }
   body:has(.mobile-bottom-nav) .canonical-app-shell { border-radius: 20px !important; }
-  .canonical-visible-nav { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }
+  .canonical-visible-nav { grid-template-columns: repeat(9, minmax(0, 1fr)) !important; }
   .canonical-visible-nav > a {
     padding-inline: 3px !important;
     font-size: 9px !important;
