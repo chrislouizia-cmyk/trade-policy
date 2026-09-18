@@ -19,6 +19,7 @@ const primaryItems = [
 const moreItems = [
   { href: '/history', labelKey: 'nav.history', descriptionKey: 'nav.journalDescription', icon: 'history' },
   { href: '/profile', labelKey: 'nav.strategies', descriptionKey: 'nav.strategiesDescription', icon: 'strategies' },
+  { href: '/marketplace', labelKey: 'nav.marketplace', descriptionKey: 'nav.marketplaceDescription', icon: 'marketplace' },
   { href: '/analytics', labelKey: 'nav.analytics', descriptionKey: 'nav.analyticsDescription', icon: 'performance' },
   { href: '/accounts', labelKey: 'nav.tradingAccounts', descriptionKey: 'nav.accountsDescription', icon: 'accounts' },
   { href: '/account', labelKey: 'nav.account', descriptionKey: 'nav.settingsDescription', icon: 'settings' },
@@ -42,6 +43,9 @@ function NavIcon({ name }: { name: string }) {
   }
   if (name === 'performance') {
     return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V12M12 19V5M19 19V9" /></svg>;
+  }
+  if (name === 'marketplace') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16l-1-4H5zM5 9v10h14V9M9 19v-5h6v5" /></svg>;
   }
   if (name === 'accounts') {
     return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12H4zM4 10h16M7 15h4" /></svg>;

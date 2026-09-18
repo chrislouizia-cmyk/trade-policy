@@ -10,6 +10,7 @@ const navigationItems = [
   { href: '/active-trade', labelKey: 'nav.activeTrade' },
   { href: '/history', labelKey: 'nav.history' },
   { href: '/profile', labelKey: 'nav.strategies' },
+  { href: '/marketplace', labelKey: 'nav.marketplace' },
   { href: '/analytics', labelKey: 'nav.analytics' },
   { href: '/accounts', labelKey: 'nav.tradingAccounts' },
   { href: '/account', labelKey: 'nav.account' },

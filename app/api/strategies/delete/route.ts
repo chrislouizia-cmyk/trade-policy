@@ -18,6 +18,7 @@ type DeleteStrategyResult = {
   detachedMarketScans?: number;
   detachedDecisionReports?: number;
   detachedBacktestRuns?: number;
+  preservedMarketplaceReleases?: number;
 };
 
 export async function POST(request: Request) {
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
       detachedMarketScans: result.detachedMarketScans ?? 0,
       detachedDecisionReports: result.detachedDecisionReports ?? 0,
       detachedBacktestRuns: result.detachedBacktestRuns ?? 0,
+      preservedMarketplaceReleases: result.preservedMarketplaceReleases ?? 0,
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('[STRATEGY_DELETE_DIAGNOSTIC]', {
