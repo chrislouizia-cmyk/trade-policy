@@ -17,7 +17,8 @@ test('new backtests freeze authoritative normalized strategies including rules',
 
 test('executor owns queued running completed failed lifecycle', () => {
   assert.match(executeRoute, /backtest_claim_run_atomic/);
-  assert.match(executeRoute, /backtest_complete_run_atomic/);
+  assert.match(executeRoute, /backtest_complete_run_with_evidence_atomic/);
+  assert.match(executeRoute, /p_candidates: output\.candidateEvents/);
   assert.match(executeRoute, /backtest_fail_run_atomic/);
   assert.match(executeRoute, /prepareHistoricalBacktestData/);
   assert.match(executeRoute, /simulateBacktestFromSeries/);
@@ -29,6 +30,15 @@ test('executor uses historical Twelve Data and deterministic Trade Police analys
   assert.match(executor, /setupReadiness\.state !== 'READY'/);
   assert.match(executor, /STOP_FIRST/);
   assert.match(executor, /OHLC_NO_HISTORICAL_SPREAD_DATA/);
+});
+
+test('executor records candidate evidence and a deterministic historical data fingerprint', () => {
+  assert.match(executor, /candidateEvents/);
+  assert.match(executor, /historicalDataFingerprint/);
+  assert.match(executor, /historical_data_fingerprint/);
+  for (const disposition of ['TAKEN', 'REJECTED', 'ABORTED']) assert.match(executor, new RegExp(`disposition: '${disposition}'`));
+  assert.match(executor, /candidate_rule_failed/);
+  assert.match(executor, /observed_not_matched/);
 });
 
 test('required evidence uses the frozen canonical historical plan', () => {

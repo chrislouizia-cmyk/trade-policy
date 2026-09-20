@@ -177,17 +177,19 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       simulationMs: Date.now() - simulationStartedAt,
       tradesProduced: output.trades.length,
     });
-    const { data: completion, error: completionError } = await admin.rpc('backtest_complete_run_atomic', {
+    const { data: completion, error: completionError } = await admin.rpc('backtest_complete_run_with_evidence_atomic', {
       p_user_id: user.id,
       p_run_id: id,
       p_result: output.result,
       p_trades: output.trades,
       p_metadata: { ...output.metadata, execution_checkpoint: null, execution_progress_percent: 100 },
+      p_candidates: output.candidateEvents,
     });
     if (completionError) throw new Error(completionError.message);
 
     logBacktestStage(id, user.id, 'RUN_COMPLETED', requestStartedAt, {
       tradesWritten: output.trades.length,
+      candidateEventsWritten: output.candidateEvents.length,
     });
 
     return NextResponse.json({
@@ -195,6 +197,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       status: 'COMPLETED',
       result: output.result,
       tradesWritten: output.trades.length,
+      candidateEventsWritten: output.candidateEvents.length,
       lifecycle: completion,
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

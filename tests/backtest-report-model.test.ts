@@ -35,12 +35,38 @@ test('candidate hypotheticals remain explicitly separated from official performa
     candidates: [{
       candidateKey: 'candidate-1', signalTimestampUtc: '2026-07-01T10:00:00Z', direction: 'LONG', disposition: 'OVERRIDE_ELIGIBLE',
       terminalStage: 'RISK', terminalReason: 'Minimum RR not met', blockingRuleId: 'minimum-rr', ruleEvaluations: [],
-      officialPerformance: false, hypothetical: { netR: 2 },
+      officialTradeSequence: null, officialPerformance: false, hypothetical: { netR: 2 },
     }],
   });
   assert.equal(model.performance.totalTrades, 0);
   assert.equal(model.diagnostics.candidates[0]?.officialPerformance, false);
   assert.equal(model.audit.hypotheticalSeparatedFromOfficialPerformance, true);
+});
+
+test('legacy rule counters are normalized into coherent candidate gates and stable report provenance', () => {
+  const model = buildBacktestReportModel({
+    run: {
+      ...run,
+      data_revision_fingerprint: '',
+      metadata: {
+        ...run.metadata,
+        historical_data_fingerprint: 'derived-data-hash',
+        rule_diagnostics: [{ candidates_before: 10, candidates_after: 4, rejected: 999, insufficient_data: 3 }],
+      },
+    },
+    result: { total_trades: 0 }, trades: [], user: { id: 'user' },
+    candidates: [{
+      candidate_key: 'candidate-legacy', signal_timestamp_utc: '2026-07-01T10:00:00Z', direction: 'SHORT', disposition: 'REJECTED',
+      terminal_stage: 'DIRECTION', terminal_reason: 'Direction not allowed', blocking_rule_id: 'direction', rule_evaluations: [],
+      official_trade_sequence: null, official_performance: false, hypothetical: null,
+    }],
+  });
+  assert.equal(model.generatedAtUtc, '2026-09-01T01:00:00.000Z');
+  assert.equal(model.methodology.dataFingerprint, 'derived-data-hash');
+  assert.equal(model.diagnostics.ruleDiagnostics[0]?.candidate_rule_failed, 6);
+  assert.equal(model.diagnostics.ruleDiagnostics[0]?.observed_not_matched, 999);
+  assert.equal(model.diagnostics.candidates[0]?.candidateKey, 'candidate-legacy');
+  assert.equal(model.diagnostics.candidateLedgerAvailable, true);
 });
 
 test('invalid report timestamps fail closed instead of producing inconsistent PDF and XLSX dates', () => {

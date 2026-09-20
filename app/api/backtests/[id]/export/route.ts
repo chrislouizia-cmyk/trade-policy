@@ -23,13 +23,14 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function list(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') as Record<string, unknown>[] : [];
-}
-
 function dateValue(value: unknown): Date | string {
   const date = new Date(String(value ?? ''));
   return Number.isNaN(date.getTime()) ? String(value ?? '—') : date;
+}
+
+function excelText(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value) ?? String(value ?? '');
+  return text.length <= 32_000 ? text : `${text.slice(0, 31_900)}\n[TRUNCATED IN CELL — verify with the recorded snapshot hash]`;
 }
 
 function section(sheet: ExcelJS.Worksheet, row: number, title: string, endColumn = 8) {
@@ -86,19 +87,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!run) return apiError('BACKTEST_NOT_FOUND', 'Backtest run not found.', 404);
   if (run.status !== 'COMPLETED') return apiError('BACKTEST_NOT_COMPLETED', 'Only completed backtests can be exported.', 409);
 
-  const [{ data: result, error: resultError }, { data: trades, error: tradesError }] = await Promise.all([
+  const [{ data: result, error: resultError }, { data: trades, error: tradesError }, { data: candidates, error: candidatesError }] = await Promise.all([
     supabase.from('backtest_results').select('*').eq('run_id', id).maybeSingle(),
     supabase.from('backtest_trades').select('*').eq('run_id', id).order('sequence', { ascending: true }),
+    supabase.from('backtest_candidate_events').select('*').eq('run_id', id).eq('user_id', user.id).order('signal_timestamp_utc', { ascending: true }),
   ]);
-  if (resultError || tradesError || !result) return apiError('BACKTEST_EXPORT_FAILED', 'Persisted backtest results could not be loaded.', 500);
+  if (resultError || tradesError || candidatesError || !result) return apiError('BACKTEST_EXPORT_FAILED', 'Persisted backtest results could not be loaded.', 500);
 
-  const generatedAt = new Date();
-  const report = buildBacktestReportModel({ run, result, trades: trades ?? [], user, generatedAt });
+  const report = buildBacktestReportModel({ run, result, trades: trades ?? [], user, candidates: candidates ?? [] });
+  const generatedAt = new Date(report.generatedAtUtc);
   const metadata = record(run.metadata);
   const funnel = report.diagnostics.funnel;
   const ruleDiagnostics = [...report.diagnostics.ruleDiagnostics];
   const dataCoverage = [...report.diagnostics.dataCoverage];
   const strategyRules = [...report.strategy.rules];
+  const candidateEvents = [...report.diagnostics.candidates];
   const totalTrades = report.performance.totalTrades;
   const outcome = report.performance.outcome;
   const strategyName = report.identity.strategyName;
@@ -188,11 +191,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   section(overview, 28, 'Audit trail');
   field(overview, 29, 1, 'Strategy revision', run.strategy_revision_id, 7);
   field(overview, 30, 1, 'Snapshot hash', run.strategy_snapshot_hash, 7);
-  field(overview, 31, 1, 'Data fingerprint', run.data_revision_fingerprint || '—', 7);
+  field(overview, 31, 1, 'Data fingerprint', report.methodology.dataFingerprint || '—', 7);
   for (const row of [29, 30, 31]) overview.getCell(row, 2).font = { name: 'Aptos Mono', size: 8, color: { argb: MUTED } };
   overview.pageSetup.printArea = 'A1:H32';
 
-  const diagnostics = workbook.addWorksheet('Diagnostics');
+  const diagnostics = workbook.addWorksheet('Rule Diagnostics');
   configurePage(diagnostics, 'landscape');
   diagnostics.columns = [
     { width: 28 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 },
@@ -219,12 +222,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   diagnostics.mergeCells(ruleStart, 1, ruleStart, 9);
   diagnostics.getCell(ruleStart, 1).value = 'RULE AUDIT';
   diagnostics.getCell(ruleStart, 1).font = { name: 'Aptos Display', size: 15, bold: true, color: { argb: INK } };
-  diagnostics.addRow(['Rule', 'Detector', 'Timeframe', 'Required', 'Candidates before', 'Candidates after', 'Rejected', 'Insufficient data', 'Reason']);
+  diagnostics.addRow(['Rule', 'Detector', 'Timeframe', 'Required', 'Gate evaluated', 'Rule passed', 'Rule failed', 'Observed insufficient', 'Reason']);
   tableHeader(diagnostics.getRow(ruleStart + 1));
   if (ruleDiagnostics.length) {
     ruleDiagnostics.forEach(item => diagnostics.addRow([
-      item.label ?? item.rule_id, item.detector, item.timeframe, item.required ? 'Yes' : 'No', Number(item.candidates_before ?? 0),
-      Number(item.candidates_after ?? 0), Number(item.rejected ?? 0), Number(item.insufficient_data ?? 0), item.rejection_reason ?? '—',
+      item.label ?? item.rule_id, item.detector, item.timeframe, item.required ? 'Yes' : 'No', Number(item.candidate_gate_evaluated ?? 0),
+      Number(item.candidate_rule_passed ?? 0), Number(item.candidate_rule_failed ?? 0), Number(item.observed_insufficient_data ?? 0), item.rejection_reason ?? '—',
     ]));
   } else {
     diagnostics.addRow(['Detailed rule counters were not recorded for this legacy run.', '', '', '', '', '', '', '', 'Run the backtest again after this update.']);
@@ -243,7 +246,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   else diagnostics.addRow(['Coverage telemetry was not recorded for this earlier run.', '', '', '', '', '', '', '', '']);
   diagnostics.pageSetup.printArea = `A1:I${diagnostics.lastRow!.number}`;
 
-  const strategySheet = workbook.addWorksheet('Strategy Rules');
+  const strategySheet = workbook.addWorksheet('Executable Rules');
   configurePage(strategySheet, 'landscape');
   strategySheet.columns = [{ width: 30 }, { width: 14 }, { width: 12 }, { width: 18 }, { width: 20 }, { width: 62 }];
   strategySheet.mergeCells('A1:F1');
@@ -262,7 +265,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   strategySheet.getColumn(6).alignment = { wrapText: true, vertical: 'top' };
   strategySheet.pageSetup.printArea = `A1:F${strategySheet.lastRow!.number}`;
 
-  const tradeSheet = workbook.addWorksheet('Trades');
+  const tradeSheet = workbook.addWorksheet('Taken Trades');
   configurePage(tradeSheet, 'landscape');
   tradeSheet.columns = [
     { header: '#', key: 'sequence', width: 7 }, { header: 'Direction', key: 'direction', width: 12 },
@@ -292,7 +295,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   tradeSheet.autoFilter = { from: 'A1', to: 'N1' };
   tradeSheet.pageSetup.printArea = `A1:N${Math.max(3, tradeSheet.lastRow!.number)}`;
 
-  const method = workbook.addWorksheet('Methodology & Parameters');
+  const method = workbook.addWorksheet('Methodology');
   configurePage(method);
   method.columns = [{ width: 26 }, { width: 92 }];
   method.addRow(['Methodology', 'Historical OHLC replay using the exact saved strategy revision and deterministic Trade Police rule detectors.']);
@@ -308,6 +311,108 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   method.getColumn(2).font = { name: 'Aptos', size: 10, color: { argb: INK } };
   method.eachRow(row => { row.height = 42; row.border = { bottom: { style: 'thin', color: { argb: LINE } } }; });
   method.pageSetup.printArea = `A1:B${method.lastRow!.number}`;
+
+  const strategyDefinition = workbook.addWorksheet('Strategy Definition');
+  configurePage(strategyDefinition, 'landscape');
+  strategyDefinition.columns = [{ width: 30 }, { width: 110 }];
+  strategyDefinition.addRow(['Field', 'Frozen value']);
+  tableHeader(strategyDefinition.getRow(1));
+  Object.entries(report.strategy.snapshot).forEach(([key, value]) => strategyDefinition.addRow([
+    key,
+    excelText(value),
+  ]));
+  strategyDefinition.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+
+  const coverageSheet = workbook.addWorksheet('Data Coverage');
+  configurePage(coverageSheet, 'landscape');
+  coverageSheet.columns = [
+    { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+    { width: 24 }, { width: 24 }, { width: 18 }, { width: 18 },
+  ];
+  coverageSheet.addRow(['Timeframe', 'Interval min', 'Total loaded', 'Warm-up loaded', 'Period loaded', 'First bar UTC', 'Last bar UTC', 'Discontinuities', 'Largest gap min']);
+  tableHeader(coverageSheet.getRow(1));
+  dataCoverage.forEach(item => coverageSheet.addRow([
+    item.timeframe, Number(item.interval_minutes ?? 0), Number(item.total_bars_loaded ?? 0), Number(item.warmup_bars_loaded ?? 0),
+    Number(item.period_bars_loaded ?? 0), item.first_bar_utc, item.last_bar_utc,
+    Number(item.timestamp_discontinuities ?? 0), Number(item.largest_gap_minutes ?? 0),
+  ]));
+  if (!dataCoverage.length) coverageSheet.addRow(['Coverage telemetry unavailable for this legacy run.']);
+
+  const addCandidateSheet = (name: string, disposition?: string) => {
+    const sheet = workbook.addWorksheet(name);
+    configurePage(sheet, 'landscape');
+    sheet.columns = [
+      { width: 24 }, { width: 12 }, { width: 16 }, { width: 24 }, { width: 28 },
+      { width: 58 }, { width: 16 }, { width: 64 },
+    ];
+    sheet.addRow(['Signal UTC', 'Direction', 'Disposition', 'Terminal stage', 'Blocking rule', 'Terminal reason', 'Trade #', 'Rule evaluations']);
+    tableHeader(sheet.getRow(1));
+    const rows = disposition ? candidateEvents.filter(candidate => candidate.disposition === disposition) : candidateEvents;
+    rows.forEach(candidate => sheet.addRow([
+      dateValue(candidate.signalTimestampUtc), candidate.direction ?? '—', candidate.disposition, candidate.terminalStage,
+      candidate.blockingRuleId ?? '—', candidate.terminalReason, candidate.officialTradeSequence ?? '—',
+      excelText(candidate.ruleEvaluations),
+    ]));
+    if (!rows.length) sheet.addRow([report.diagnostics.candidateLedgerAvailable
+      ? `No ${disposition ? disposition.toLowerCase() : 'candidate'} events were recorded.`
+      : 'Candidate evidence is unavailable for this legacy run; rerun the frozen revision to populate it.']);
+    sheet.getColumn(1).numFmt = 'mmm d, yyyy h:mm:ss AM/PM';
+    sheet.getColumn(8).alignment = { wrapText: true, vertical: 'top' };
+    sheet.autoFilter = { from: 'A1', to: 'H1' };
+    return sheet;
+  };
+  addCandidateSheet('Candidates');
+  addCandidateSheet('Rejected Trades', 'REJECTED');
+  addCandidateSheet('Aborted Trades', 'ABORTED');
+
+  const overrideSheet = workbook.addWorksheet('Override Scenarios');
+  configurePage(overrideSheet, 'landscape');
+  overrideSheet.columns = [{ width: 24 }, { width: 20 }, { width: 28 }, { width: 80 }];
+  overrideSheet.addRow(['Signal UTC', 'Direction', 'Blocking rule', 'Hypothetical evidence']);
+  tableHeader(overrideSheet.getRow(1));
+  const overrides = candidateEvents.filter(candidate => candidate.disposition === 'OVERRIDE_ELIGIBLE');
+  overrides.forEach(candidate => overrideSheet.addRow([dateValue(candidate.signalTimestampUtc), candidate.direction ?? '—', candidate.blockingRuleId ?? '—', excelText(candidate.hypothetical)]));
+  if (!overrides.length) overrideSheet.addRow(['No canonical override scenarios were recorded. Official performance excludes hypothetical outcomes.']);
+
+  const performanceSheet = workbook.addWorksheet('Performance');
+  configurePage(performanceSheet);
+  performanceSheet.columns = [{ width: 30 }, { width: 28 }];
+  performanceSheet.addRow(['Metric', 'Persisted value']);
+  tableHeader(performanceSheet.getRow(1));
+  Object.entries(report.performance.result).forEach(([key, value]) => performanceSheet.addRow([key, value != null && typeof value === 'object' ? excelText(value) : value as ExcelJS.CellValue]));
+
+  const equitySheet = workbook.addWorksheet('Equity Time Series');
+  configurePage(equitySheet, 'landscape');
+  equitySheet.columns = [{ width: 10 }, { width: 24 }, { width: 18 }, { width: 18 }, { width: 14 }];
+  equitySheet.addRow(['Trade #', 'Exit UTC', 'Balance before', 'Balance after', 'Net R']);
+  tableHeader(equitySheet.getRow(1));
+  (trades ?? []).forEach(trade => equitySheet.addRow([
+    trade.sequence, dateValue(trade.exit_timestamp), Number(trade.balance_before), Number(trade.balance_after), Number(trade.net_r),
+  ]));
+  if (!totalTrades) equitySheet.addRow(['No equity time series exists because the completed replay produced no simulated trades.']);
+
+  const metadataSheet = workbook.addWorksheet('Run Metadata');
+  configurePage(metadataSheet, 'landscape');
+  metadataSheet.columns = [{ width: 34 }, { width: 110 }];
+  metadataSheet.addRow(['Field', 'Value']);
+  tableHeader(metadataSheet.getRow(1));
+  const runMetadata: Record<string, unknown> = {
+    report_id: report.identity.reportId,
+    backtest_id: report.identity.backtestId,
+    generated_at_utc: report.generatedAtUtc,
+    completed_at_utc: report.audit.completedAtUtc,
+    strategy_id: report.identity.strategyId,
+    strategy_revision_id: report.identity.strategyRevisionId,
+    strategy_snapshot_hash: report.identity.strategySnapshotHash,
+    historical_data_fingerprint: report.methodology.dataFingerprint,
+    engine_version: report.methodology.engineVersion,
+    canonical_timezone: report.methodology.timezone,
+    report_model_version: report.version,
+    candidate_ledger_available: report.diagnostics.candidateLedgerAvailable,
+    hypothetical_separated_from_official_performance: report.audit.hypotheticalSeparatedFromOfficialPerformance,
+  };
+  Object.entries(runMetadata).forEach(([key, value]) => metadataSheet.addRow([key, String(value ?? '—')]));
+  metadataSheet.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
 
   for (const sheet of workbook.worksheets) {
     sheet.eachRow(row => row.eachCell(cell => {

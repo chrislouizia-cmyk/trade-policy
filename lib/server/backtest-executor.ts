@@ -1,9 +1,11 @@
 import 'server-only';
 
+import { createHash } from 'node:crypto';
+
 import { twelveDataSymbolFor } from '@/lib/instrument-registry';
 
 import { buildLiveAnalysis, type Candle } from '@/lib/market-analysis';
-import { evaluateHistoricalRulePlan } from '@/lib/backtesting/historical-detectors';
+import { evaluateHistoricalRulePlan, type HistoricalRuleEvaluationResult } from '@/lib/backtesting/historical-detectors';
 import { assertHistoricalRulePlanSupported, buildHistoricalRulePlan, type HistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
@@ -23,10 +25,26 @@ type SimulatedTrade = {
   ambiguous_intrabar: boolean; simulation_metadata: Record<string, unknown>;
 };
 
+export type BacktestCandidateEventPayload = {
+  candidate_key: string;
+  signal_timestamp_utc: string;
+  direction: 'LONG' | 'SHORT' | null;
+  disposition: 'TAKEN' | 'REJECTED' | 'ABORTED';
+  terminal_stage: string;
+  terminal_reason: string;
+  blocking_rule_id: string | null;
+  rule_evaluations: Record<string, unknown>[];
+  evidence: Record<string, unknown>;
+  official_trade_sequence: number | null;
+  official_performance: boolean;
+  hypothetical: null;
+};
+
 export type BacktestExecutionOutput = {
   complete: true;
   result: Record<string, unknown>;
   trades: SimulatedTrade[];
+  candidateEvents: BacktestCandidateEventPayload[];
   metadata: Record<string, unknown>;
 };
 
@@ -37,6 +55,7 @@ export type BacktestSimulationCheckpoint = {
   pointers: Record<string, number>;
   balance: number;
   trades: SimulatedTrade[];
+  candidateEvents: BacktestCandidateEventPayload[];
   dailyCounts: Record<string, number>;
   diagnostics: BacktestDiagnostics;
 };
@@ -193,6 +212,39 @@ function round(value: number, digits = 6) {
   return Number(value.toFixed(digits));
 }
 
+function historicalDataFingerprint(instrument: string, historical: Record<string, Candle[]>, frames: string[]): string {
+  const hash = createHash('sha256');
+  hash.update(`trade-police-historical-data-v1\n${instrument}\n`);
+  for (const timeframe of [...frames].sort()) {
+    hash.update(`${timeframe}\n`);
+    for (const candle of historical[timeframe] ?? []) {
+      hash.update(`${candle.datetime}|${candle.open}|${candle.high}|${candle.low}|${candle.close}|${candle.volume ?? ''}\n`);
+    }
+  }
+  return `sha256:${hash.digest('hex')}`;
+}
+
+function candidateRuleEvaluations(plan: HistoricalRulePlan, result: HistoricalRuleEvaluationResult): Record<string, unknown>[] {
+  return result.evaluations.map((evaluation, index) => {
+    const rule = plan.rules[index];
+    return {
+      rule_id: evaluation.ruleId,
+      label: rule?.originalLabel ?? evaluation.ruleId,
+      detector: evaluation.detectorId,
+      timeframe: rule?.timeframe ?? null,
+      required: rule?.required ?? false,
+      status: evaluation.status,
+      passed: evaluation.passed,
+      evidence: evaluation.evidence,
+      metadata: evaluation.metadata,
+    };
+  });
+}
+
+function eventDirection(value: unknown): 'LONG' | 'SHORT' | null {
+  return value === 'BUY' || value === 'LONG' ? 'LONG' : value === 'SELL' || value === 'SHORT' ? 'SHORT' : null;
+}
+
 export function historicalDataCoverage(
   historical: Record<string, Candle[]>,
   frames: string[],
@@ -302,6 +354,7 @@ export function simulateBacktestFromSeries(
     : Object.fromEntries(frames.map((frame) => [frame, 0])) as Record<string, number>;
   const desiredDirection = configuredDirection(strategy);
   const trades: SimulatedTrade[] = restored ? [...restored.trades] : [];
+  const candidateEvents: BacktestCandidateEventPayload[] = restored ? [...(restored.candidateEvents ?? [])] : [];
   const dailyCounts = new Map<string, number>(Object.entries(restored?.dailyCounts ?? {}));
   let balance = restored?.balance ?? Number(run.starting_balance);
   const diagnostics: BacktestDiagnostics = restored
@@ -326,6 +379,7 @@ export function simulateBacktestFromSeries(
           pointers: { ...pointers },
           balance,
           trades,
+          candidateEvents,
           dailyCounts: Object.fromEntries(dailyCounts),
           diagnostics,
         },
@@ -396,12 +450,34 @@ export function simulateBacktestFromSeries(
       continue;
     }
 
+    const signalTimestampUtc = new Date(signalAtMs).toISOString();
+    const ruleEvaluations = candidateRuleEvaluations(rulePlan, historicalRules);
+    const recordCandidateEvent = (input: Omit<BacktestCandidateEventPayload, 'candidate_key' | 'signal_timestamp_utc' | 'rule_evaluations' | 'hypothetical'>) => {
+      candidateEvents.push({
+        candidate_key: `material:${signalTimestampUtc}`,
+        signal_timestamp_utc: signalTimestampUtc,
+        rule_evaluations: ruleEvaluations,
+        hypothetical: null,
+        ...input,
+      });
+    };
+
     let analysis;
     try {
-      analysis = buildLiveAnalysis(run.instrument, strategy, series, 'Twelve Data historical replay', twelveDataSymbolFor(run.instrument), new Date(signalAtMs).toISOString());
+      analysis = buildLiveAnalysis(run.instrument, strategy, series, 'Twelve Data historical replay', twelveDataSymbolFor(run.instrument), signalTimestampUtc);
       diagnostics.analysis_completed += 1;
-    } catch {
+    } catch (error) {
       diagnostics.analysis_errors += 1;
+      recordCandidateEvent({
+        direction: null,
+        disposition: 'ABORTED',
+        terminal_stage: 'ANALYSIS',
+        terminal_reason: 'The historical rules passed, but deterministic market analysis could not be completed.',
+        blocking_rule_id: null,
+        evidence: { error_name: error instanceof Error ? error.name : 'UnknownError' },
+        official_trade_sequence: null,
+        official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -409,6 +485,22 @@ export function simulateBacktestFromSeries(
     const candidate = analysis.candidates.find((item) => item.status === 'READY');
     if (!candidate) {
       diagnostics.rejected_no_ready_candidate += 1;
+      const firstCandidate = analysis.candidates[0];
+      recordCandidateEvent({
+        direction: eventDirection(firstCandidate?.direction),
+        disposition: 'REJECTED',
+        terminal_stage: 'SETUP_READINESS',
+        terminal_reason: analysis.summary || 'No READY candidate satisfied the frozen strategy revision.',
+        blocking_rule_id: analysis.breakdown.mandatoryMissing[0] ?? null,
+        evidence: {
+          setup_type: analysis.setupType,
+          setup_readiness: analysis.setupReadiness,
+          missing_mandatory: analysis.breakdown.mandatoryMissing,
+          candidate_statuses: analysis.candidates.map((item) => ({ id: item.id, status: item.status, direction: item.direction })),
+        },
+        official_trade_sequence: null,
+        official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -416,6 +508,16 @@ export function simulateBacktestFromSeries(
 
     if (analysis.setupReadiness.state !== 'READY' && !rulePlan.rules.some((rule) => rule.required)) {
       diagnostics.rejected_setup_not_ready += 1;
+      recordCandidateEvent({
+        direction: eventDirection(candidate.direction),
+        disposition: 'REJECTED',
+        terminal_stage: 'SETUP_READINESS',
+        terminal_reason: 'The candidate existed, but canonical setup readiness was not READY.',
+        blocking_rule_id: analysis.breakdown.mandatoryMissing[0] ?? null,
+        evidence: { setup_readiness: analysis.setupReadiness, rationale: candidate.rationale },
+        official_trade_sequence: null,
+        official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -423,11 +525,21 @@ export function simulateBacktestFromSeries(
 
     if (desiredDirection === 'LONG' && candidate.direction !== 'BUY') {
       diagnostics.rejected_direction += 1;
+      recordCandidateEvent({
+        direction: eventDirection(candidate.direction), disposition: 'REJECTED', terminal_stage: 'DIRECTION',
+        terminal_reason: 'The candidate direction was not allowed by the frozen strategy direction.', blocking_rule_id: 'strategy-direction',
+        evidence: { configured_direction: desiredDirection, candidate_direction: candidate.direction }, official_trade_sequence: null, official_performance: false,
+      });
       i += 1;
       continue;
     }
     if (desiredDirection === 'SHORT' && candidate.direction !== 'SELL') {
       diagnostics.rejected_direction += 1;
+      recordCandidateEvent({
+        direction: eventDirection(candidate.direction), disposition: 'REJECTED', terminal_stage: 'DIRECTION',
+        terminal_reason: 'The candidate direction was not allowed by the frozen strategy direction.', blocking_rule_id: 'strategy-direction',
+        evidence: { configured_direction: desiredDirection, candidate_direction: candidate.direction }, official_trade_sequence: null, official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -437,6 +549,11 @@ export function simulateBacktestFromSeries(
     const maxPerDay = Number(strategy.maximumTradesPerDay ?? 0);
     if (maxPerDay > 0 && (dailyCounts.get(day) ?? 0) >= maxPerDay) {
       diagnostics.rejected_daily_limit += 1;
+      recordCandidateEvent({
+        direction: eventDirection(candidate.direction), disposition: 'ABORTED', terminal_stage: 'EXECUTION_POLICY',
+        terminal_reason: 'The setup passed, but the saved maximum-trades-per-day limit had already been reached.', blocking_rule_id: 'maximum-trades-per-day',
+        evidence: { day_utc: day, maximum_trades_per_day: maxPerDay, trades_already_taken: dailyCounts.get(day) ?? 0 }, official_trade_sequence: null, official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -449,6 +566,12 @@ export function simulateBacktestFromSeries(
     const originalTargetDistance = Math.abs(candidate.takeProfit - signalEntry);
     if (!(originalStopDistance > 0) || !(originalTargetDistance > 0)) {
       diagnostics.rejected_invalid_risk_geometry += 1;
+      recordCandidateEvent({
+        direction: eventDirection(candidate.direction), disposition: 'ABORTED', terminal_stage: 'RISK_GEOMETRY',
+        terminal_reason: 'The setup passed, but entry, stop, and target did not form valid positive risk geometry.', blocking_rule_id: 'risk-geometry',
+        evidence: { signal_entry: signalEntry, stop_loss: candidate.stopLoss, take_profit: candidate.takeProfit, original_stop_distance: originalStopDistance, original_target_distance: originalTargetDistance },
+        official_trade_sequence: null, official_performance: false,
+      });
       i += 1;
       continue;
     }
@@ -487,8 +610,9 @@ export function simulateBacktestFromSeries(
     const balanceBefore = balance;
     balance += grossPnl;
 
+    const tradeSequence = trades.length + 1;
     trades.push({
-      sequence: trades.length + 1,
+      sequence: tradeSequence,
       signal_timestamp: new Date(signalAtMs).toISOString(),
       entry_timestamp: next.datetime,
       exit_timestamp: execution[exitIndex]!.datetime,
@@ -528,6 +652,27 @@ export function simulateBacktestFromSeries(
       },
     });
 
+    recordCandidateEvent({
+      direction,
+      disposition: 'TAKEN',
+      terminal_stage: 'SIMULATED_TRADE',
+      terminal_reason: 'The material opportunity passed the frozen strategy rules and every execution check.',
+      blocking_rule_id: null,
+      evidence: {
+        setup_type: analysis.setupType,
+        rationale: candidate.rationale,
+        entry,
+        stop_loss: stop,
+        take_profit: target,
+        exit_price: exitPrice,
+        exit_reason: exitReason,
+        net_r: round(grossR, 4),
+        net_pnl: round(grossPnl, 2),
+      },
+      official_trade_sequence: tradeSequence,
+      official_performance: true,
+    });
+
     diagnostics.completed_trades += 1;
     dailyCounts.set(day, (dailyCounts.get(day) ?? 0) + 1);
     i = Math.max(i + 1, exitIndex + 1);
@@ -538,10 +683,13 @@ export function simulateBacktestFromSeries(
     complete: true,
     result,
     trades,
+    candidateEvents,
     metadata: {
       executor: 'TRADE_POLICE_BACKTEST_V1',
       provider: 'Twelve Data',
       provider_symbol: twelveDataSymbolFor(run.instrument),
+      candidate_evidence_version: 1,
+      historical_data_fingerprint: historicalDataFingerprint(run.instrument, historical, frames),
       canonical_timezone: 'UTC',
       period_start_utc: new Date(periodStart).toISOString(),
       period_end_utc: new Date(requestedPeriodEnd).toISOString(),
@@ -570,17 +718,22 @@ export function simulateBacktestFromSeries(
       rule_diagnostics: rulePlan.rules.map((rule) => {
         const counts = diagnostics.historical_rule_outcomes[rule.id] ?? { matched: 0, rejected: 0, insufficient: 0, candidates_before: 0, candidates_after: 0 };
         const evaluated = counts.matched + counts.rejected + counts.insufficient;
+        const candidateRuleFailed = Math.max(0, counts.candidates_before - counts.candidates_after);
         return {
           rule_id: rule.id,
           label: rule.originalLabel,
           detector: rule.detectorId,
           timeframe: rule.timeframe,
           required: rule.required,
-          matched: counts.matched,
-          rejected: counts.rejected,
-          insufficient_data: counts.insufficient,
+          observed_matched: counts.matched,
+          observed_not_matched: counts.rejected,
+          observed_insufficient_data: counts.insufficient,
           candidates_before: counts.candidates_before,
           candidates_after: counts.candidates_after,
+          rejected: candidateRuleFailed,
+          candidate_gate_evaluated: counts.candidates_before,
+          candidate_rule_passed: counts.candidates_after,
+          candidate_rule_failed: candidateRuleFailed,
           rejection_reason: counts.insufficient > 0 && counts.matched === 0
             ? `Required ${rule.timeframe} history was insufficient for this detector.`
             : `${rule.detectorId} did not match the saved ${rule.originalOperator} condition.`,

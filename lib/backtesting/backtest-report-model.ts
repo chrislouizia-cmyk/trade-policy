@@ -1,6 +1,6 @@
 import { backtestOutcome, reportAccountName, type BacktestOutcome } from './backtest-report.ts';
 
-export const BACKTEST_REPORT_MODEL_VERSION = '1.0.0';
+export const BACKTEST_REPORT_MODEL_VERSION = '1.1.0';
 
 export type BacktestCandidateDisposition = 'TAKEN' | 'REJECTED' | 'ABORTED' | 'OVERRIDE_ELIGIBLE';
 
@@ -13,6 +13,7 @@ export type BacktestCandidateEvent = Readonly<{
   terminalReason: string;
   blockingRuleId: string | null;
   ruleEvaluations: readonly Record<string, unknown>[];
+  officialTradeSequence: number | null;
   officialPerformance: boolean;
   hypothetical: Readonly<Record<string, unknown>> | null;
 }>;
@@ -74,7 +75,7 @@ type ReportSource = {
   trades: readonly Record<string, unknown>[];
   user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> };
   generatedAt?: Date;
-  candidates?: readonly BacktestCandidateEvent[];
+  candidates?: readonly (BacktestCandidateEvent | Record<string, unknown>)[];
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -91,15 +92,55 @@ function iso(value: unknown): string {
   return parsed.toISOString();
 }
 
+function normalizeCandidate(value: BacktestCandidateEvent | Record<string, unknown>): BacktestCandidateEvent {
+  const item = value as Record<string, unknown>;
+  return Object.freeze({
+    candidateKey: String(item.candidateKey ?? item.candidate_key ?? ''),
+    signalTimestampUtc: iso(item.signalTimestampUtc ?? item.signal_timestamp_utc),
+    direction: item.direction === 'LONG' || item.direction === 'SHORT' ? item.direction : null,
+    disposition: String(item.disposition ?? 'REJECTED') as BacktestCandidateDisposition,
+    terminalStage: String(item.terminalStage ?? item.terminal_stage ?? ''),
+    terminalReason: String(item.terminalReason ?? item.terminal_reason ?? ''),
+    blockingRuleId: item.blockingRuleId == null && item.blocking_rule_id == null
+      ? null
+      : String(item.blockingRuleId ?? item.blocking_rule_id),
+    ruleEvaluations: Object.freeze(records(item.ruleEvaluations ?? item.rule_evaluations)),
+    officialTradeSequence: item.officialTradeSequence == null && item.official_trade_sequence == null
+      ? null
+      : Number(item.officialTradeSequence ?? item.official_trade_sequence),
+    officialPerformance: Boolean(item.officialPerformance ?? item.official_performance),
+    hypothetical: item.hypothetical == null ? null : Object.freeze(record(item.hypothetical)),
+  });
+}
+
+function normalizeRuleDiagnostic(value: Record<string, unknown>): Record<string, unknown> {
+  const before = Number(value.candidates_before ?? 0);
+  const after = Number(value.candidates_after ?? 0);
+  const candidateRuleFailed = Number(value.candidate_rule_failed ?? Math.max(0, before - after));
+  const legacyObservedRejected = Number(value.rejected ?? 0);
+  return Object.freeze({
+    ...value,
+    candidates_before: before,
+    candidates_after: after,
+    candidate_gate_evaluated: Number(value.candidate_gate_evaluated ?? before),
+    candidate_rule_passed: Number(value.candidate_rule_passed ?? after),
+    candidate_rule_failed: candidateRuleFailed,
+    rejected: candidateRuleFailed,
+    observed_matched: Number(value.observed_matched ?? 0),
+    observed_not_matched: Number(value.observed_not_matched ?? legacyObservedRejected),
+    observed_insufficient_data: Number(value.observed_insufficient_data ?? value.insufficient_data ?? 0),
+  });
+}
+
 export function buildBacktestReportModel(source: ReportSource): BacktestReportModel {
   const { run, result, trades, user } = source;
   const snapshot = record(run.strategy_snapshot_json);
   const metadata = record(run.metadata);
-  const candidates = [...(source.candidates ?? [])];
+  const candidates = (source.candidates ?? []).map(normalizeCandidate);
   const totalTrades = Number(result.total_trades ?? trades.length ?? 0);
   const runId = String(run.id ?? '');
   if (!runId) throw new Error('Backtest report source is missing its run id.');
-  const generatedAt = source.generatedAt ?? new Date();
+  const generatedAt = source.generatedAt ?? (run.completed_at ? new Date(String(run.completed_at)) : new Date());
 
   return Object.freeze({
     version: BACKTEST_REPORT_MODEL_VERSION,
@@ -123,7 +164,7 @@ export function buildBacktestReportModel(source: ReportSource): BacktestReportMo
       startingBalance: Number(run.starting_balance ?? 0),
       engineVersion: String(run.engine_version ?? ''),
       dataProvider: String(run.data_provider ?? ''),
-      dataFingerprint: String(run.data_revision_fingerprint ?? ''),
+      dataFingerprint: String(run.data_revision_fingerprint || metadata.historical_data_fingerprint || ''),
       executionModel: record(run.execution_model),
       riskConfiguration: record(run.risk_configuration),
     }),
@@ -134,10 +175,10 @@ export function buildBacktestReportModel(source: ReportSource): BacktestReportMo
     }),
     diagnostics: Object.freeze({
       funnel: record(metadata.opportunity_funnel),
-      ruleDiagnostics: Object.freeze(records(metadata.rule_diagnostics)),
+      ruleDiagnostics: Object.freeze(records(metadata.rule_diagnostics).map(normalizeRuleDiagnostic)),
       dataCoverage: Object.freeze(records(metadata.historical_data_coverage)),
       candidates: Object.freeze(candidates),
-      candidateLedgerAvailable: candidates.length > 0,
+      candidateLedgerAvailable: candidates.length > 0 || (source.candidates !== undefined && Number(metadata.candidate_evidence_version ?? 0) >= 1),
     }),
     performance: Object.freeze({
       result,
