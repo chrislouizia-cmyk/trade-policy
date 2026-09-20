@@ -73,7 +73,20 @@ type BacktestDiagnostics = {
   rejected_daily_limit: number;
   rejected_invalid_risk_geometry: number;
   rejected_historical_rules: number;
+  historical_rule_outcomes: Record<string, { matched: number; rejected: number; insufficient: number; candidates_before: number; candidates_after: number }>;
+  historical_gate_outcomes: Record<string, { logic: 'CONDITION' | 'ALL' | 'ANY'; rule_ids: string[]; candidates_before: number; candidates_after: number; rejected: number }>;
 };
+
+function emptyBacktestDiagnostics(): BacktestDiagnostics {
+  return {
+    execution_candles_evaluated: 0, multi_timeframe_context_ready: 0, analysis_completed: 0, analysis_errors: 0,
+    ready_candidate_found: 0, setup_readiness_ready: 0, direction_allowed: 0, daily_limit_allowed: 0,
+    valid_risk_geometry: 0, executable_signals: 0, completed_trades: 0, insufficient_history: 0,
+    rejected_no_ready_candidate: 0, rejected_setup_not_ready: 0, rejected_direction: 0,
+    rejected_daily_limit: 0, rejected_invalid_risk_geometry: 0, rejected_historical_rules: 0,
+    historical_rule_outcomes: {}, historical_gate_outcomes: {},
+  };
+}
 
 
 export function strategyFromSnapshot(run: BacktestRun): StrategyProfile {
@@ -100,11 +113,11 @@ function historicalPlan(strategy: StrategyProfile): HistoricalRulePlan {
   return frozen?.version ? frozen : buildHistoricalRulePlan(strategy);
 }
 
-function historicalFrames(strategy: StrategyProfile, plan: HistoricalRulePlan): string[] {
+export function historicalFrames(strategy: StrategyProfile, plan: HistoricalRulePlan): string[] {
   return [...new Set([...strategyTimeframes(strategy), ...plan.rules.flatMap((rule) => rule.timeframes)])];
 }
 
-function historicalWarmupBars(plan: HistoricalRulePlan, timeframe: string): number {
+export function historicalWarmupBars(plan: HistoricalRulePlan, timeframe: string): number {
   const numericParameters = plan.rules
     .filter((rule) => rule.timeframes.includes(timeframe))
     .flatMap((rule) => Object.values(rule.parameters).filter((value): value is number => typeof value === 'number' && Number.isFinite(value)));
@@ -180,6 +193,50 @@ function round(value: number, digits = 6) {
   return Number(value.toFixed(digits));
 }
 
+export function historicalDataCoverage(
+  historical: Record<string, Candle[]>,
+  frames: string[],
+  periodStart: number,
+  periodEnd: number,
+  warmupBarsForFrame: (frame: string) => number,
+) {
+  return frames.map((timeframe) => {
+    const candles = historical[timeframe] ?? [];
+    const intervalMinutes = FRAME_MINUTES[timeframe] ?? 0;
+    const intervalMs = intervalMinutes * 60_000;
+    const inPeriod = candles.filter((candle) => {
+      const opened = Date.parse(candle.datetime);
+      return opened >= periodStart && opened < periodEnd;
+    });
+    let timestampDiscontinuities = 0;
+    let estimatedMissingIntervals = 0;
+    let largestGapMinutes = 0;
+    for (let index = 1; index < candles.length; index += 1) {
+      const gap = Date.parse(candles[index]!.datetime) - Date.parse(candles[index - 1]!.datetime);
+      if (intervalMs > 0 && gap > intervalMs * 1.5) {
+        timestampDiscontinuities += 1;
+        estimatedMissingIntervals += Math.max(0, Math.round(gap / intervalMs) - 1);
+        largestGapMinutes = Math.max(largestGapMinutes, Math.round(gap / 60_000));
+      }
+    }
+    return {
+      timeframe,
+      timezone: 'UTC',
+      interval_minutes: intervalMinutes,
+      required_warmup_bars: warmupBarsForFrame(timeframe),
+      total_bars_loaded: candles.length,
+      warmup_bars_loaded: candles.length - inPeriod.length,
+      period_bars_loaded: inPeriod.length,
+      first_bar_utc: candles[0]?.datetime ?? null,
+      last_bar_utc: candles.at(-1)?.datetime ?? null,
+      timestamp_discontinuities: timestampDiscontinuities,
+      estimated_missing_intervals_including_market_closures: estimatedMissingIntervals,
+      largest_gap_minutes: largestGapMinutes,
+      empty: candles.length === 0,
+    };
+  });
+}
+
 function buildMetrics(startingBalance: number, trades: SimulatedTrade[]) {
   const endingBalance = trades.at(-1)?.balance_after ?? startingBalance;
   const wins = trades.filter((trade) => trade.net_pnl > 0);
@@ -226,6 +283,7 @@ export function simulateBacktestFromSeries(
 
   const frames = historicalFrames(strategy, rulePlan);
   const historyBars = Math.max(...frames.map((frame) => historicalWarmupBars(rulePlan, frame)));
+  const dataCoverage = historicalDataCoverage(historical, frames, periodStart, requestedPeriodEnd, (frame) => historicalWarmupBars(rulePlan, frame));
   const availableFrameEnds = frames.map((frame) => {
     const data = historical[frame] ?? [];
     const last = data.at(-1);
@@ -246,26 +304,13 @@ export function simulateBacktestFromSeries(
   const trades: SimulatedTrade[] = restored ? [...restored.trades] : [];
   const dailyCounts = new Map<string, number>(Object.entries(restored?.dailyCounts ?? {}));
   let balance = restored?.balance ?? Number(run.starting_balance);
-  const diagnostics: BacktestDiagnostics = restored ? { ...restored.diagnostics } : {
-    execution_candles_evaluated: 0,
-    multi_timeframe_context_ready: 0,
-    analysis_completed: 0,
-    analysis_errors: 0,
-    ready_candidate_found: 0,
-    setup_readiness_ready: 0,
-    direction_allowed: 0,
-    daily_limit_allowed: 0,
-    valid_risk_geometry: 0,
-    executable_signals: 0,
-    completed_trades: 0,
-    insufficient_history: 0,
-    rejected_no_ready_candidate: 0,
-    rejected_setup_not_ready: 0,
-    rejected_direction: 0,
-    rejected_daily_limit: 0,
-    rejected_invalid_risk_geometry: 0,
-    rejected_historical_rules: 0,
-  };
+  const diagnostics: BacktestDiagnostics = restored
+    ? {
+        ...emptyBacktestDiagnostics(), ...restored.diagnostics,
+        historical_rule_outcomes: { ...(restored.diagnostics.historical_rule_outcomes ?? {}) },
+        historical_gate_outcomes: { ...(restored.diagnostics.historical_gate_outcomes ?? {}) },
+      }
+    : emptyBacktestDiagnostics();
   let initialIndex = execution.findIndex((candle) => Date.parse(candle.datetime) >= periodStart);
   if (initialIndex < 0) initialIndex = 0;
   let i = Math.max(initialIndex, restored?.nextExecutionIndex ?? initialIndex);
@@ -315,6 +360,36 @@ export function simulateBacktestFromSeries(
     diagnostics.multi_timeframe_context_ready += 1;
 
     const historicalRules = evaluateHistoricalRulePlan(rulePlan, series, run.instrument);
+    let candidateSurvives = true;
+    const reachedStageIds = new Set<string>();
+    historicalRules.gateStages.forEach((stage) => {
+      const counts = diagnostics.historical_gate_outcomes[stage.stageId] ?? {
+        logic: stage.logic, rule_ids: [...stage.ruleIds], candidates_before: 0, candidates_after: 0, rejected: 0,
+      };
+      if (candidateSurvives) {
+        reachedStageIds.add(stage.stageId);
+        counts.candidates_before += 1;
+        if (stage.passed) counts.candidates_after += 1;
+        else counts.rejected += 1;
+      }
+      diagnostics.historical_gate_outcomes[stage.stageId] = counts;
+      candidateSurvives = candidateSurvives && stage.passed;
+    });
+    historicalRules.evaluations.forEach((evaluation, index) => {
+      const rule = rulePlan.rules[index];
+      if (!rule) return;
+      const stage = historicalRules.gateStages.find((item) => item.ruleIds.includes(rule.id));
+      const stageCounts = stage ? diagnostics.historical_gate_outcomes[stage.stageId] : null;
+      const counts = diagnostics.historical_rule_outcomes[rule.id] ?? { matched: 0, rejected: 0, insufficient: 0, candidates_before: 0, candidates_after: 0 };
+      if (evaluation.status === 'MATCHED') counts.matched += 1;
+      else if (evaluation.status === 'INSUFFICIENT_DATA') counts.insufficient += 1;
+      else counts.rejected += 1;
+      if (stage && stageCounts && reachedStageIds.has(stage.stageId)) {
+        counts.candidates_before += 1;
+        if (evaluation.passed) counts.candidates_after += 1;
+      }
+      diagnostics.historical_rule_outcomes[rule.id] = counts;
+    });
     if (!historicalRules.passed) {
       diagnostics.rejected_historical_rules += 1;
       i += 1;
@@ -466,6 +541,15 @@ export function simulateBacktestFromSeries(
     metadata: {
       executor: 'TRADE_POLICE_BACKTEST_V1',
       provider: 'Twelve Data',
+      provider_symbol: twelveDataSymbolFor(run.instrument),
+      canonical_timezone: 'UTC',
+      period_start_utc: new Date(periodStart).toISOString(),
+      period_end_utc: new Date(requestedPeriodEnd).toISOString(),
+      historical_data_coverage: dataCoverage,
+      session_policy: {
+        configured_sessions: strategy.sessions ?? strategy.allowedSessions ?? [],
+        enforcement: rulePlan.rules.some((rule) => rule.detectorId === 'session.window') ? 'HISTORICAL_RULE' : 'NOT_APPLIED_AS_A_SEPARATE_GATE',
+      },
       strategy_revision_id: run.strategy_revision_id,
       execution_timeframe: executionFrame,
       evaluated_frames: frames,
@@ -481,6 +565,29 @@ export function simulateBacktestFromSeries(
             ? { code: 'LIMITED', label: 'Limited / preliminary sample', minimum_recommended_trades: 100 }
             : { code: 'MORE_INFORMATIVE', label: 'More informative sample', minimum_recommended_trades: 100 },
       opportunity_funnel: diagnostics,
+      rule_logic: { source: rulePlan.logicSource ?? 'FLAT_REQUIRED_RULES', tree: rulePlan.logicTree ?? null },
+      rule_gate_funnel: Object.entries(diagnostics.historical_gate_outcomes).map(([stage_id, counts]) => ({ stage_id, ...counts })),
+      rule_diagnostics: rulePlan.rules.map((rule) => {
+        const counts = diagnostics.historical_rule_outcomes[rule.id] ?? { matched: 0, rejected: 0, insufficient: 0, candidates_before: 0, candidates_after: 0 };
+        const evaluated = counts.matched + counts.rejected + counts.insufficient;
+        return {
+          rule_id: rule.id,
+          label: rule.originalLabel,
+          detector: rule.detectorId,
+          timeframe: rule.timeframe,
+          required: rule.required,
+          matched: counts.matched,
+          rejected: counts.rejected,
+          insufficient_data: counts.insufficient,
+          candidates_before: counts.candidates_before,
+          candidates_after: counts.candidates_after,
+          rejection_reason: counts.insufficient > 0 && counts.matched === 0
+            ? `Required ${rule.timeframe} history was insufficient for this detector.`
+            : `${rule.detectorId} did not match the saved ${rule.originalOperator} condition.`,
+          required_data: { timeframes: rule.timeframes, lookback_bars: rule.timeframes.map((frame) => ({ timeframe: frame, bars: historicalWarmupBars(rulePlan, frame) })) },
+          match_rate_percent: evaluated ? round(counts.matched / evaluated * 100, 4) : 0,
+        };
+      }),
       cost_model: 'OHLC_NO_HISTORICAL_SPREAD_DATA',
       note: 'Historical OHLC replay. Historical spread, commission, news, and external/manual confirmations are not inferred.',
     },

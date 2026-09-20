@@ -7,7 +7,7 @@ import { detectStructuralLiquiditySweeps } from '../market-intelligence/liquidit
 import { detectBreaksOfStructure } from '../market-intelligence/structure/break-of-structure/break-of-structure-detector.ts';
 import { classifyMarketStructureTransitions } from '../market-intelligence/structure/market-structure-shift/market-structure-shift-classifier.ts';
 import { reduceMarketStructure } from '../market-intelligence/structure/structure-reducer.ts';
-import type { CanonicalHistoricalRule, HistoricalRulePlan } from './historical-rule-plan.ts';
+import type { CanonicalHistoricalRule, HistoricalRuleLogicNode, HistoricalRulePlan } from './historical-rule-plan.ts';
 import { HISTORICAL_TIMEFRAMES } from './historical-timeframes.ts';
 import type { StructureReducerConfig } from '../market-intelligence/structure/structure-types.ts';
 import type { BreakOfStructureConfig } from '../market-intelligence/structure/break-of-structure/break-of-structure-types.ts';
@@ -24,7 +24,19 @@ export type HistoricalRuleEvaluation = Readonly<{
   metadata: Readonly<Record<string, unknown>>;
 }>;
 
-export type HistoricalRuleEvaluationResult = Readonly<{ passed: boolean; evaluations: readonly HistoricalRuleEvaluation[] }>;
+export type HistoricalGateStageEvaluation = Readonly<{
+  stageId: string;
+  logic: 'CONDITION' | 'ALL' | 'ANY';
+  ruleIds: readonly string[];
+  passed: boolean;
+  blockingRuleIds: readonly string[];
+}>;
+
+export type HistoricalRuleEvaluationResult = Readonly<{
+  passed: boolean;
+  evaluations: readonly HistoricalRuleEvaluation[];
+  gateStages: readonly HistoricalGateStageEvaluation[];
+}>;
 
 const numberParameter = (rule: CanonicalHistoricalRule, name: string, fallback = 0) => {
   const value = Number(rule.parameters[name]);
@@ -420,5 +432,31 @@ function evaluate(rule: CanonicalHistoricalRule, series: Record<string, Candle[]
 
 export function evaluateHistoricalRulePlan(plan: HistoricalRulePlan, series: Record<string, Candle[]>, instrument: string): HistoricalRuleEvaluationResult {
   const evaluations = plan.rules.map((rule) => evaluate(rule, series, instrument));
-  return Object.freeze({ passed: evaluations.filter((item, index) => plan.rules[index]?.required).every((item) => item.passed), evaluations: Object.freeze(evaluations) });
+  const evaluationByRuleId = new Map(evaluations.map((evaluation) => [evaluation.ruleId, evaluation]));
+  const ruleIds = (node: HistoricalRuleLogicNode): string[] => node.type === 'CONDITION'
+    ? [node.ruleId]
+    : node.children.flatMap(ruleIds);
+  const nodePassed = (node: HistoricalRuleLogicNode): boolean => {
+    if (node.type === 'CONDITION') return evaluationByRuleId.get(node.ruleId)?.passed ?? false;
+    const outcomes = node.children.map(nodePassed);
+    return node.logic === 'ANY' ? outcomes.some(Boolean) : outcomes.every(Boolean);
+  };
+  const blockingRuleIds = (node: HistoricalRuleLogicNode): string[] => {
+    if (node.type === 'CONDITION') return nodePassed(node) ? [] : [node.ruleId];
+    if (nodePassed(node)) return [];
+    return node.children.flatMap((child) => nodePassed(child) ? [] : blockingRuleIds(child));
+  };
+  const root = plan.logicTree ?? ({
+    type: 'GROUP', logic: 'ALL',
+    children: plan.rules.filter((rule) => rule.required).map((rule) => ({ type: 'CONDITION', ruleId: rule.id })),
+  } as HistoricalRuleLogicNode);
+  const stageNodes = root.type === 'GROUP' && root.logic === 'ALL' ? root.children : [root];
+  const gateStages = stageNodes.map((node, index) => Object.freeze({
+    stageId: node.type === 'CONDITION' ? node.ruleId : `historical-group:${index}:${node.logic.toLowerCase()}`,
+    logic: node.type === 'CONDITION' ? 'CONDITION' as const : node.logic,
+    ruleIds: Object.freeze(ruleIds(node)),
+    passed: nodePassed(node),
+    blockingRuleIds: Object.freeze(blockingRuleIds(node)),
+  }));
+  return Object.freeze({ passed: nodePassed(root), evaluations: Object.freeze(evaluations), gateStages: Object.freeze(gateStages) });
 }

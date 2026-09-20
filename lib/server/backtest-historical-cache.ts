@@ -2,7 +2,8 @@ import 'server-only';
 
 import { twelveDataSymbolFor } from '@/lib/instrument-registry';
 
-import { strategyFromSnapshot } from '@/lib/server/backtest-executor';
+import { historicalFrames, historicalWarmupBars, strategyFromSnapshot } from '@/lib/server/backtest-executor';
+import { buildHistoricalRulePlan, type HistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
 import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
 import type { Candle } from '@/lib/market-analysis';
@@ -189,7 +190,9 @@ export async function prepareHistoricalBacktestData(
   admin: AdminClient,
 ): Promise<HistoricalPreparation> {
   const strategy = strategyFromSnapshot(run);
-  const frames = [...new Set([...strategyTimeframes(strategy), run.execution_timeframe])];
+  const frozenPlan = (strategy as typeof strategy & { historicalRulePlan?: HistoricalRulePlan }).historicalRulePlan;
+  const rulePlan = frozenPlan?.version ? frozenPlan : buildHistoricalRulePlan(strategy);
+  const frames = [...new Set([...historicalFrames(strategy, rulePlan), ...strategyTimeframes(strategy), run.execution_timeframe])];
 
   const periodStart = Date.parse(run.period_start);
   const periodEnd = Date.parse(run.period_end);
@@ -201,7 +204,7 @@ export async function prepareHistoricalBacktestData(
       throw new Error(`Historical backtesting does not yet support timeframe ${timeframe}.`);
     }
 
-    const wantedStart = periodStart - minutes * 60_000 * 60;
+    const wantedStart = periodStart - minutes * 60_000 * historicalWarmupBars(rulePlan, timeframe);
     const wantedEnd = periodEnd;
     const chunkSpan = minutes * 60_000 * 4_500;
 
@@ -275,7 +278,7 @@ export async function prepareHistoricalBacktestData(
   const historical: Record<string, Candle[]> = {};
   for (const timeframe of frames) {
     const minutes = FRAME_MINUTES[timeframe]!;
-    const wantedStart = new Date(periodStart - minutes * 60_000 * 60).toISOString();
+    const wantedStart = new Date(periodStart - minutes * 60_000 * historicalWarmupBars(rulePlan, timeframe)).toISOString();
     historical[timeframe] = await readCandles(
       admin,
       run.instrument,

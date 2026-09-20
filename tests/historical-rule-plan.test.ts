@@ -194,7 +194,31 @@ test('explicit DNA parameters and direction are preserved and defaults are recor
   assert.equal(item.lookback, 3);
   assert.equal(item.direction, 'BULLISH');
   assert.equal(item.parameterSources.lookback?.source, 'EXPLICIT');
-  assert.equal(item.configurationVersion, '2.0.0');
+  assert.equal(item.configurationVersion, '3.0.0');
+});
+
+test('V2 ANY groups retain alternative semantics instead of flattening every required rule into ALL', () => {
+  const first = dnaRule('Range present', 'range-break', 'IS_TRUE', { timeframe: 'M15', lookback: 20 });
+  const second = dnaRule('Range absent', 'range-break', 'IS_FALSE', { timeframe: 'M15', lookback: 20 });
+  const profile = strategy([first, second]);
+  profile.personalRules = [{
+    key: 'trade-police-v2-metadata', enabled: true,
+    value: JSON.stringify({
+      kind: 'TRADE_POLICE_V2_METADATA', version: 1, methodologyIds: [], ruleSelections: [],
+      ruleTree: { type: 'GROUP', logic: 'ALL', children: [{ type: 'GROUP', logic: 'ANY', children: [
+        { type: 'CONDITION', ruleKey: first.ruleKey, requirement: 'REQUIRED', timeframe: 'M15' },
+        { type: 'CONDITION', ruleKey: second.ruleKey, requirement: 'REQUIRED', timeframe: 'M15' },
+      ] }] },
+    }),
+  }];
+  const plan = buildHistoricalRulePlan(profile);
+  const replay = evaluateHistoricalRulePlan(plan, { M15: candles(Array.from({ length: 21 }, () => 100)) }, 'GBPUSD');
+  assert.equal(plan.logicSource, 'V2_RULE_TREE');
+  assert.equal(plan.logicTree.type, 'GROUP');
+  assert.equal(replay.evaluations[0]?.passed, false);
+  assert.equal(replay.evaluations[1]?.passed, true);
+  assert.equal(replay.gateStages[0]?.logic, 'ANY');
+  assert.equal(replay.passed, true);
 });
 
 test('range break and breakout confirmation evaluate deterministically without future candles', () => {

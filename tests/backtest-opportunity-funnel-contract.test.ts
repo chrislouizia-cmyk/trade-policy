@@ -22,8 +22,16 @@ test('executor records a truthful opportunity funnel without changing entry rule
     'rejected_direction',
     'rejected_daily_limit',
     'rejected_invalid_risk_geometry',
+    'historical_rule_outcomes',
+    'historical_gate_outcomes',
   ]) assert.match(executor, new RegExp(token));
   assert.match(executor, /opportunity_funnel:\s*diagnostics/);
+  assert.match(executor, /rule_gate_funnel/);
+  assert.match(executor, /candidates_before/);
+  assert.match(executor, /candidates_after/);
+  assert.match(executor, /rejection_reason/);
+  assert.match(executor, /historical_data_coverage/);
+  assert.match(executor, /canonical_timezone:\s*'UTC'/);
 });
 
 test('sample quality is derived from completed trade count', () => {
@@ -39,6 +47,7 @@ test('client report renders opportunity funnel and sample quality', () => {
   assert.match(detail, /Execution candles evaluated/);
   assert.match(detail, /Executable signals/);
   assert.match(detail, /Completed trades/);
+  assert.match(detail, /RULE AUDIT/);
 });
 
 test('executor still requires READY candidate and READY setup before a trade', () => {

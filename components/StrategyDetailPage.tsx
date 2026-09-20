@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
 import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/backtesting/instrument-selection';
+import { backtestOutcome } from '@/lib/backtesting/backtest-report';
 import styles from './StrategyDetailPage.module.css';
 import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
@@ -84,6 +85,28 @@ type OpportunityFunnel = {
   valid_risk_geometry?: number;
   executable_signals?: number;
   completed_trades?: number;
+  analysis_errors?: number;
+  rejected_historical_rules?: number;
+  rejected_no_ready_candidate?: number;
+  rejected_setup_not_ready?: number;
+  rejected_direction?: number;
+  rejected_daily_limit?: number;
+  rejected_invalid_risk_geometry?: number;
+};
+
+type RuleDiagnostic = {
+  rule_id?: string;
+  label?: string;
+  detector?: string;
+  timeframe?: string;
+  required?: boolean;
+  matched?: number;
+  rejected?: number;
+  insufficient_data?: number;
+  candidates_before?: number;
+  candidates_after?: number;
+  rejection_reason?: string;
+  match_rate_percent?: number;
 };
 
 type BacktestReadinessRule = { label: string; reason: string; timeframe?: string };
@@ -173,12 +196,12 @@ function formatDate(value?: string | null) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
 function formatRange(start?: string | null, end?: string | null) {
   if (!start || !end) return '—';
-  return `${formatDate(start)} → ${formatDate(end)}`;
+  return `${formatDate(start)} → ${formatDate(end)} · UTC`;
 }
 
 function normalizeBacktestPlanCode(planCode: string | null | undefined) {
@@ -263,11 +286,17 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
   const selectedRunMetadata = asRecord(selectedRun?.metadata);
   const opportunityFunnel = asRecord(selectedRunMetadata?.opportunity_funnel) as OpportunityFunnel | null;
+  const ruleDiagnostics = Array.isArray(selectedRunMetadata?.rule_diagnostics)
+    ? selectedRunMetadata.rule_diagnostics as RuleDiagnostic[]
+    : [];
   const sampleQuality = asRecord(selectedRunMetadata?.sample_quality);
   const effectivePeriodEnd = typeof selectedRunMetadata?.effective_period_end === 'string'
     ? selectedRunMetadata.effective_period_end
     : null;
   const dataFreshnessSeconds = numberValue(selectedRunMetadata?.data_freshness_seconds);
+  const reportOutcome = reportResult
+    ? backtestOutcome(reportResult.total_trades ?? reportTrades.length, selectedRunMetadata)
+    : null;
 
   useEffect(() => {
     setForm((current) => {
@@ -795,16 +824,16 @@ setReportLoading(false);
                   </div>
                   <div className={`button-row ${styles.reportActions}`}>
                     <a className="secondary button" href={`/api/backtests/${selectedRun.id}/export`} download>Download Excel</a>
-                    <button type="button" className="secondary" onClick={()=>window.print()}>Print / Save PDF</button>
+                    <a className="secondary button" href={`/api/backtests/${selectedRun.id}/report`} target="_blank" rel="noreferrer">Open PDF Report</a>
                   </div>
                   {reportLoading && <p className="muted">Loading persisted backtest result…</p>}
                   {reportError && <p className={styles.reportNotice}>{reportError}</p>}
                   {reportResult && (
                     <>
-                      {numberValue(reportResult.total_trades ?? reportTrades.length)===0&&selectedRun.status==='COMPLETED'&&(
-                        <div className={styles.reportSuccessNotice} role="status">
-                          <strong>Backtest completed successfully — no valid setup was found.</strong>
-                          <div>The engine finished the requested historical replay. Zero trades means no candidate passed every saved strategy rule and execution check; it does not mean the backtest failed.</div>
+                      {reportOutcome&&numberValue(reportResult.total_trades ?? reportTrades.length)===0&&selectedRun.status==='COMPLETED'&&(
+                        <div className={reportOutcome.successful ? styles.reportSuccessNotice : styles.reportNotice} role="status">
+                          <strong>{reportOutcome.title}</strong>
+                          <div>{reportOutcome.explanation}</div>
                         </div>
                       )}
                       <div className={styles.reportMetrics}>
@@ -866,7 +895,9 @@ setReportLoading(false);
                           <div className={styles.reportMetrics}>
                             <div><small>Execution candles evaluated</small><strong>{numberValue(opportunityFunnel.execution_candles_evaluated).toLocaleString()}</strong></div>
                             <div><small>Multi-timeframe context ready</small><strong>{numberValue(opportunityFunnel.multi_timeframe_context_ready).toLocaleString()}</strong></div>
+                            <div><small>Rejected by required rules</small><strong>{numberValue(opportunityFunnel.rejected_historical_rules).toLocaleString()}</strong></div>
                             <div><small>Analysis completed</small><strong>{numberValue(opportunityFunnel.analysis_completed).toLocaleString()}</strong></div>
+                            <div><small>Analysis errors</small><strong>{numberValue(opportunityFunnel.analysis_errors).toLocaleString()}</strong></div>
                             <div><small>READY candidate found</small><strong>{numberValue(opportunityFunnel.ready_candidate_found).toLocaleString()}</strong></div>
                             <div><small>Setup readiness READY</small><strong>{numberValue(opportunityFunnel.setup_readiness_ready).toLocaleString()}</strong></div>
                             <div><small>Direction allowed</small><strong>{numberValue(opportunityFunnel.direction_allowed).toLocaleString()}</strong></div>
@@ -874,6 +905,25 @@ setReportLoading(false);
                             <div><small>Valid risk geometry</small><strong>{numberValue(opportunityFunnel.valid_risk_geometry).toLocaleString()}</strong></div>
                             <div><small>Executable signals</small><strong>{numberValue(opportunityFunnel.executable_signals).toLocaleString()}</strong></div>
                             <div><small>Completed trades</small><strong>{numberValue(opportunityFunnel.completed_trades).toLocaleString()}</strong></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {ruleDiagnostics.length > 0 && (
+                        <div style={{ marginTop: 20 }}>
+                          <p className="eyebrow">RULE AUDIT</p>
+                          <div className={styles.tradeRows}>
+                            {ruleDiagnostics.map((rule) => (
+                              <div className={styles.tradeRow} key={rule.rule_id ?? `${rule.label}-${rule.timeframe}`}>
+                                <strong>{rule.label ?? 'Strategy rule'}</strong>
+                                <span>{rule.timeframe ?? '—'}</span>
+                                <span>{rule.required ? 'Required' : 'Optional'}</span>
+                                <span>Before {numberValue(rule.candidates_before).toLocaleString()}</span>
+                                <span>After {numberValue(rule.candidates_after).toLocaleString()}</span>
+                                <span>Rejected {numberValue(rule.rejected).toLocaleString()}</span>
+                                <span>{rule.rejection_reason ?? `${numberValue(rule.match_rate_percent).toFixed(2)}% match`}</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}

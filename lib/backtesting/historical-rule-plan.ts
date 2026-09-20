@@ -1,7 +1,7 @@
 import type { StrategyProfile, StrategyRule, TimeframeRole } from '../../types/trade.ts';
 import { isHistoricalTimeframe, normalizeHistoricalTimeframe } from './historical-timeframes.ts';
 
-export const HISTORICAL_RULE_PLAN_VERSION = '2.0.0';
+export const HISTORICAL_RULE_PLAN_VERSION = '3.0.0';
 
 export type HistoricalDetectorId =
   | 'market-structure.swing'
@@ -57,14 +57,22 @@ export type UnsupportedHistoricalRule = Readonly<{
   parameters: Readonly<Record<string, unknown>>;
 }>;
 
+export type HistoricalRuleLogicNode = Readonly<
+  | { type: 'CONDITION'; ruleId: string }
+  | { type: 'GROUP'; logic: 'ALL' | 'ANY'; children: readonly HistoricalRuleLogicNode[] }
+>;
+
 export type HistoricalRulePlan = Readonly<{
   version: typeof HISTORICAL_RULE_PLAN_VERSION;
   rules: readonly CanonicalHistoricalRule[];
+  logicTree: HistoricalRuleLogicNode;
+  logicSource: 'V2_RULE_TREE' | 'FLAT_REQUIRED_RULES';
   unsupportedRequiredRules: readonly UnsupportedHistoricalRule[];
   unsupportedRules: readonly UnsupportedHistoricalRule[];
 }>;
 
 type DecodedCondition = { ruleId?: string; operator?: string; inputs?: Record<string, unknown>; operands?: unknown[] };
+type PersistedLogicNode = { type?: unknown; logic?: unknown; children?: unknown; ruleKey?: unknown; requirement?: unknown };
 const DETECTOR_VERSION: Record<HistoricalDetectorId, string> = {
   'market-structure.swing': '1.0.0',
   'market-structure.bos': '1.0.0',
@@ -342,7 +350,46 @@ export function buildHistoricalRulePlan(strategy: StrategyProfile): HistoricalRu
       if (rule.mandatory) unsupportedRequiredRules.push(result);
     } else rules.push(result);
   }
-  return Object.freeze({ version: HISTORICAL_RULE_PLAN_VERSION, rules: Object.freeze(rules), unsupportedRequiredRules: Object.freeze(unsupportedRequiredRules), unsupportedRules: Object.freeze(unsupportedRules) });
+  const ruleByKey = new Map(rules.map((rule) => [rule.originalRuleKey, rule]));
+  const metadataValue = strategy.personalRules?.find((item) => item.key === 'trade-police-v2-metadata' && item.enabled)?.value;
+  let persistedTree: PersistedLogicNode | null = null;
+  if (typeof metadataValue === 'string') {
+    try {
+      const parsed = JSON.parse(metadataValue) as { ruleTree?: PersistedLogicNode };
+      persistedTree = parsed.ruleTree && typeof parsed.ruleTree === 'object' ? parsed.ruleTree : null;
+    } catch {
+      persistedTree = null;
+    }
+  }
+
+  const compileLogicNode = (node: PersistedLogicNode): HistoricalRuleLogicNode | null => {
+    if (node.type === 'CONDITION' && typeof node.ruleKey === 'string') {
+      const rule = ruleByKey.get(node.ruleKey);
+      return rule?.required ? Object.freeze({ type: 'CONDITION' as const, ruleId: rule.id }) : null;
+    }
+    if (node.type !== 'GROUP' || (node.logic !== 'ALL' && node.logic !== 'ANY') || !Array.isArray(node.children)) return null;
+    const children = node.children
+      .filter((child): child is PersistedLogicNode => Boolean(child) && typeof child === 'object')
+      .map(compileLogicNode)
+      .filter((child): child is HistoricalRuleLogicNode => child !== null);
+    if (!children.length) return null;
+    return Object.freeze({ type: 'GROUP' as const, logic: node.logic, children: Object.freeze(children) });
+  };
+
+  const compiledPersistedTree = persistedTree ? compileLogicNode(persistedTree) : null;
+  const fallbackTree: HistoricalRuleLogicNode = Object.freeze({
+    type: 'GROUP',
+    logic: 'ALL',
+    children: Object.freeze(rules.filter((rule) => rule.required).map((rule) => Object.freeze({ type: 'CONDITION' as const, ruleId: rule.id }))),
+  });
+  return Object.freeze({
+    version: HISTORICAL_RULE_PLAN_VERSION,
+    rules: Object.freeze(rules),
+    logicTree: compiledPersistedTree ?? fallbackTree,
+    logicSource: compiledPersistedTree ? 'V2_RULE_TREE' : 'FLAT_REQUIRED_RULES',
+    unsupportedRequiredRules: Object.freeze(unsupportedRequiredRules),
+    unsupportedRules: Object.freeze(unsupportedRules),
+  });
 }
 
 export function assertHistoricalRulePlanSupported(plan: HistoricalRulePlan): void {

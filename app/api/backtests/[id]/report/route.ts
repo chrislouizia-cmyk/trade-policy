@@ -1,0 +1,150 @@
+import { backtestOutcome, reportAccountName } from '@/lib/backtesting/backtest-report';
+import { apiError } from '@/lib/server/public-error';
+import { createClient } from '@/lib/supabase/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function list(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') as Record<string, unknown>[] : [];
+}
+
+function e(value: unknown): string {
+  return String(value ?? '—').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!);
+}
+
+function date(value: unknown, includeTime = false): string {
+  const parsed = new Date(String(value ?? ''));
+  if (Number.isNaN(parsed.getTime())) return e(value);
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    timeZone: 'UTC',
+    ...(includeTime ? { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' } : {}),
+  }).format(parsed);
+}
+
+function safeFilePart(value: string): string {
+  return value.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'backtest';
+}
+
+function number(value: unknown, digits = 0): string {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '—';
+}
+
+function metric(label: string, value: string) {
+  return `<div class="metric"><span>${e(label)}</span><strong>${e(value)}</strong></div>`;
+}
+
+function equityChart(startingBalance: number, trades: Record<string, unknown>[]): string {
+  const balances = [startingBalance, ...trades.map(trade => Number(trade.balance_after)).filter(Number.isFinite)];
+  if (balances.length < 2) return '';
+  const width = 760;
+  const height = 210;
+  const padding = 22;
+  const low = Math.min(...balances);
+  const high = Math.max(...balances);
+  const spread = Math.max(high - low, Math.abs(startingBalance) * 0.001, 1);
+  const points = balances.map((balance, index) => {
+    const x = padding + (index / Math.max(1, balances.length - 1)) * (width - padding * 2);
+    const y = padding + ((high - balance) / spread) * (height - padding * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<section class="section avoid-break"><div class="section-head"><div><p class="eyebrow">Capital path</p><h2>Equity &amp; drawdown</h2><p>Persisted balance after each simulated trade. Starting balance ${number(startingBalance, 2)}; low ${number(low, 2)}; high ${number(high, 2)}.</p></div></div><svg class="equity" viewBox="0 0 ${width} ${height}" role="img" aria-label="Equity curve"><line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}"/><polyline points="${points}"/></svg></section>`;
+}
+
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return apiError('UNAUTHORIZED', 'Unauthorized.', 401);
+
+  const { id } = await params;
+  const { data: run, error: runError } = await supabase.from('backtest_runs').select('*').eq('id', id).eq('user_id', user.id).maybeSingle();
+  if (runError) return apiError('BACKTEST_REPORT_FAILED', 'Backtest report could not be loaded.', 500);
+  if (!run) return apiError('BACKTEST_NOT_FOUND', 'Backtest run not found.', 404);
+  if (run.status !== 'COMPLETED') return apiError('BACKTEST_NOT_COMPLETED', 'Only completed backtests can be reported.', 409);
+
+  const [{ data: result, error: resultError }, { data: trades, error: tradesError }] = await Promise.all([
+    supabase.from('backtest_results').select('*').eq('run_id', id).maybeSingle(),
+    supabase.from('backtest_trades').select('*').eq('run_id', id).order('sequence', { ascending: true }),
+  ]);
+  if (resultError || tradesError || !result) return apiError('BACKTEST_REPORT_FAILED', 'Persisted backtest results could not be loaded.', 500);
+
+  const snapshot = record(run.strategy_snapshot_json);
+  const metadata = record(run.metadata);
+  const funnel = record(metadata.opportunity_funnel);
+  const ruleDiagnostics = list(metadata.rule_diagnostics);
+  const dataCoverage = list(metadata.historical_data_coverage);
+  const strategyRules = list(snapshot.rules);
+  const totalTrades = Number(result.total_trades ?? trades?.length ?? 0);
+  const outcome = backtestOutcome(totalTrades, metadata);
+  const strategyName = String(snapshot.name ?? run.strategy_profile_id);
+  const accountName = reportAccountName(user);
+  const generatedAt = new Date();
+  const equityHtml = totalTrades ? equityChart(Number(run.starting_balance), (trades ?? []) as Record<string, unknown>[]) : '';
+
+  const funnelRows: Array<[string, string]> = [
+    ['Execution candles evaluated', 'execution_candles_evaluated'],
+    ['Multi-timeframe context ready', 'multi_timeframe_context_ready'],
+    ['Rejected by required historical rules', 'rejected_historical_rules'],
+    ['Analysis completed', 'analysis_completed'],
+    ['Analysis errors', 'analysis_errors'],
+    ['READY candidates found', 'ready_candidate_found'],
+    ['Executable signals', 'executable_signals'],
+    ['Completed trades', 'completed_trades'],
+  ];
+  const funnelHtml = funnelRows.map(([label, key]) => `<tr><td>${e(label)}</td><td>${number(funnel[key])}</td></tr>`).join('');
+  const ruleHtml = ruleDiagnostics.length
+    ? ruleDiagnostics.map(item => `<tr><td><strong>${e(item.label ?? item.rule_id)}</strong><small>${e(item.detector)}</small></td><td>${e(item.timeframe)}</td><td>${item.required ? 'Required' : 'Optional'}</td><td>${number(item.candidates_before)}</td><td>${number(item.candidates_after)}</td><td>${number(item.rejected)}</td><td>${e(item.rejection_reason)}</td></tr>`).join('')
+    : `<tr><td colspan="7"><strong>Detailed rule counters are unavailable for this earlier run.</strong><br>Run the backtest again after this update to record the exact blocking rules.</td></tr>`;
+  const coverageHtml = dataCoverage.length
+    ? dataCoverage.map(item => `<tr><td>${e(item.timeframe)}</td><td>${number(item.total_bars_loaded)}</td><td>${number(item.warmup_bars_loaded)}</td><td>${number(item.period_bars_loaded)}</td><td>${e(item.first_bar_utc)}</td><td>${e(item.last_bar_utc)}</td><td>${number(item.timestamp_discontinuities)}</td></tr>`).join('')
+    : '<tr><td colspan="7">Coverage telemetry was not recorded for this earlier run.</td></tr>';
+  const strategyHtml = strategyRules.length
+    ? strategyRules.map(rule => `<tr><td>${e(rule.label ?? rule.ruleKey ?? rule.rule_key)}</td><td>${rule.mandatory ? 'Required' : 'Optional'}</td><td>${e(rule.timeframeRole ?? rule.timeframe_role)}</td><td>${e(rule.evaluationMode ?? rule.evaluation_mode)}</td></tr>`).join('')
+    : '<tr><td colspan="4">No saved rule snapshot was available.</td></tr>';
+  const tradeHtml = totalTrades
+    ? (trades ?? []).map(trade => `<tr><td>${e(trade.sequence)}</td><td>${e(trade.direction)}</td><td>${date(trade.entry_timestamp, true)}</td><td>${date(trade.exit_timestamp, true)}</td><td>${number(trade.entry, 4)}</td><td>${number(trade.exit_price, 4)}</td><td>${number(trade.net_r, 2)} R</td><td>${number(trade.net_pnl, 2)}</td><td>${e(trade.exit_reason)}</td></tr>`).join('')
+    : '';
+  const tradeSectionHtml = totalTrades ? `<section class="section page-break"><div class="section-head"><div><p class="eyebrow">Simulation ledger</p><h2>Trade history</h2><p>${number(totalTrades)} persisted simulated trade${totalTrades === 1 ? '' : 's'}.</p></div></div><div class="table-wrap"><table class="trades"><thead><tr><th>#</th><th>Direction</th><th>Entry time</th><th>Exit time</th><th>Entry</th><th>Exit</th><th>Net R</th><th>Net P&amp;L</th><th>Exit reason</th></tr></thead><tbody>${tradeHtml}</tbody></table></div></section>`
+    : `<section class="section page-break"><div class="section-head"><div><p class="eyebrow">No-trade analysis</p><h2>Why no trade was produced</h2><p>No empty trade ledger is included. The evidence below identifies the last completed pipeline stage and the blocking strategy rules.</p></div></div><div class="outcome"><strong>${e(outcome.title)}</strong><p>${e(outcome.explanation)}</p></div><table><tbody>${funnelHtml}</tbody></table></section>`;
+
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>${e(strategyName)} · Trade Police backtest report</title>
+<style>
+@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#edf1f5;color:#131b2a;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;font-size:12px;line-height:1.45}.toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;gap:10px;padding:12px max(18px,calc((100vw - 920px)/2));background:rgba(237,241,245,.9);backdrop-filter:blur(18px)}.button{appearance:none;border:1px solid #c9d1dc;border-radius:999px;background:#fff;color:#111c2d;padding:10px 17px;font:600 13px inherit;text-decoration:none;cursor:pointer}.button.primary{background:#111c2d;color:#fff;border-color:#111c2d}.sheet{width:min(920px,calc(100% - 28px));margin:0 auto 30px;background:#fff;border:1px solid #dfe4eb;border-radius:24px;box-shadow:0 24px 70px rgba(17,28,45,.12);overflow:hidden}.brand{display:flex;justify-content:space-between;align-items:center;padding:25px 30px;background:#111c2d;color:#fff}.wordmark{display:flex;align-items:center;gap:11px;font-weight:750;font-size:17px}.shield{width:28px;height:32px;border:2px solid #fff;border-radius:9px 9px 13px 13px;transform:rotate(7deg);position:relative}.shield:after{content:"";position:absolute;width:14px;height:2px;background:#68e3c1;right:-8px;top:8px;transform:rotate(-40deg)}.brand small{color:#aab7ca;letter-spacing:.12em;text-transform:uppercase}.content{padding:34px 38px 28px}.eyebrow{margin:0 0 8px;color:#65738a;font-size:10px;font-weight:750;letter-spacing:.16em;text-transform:uppercase}.title{margin:0;font-size:36px;line-height:1.05;letter-spacing:-.04em}.subtitle{margin:9px 0 0;color:#657084;font-size:15px}.identity{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}.identity div,.metric{border:1px solid #e1e6ed;border-radius:14px;padding:13px 14px;background:#fafbfc}.identity span,.metric span{display:block;color:#738096;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}.identity strong,.metric strong{display:block;margin-top:5px;font-size:13px;overflow-wrap:anywhere}.outcome{margin:22px 0;padding:20px 22px;border-radius:17px;border:1px solid ${outcome.successful ? '#a8ead9' : '#f2cf91'};background:${outcome.successful ? '#edfbf7' : '#fff8e9'}}.outcome h2{margin:0 0 6px;font-size:18px}.outcome p{margin:0;color:#3d4a5d}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric strong{font-size:20px;letter-spacing:-.02em}.section{margin-top:30px;padding-top:24px;border-top:1px solid #e3e7ed}.section-head{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:13px}.section h2{margin:0;font-size:20px}.section p{margin:4px 0 0;color:#68758a}.grid-two{display:grid;grid-template-columns:1fr 1.5fr;gap:18px}table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid #e0e5ec;border-radius:14px;overflow:hidden}th{background:#f2f5f8;color:#5c687c;font-size:9px;letter-spacing:.08em;text-transform:uppercase;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid #e6eaf0;vertical-align:top}tr:last-child td{border-bottom:0}td:last-child{text-align:right}td small{display:block;color:#7a8596;margin-top:2px}.rules td:last-child,.trades td:last-child{text-align:left}.audit{display:grid;grid-template-columns:1fr 1fr;gap:10px}.audit div{padding:10px 0;border-bottom:1px solid #e5e9ef}.audit span{display:block;color:#778398;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.audit code{display:block;margin-top:4px;font:9px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;color:#455166}.note{color:#68758a;font-size:10px}.footer{display:flex;justify-content:space-between;gap:20px;margin-top:30px;padding-top:17px;border-top:1px solid #e1e6ed;color:#788396;font-size:10px}
+@media(max-width:720px){.content{padding:26px 20px}.title{font-size:29px}.identity,.metrics{grid-template-columns:1fr 1fr}.grid-two{grid-template-columns:1fr}.table-wrap{overflow:auto}.brand{padding:20px}.toolbar{padding:10px 14px}.sheet{width:calc(100% - 16px);border-radius:18px}}
+@media print{body{background:#fff;font-size:10px}.toolbar{display:none}.sheet{width:100%;margin:0;border:0;border-radius:0;box-shadow:none}.brand{padding:18px 22px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.content{padding:22px 24px}.title{font-size:30px}.identity{margin:18px 0}.section{margin-top:22px;padding-top:18px}.outcome,.metric,th{-webkit-print-color-adjust:exact;print-color-adjust:exact}.avoid-break{break-inside:avoid}.page-break{break-before:page}.footer{position:running(reportFooter)}}
+.equity{display:block;width:100%;height:auto;border:1px solid #e0e5ec;border-radius:14px;background:linear-gradient(180deg,#f7fbff,#fff)}.equity line{stroke:#d8dee8;stroke-width:1}.equity polyline{fill:none;stroke:#1677ff;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+</style></head><body>
+<div class="toolbar"><a class="button" href="/api/backtests/${e(run.id)}/export">Download Excel</a><button class="button primary" id="print-report">Print / Save PDF</button></div>
+<main class="sheet"><header class="brand"><div class="wordmark"><span class="shield"></span>Trade Police</div><small>No trade without evidence.</small></header>
+<div class="content"><p class="eyebrow">Historical backtest report</p><h1 class="title">${e(strategyName)}</h1><p class="subtitle">${e(run.instrument)} · ${date(run.period_start)} to ${date(run.period_end)} · UTC</p>
+<section class="identity avoid-break"><div><span>Prepared for</span><strong>${e(accountName)}</strong></div><div><span>Account</span><strong>${e(user.email)}</strong></div><div><span>Report date</span><strong>${date(generatedAt, true)}</strong></div><div><span>Report ID</span><strong>${e(run.id)}</strong></div></section>
+<section class="outcome avoid-break"><p class="eyebrow">${e(outcome.code)}</p><h2>${e(outcome.title)}</h2><p>${e(outcome.explanation)}</p></section>
+<section class="metrics avoid-break">${metric('Ending balance', number(result.ending_balance ?? run.starting_balance, 2))}${metric('Total trades', number(totalTrades))}${metric('Net return', totalTrades ? `${number(result.net_return_percent, 2)}%` : 'N/A')}${metric('Win rate', totalTrades ? `${number(result.win_rate, 2)}%` : 'N/A')}${metric('Max drawdown', totalTrades ? `${number(result.max_drawdown_percent, 2)}%` : 'N/A')}${metric('Profit factor', totalTrades ? number(result.profit_factor, 2) : 'N/A')}${metric('Expectancy', totalTrades ? `${number(result.expectancy_r, 2)} R` : 'N/A')}${metric('Average R', totalTrades ? number(result.average_r, 2) : 'N/A')}</section>
+<section class="section grid-two"><div><div class="section-head"><div><p class="eyebrow">Configuration</p><h2>Replay parameters</h2></div></div><table><tbody><tr><td>Instrument</td><td>${e(run.instrument)}</td></tr><tr><td>Execution timeframe</td><td>${e(run.execution_timeframe)}</td></tr><tr><td>Canonical timezone</td><td>UTC</td></tr><tr><td>Starting balance</td><td>${number(run.starting_balance, 2)}</td></tr><tr><td>Data provider</td><td>${e(run.data_provider || 'Twelve Data')}</td></tr><tr><td>Engine version</td><td>${e(run.engine_version)}</td></tr><tr><td>Rule logic</td><td>${e(record(metadata.rule_logic).source ?? 'Legacy flat rules')}</td></tr><tr><td>Completed</td><td>${date(run.completed_at, true)}</td></tr></tbody></table></div><div><div class="section-head"><div><p class="eyebrow">Diagnostics</p><h2>Opportunity funnel</h2></div></div><table><tbody>${funnelHtml}</tbody></table></div></section>
+<section class="section page-break"><div class="section-head"><div><p class="eyebrow">Historical data</p><h2>Coverage by timeframe</h2><p>All timestamps and period boundaries use UTC. Discontinuities include scheduled market closures and should not automatically be interpreted as provider failures.</p></div></div><div class="table-wrap"><table><thead><tr><th>Timeframe</th><th>Total</th><th>Warm-up</th><th>Test period</th><th>First bar UTC</th><th>Last bar UTC</th><th>Discontinuities</th></tr></thead><tbody>${coverageHtml}</tbody></table></div></section>
+<section class="section"><div class="section-head"><div><p class="eyebrow">Rule diagnostics</p><h2>Why opportunities passed or stopped</h2><p>Candidates before and after are counted in saved rule-tree order. ANY alternatives are evaluated as one logical group, not flattened into ALL.</p></div></div><div class="table-wrap"><table class="rules"><thead><tr><th>Rule</th><th>Timeframe</th><th>Role</th><th>Before</th><th>After</th><th>Rejected</th><th>Reason</th></tr></thead><tbody>${ruleHtml}</tbody></table></div></section>
+<section class="section"><div class="section-head"><div><p class="eyebrow">Frozen strategy revision</p><h2>Saved rules used by this replay</h2></div></div><div class="table-wrap"><table class="rules"><thead><tr><th>Rule</th><th>Requirement</th><th>Timeframe role</th><th>Evaluation</th></tr></thead><tbody>${strategyHtml}</tbody></table></div></section>
+${equityHtml}
+${tradeSectionHtml}
+<section class="section"><div class="section-head"><div><p class="eyebrow">Methodology</p><h2>Scope and limitations</h2></div></div><p>Historical OHLC replay uses the exact saved strategy revision and deterministic Trade Police detectors. Entry occurs at the next execution-candle open after an eligible signal. If stop and target are both touched within one candle, the conservative stop-first policy applies.</p><p>Historical spread, commission, slippage, news, and external or manual confirmations are not inferred unless explicitly present in the dataset. Historical performance does not guarantee future results.</p></section>
+<section class="section audit"><div><span>Strategy revision</span><code>${e(run.strategy_revision_id)}</code></div><div><span>Snapshot hash</span><code>${e(run.strategy_snapshot_hash)}</code></div><div><span>Data fingerprint</span><code>${e(run.data_revision_fingerprint)}</code></div><div><span>Website</span><code>tradepolice.app</code></div></section>
+<footer class="footer"><span>Prepared for ${e(accountName)} · Confidential</span><span>© ${generatedAt.getUTCFullYear()} Trade Police</span></footer></div></main>
+<script nonce="trade-police-report">document.getElementById('print-report')?.addEventListener('click',()=>window.print());</script></body></html>`;
+
+  return new Response(html, { headers: {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Disposition': `inline; filename="${safeFilePart(strategyName)}-backtest-report.html"`,
+    'Cache-Control': 'private, no-store',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-trade-police-report'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  } });
+}
