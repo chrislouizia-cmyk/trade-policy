@@ -1,6 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import ExcelJS from 'exceljs';
 import { NextResponse } from 'next/server';
+import sharp from 'sharp';
 
+import { buildEquityDrawdownSeries, renderEquityDrawdownSvg } from '@/lib/backtesting/backtest-report-chart';
 import { buildBacktestReportModel } from '@/lib/backtesting/backtest-report-model';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
@@ -106,6 +111,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const outcome = report.performance.outcome;
   const strategyName = report.identity.strategyName;
   const accountName = report.identity.clientName;
+  const equityPoints = buildEquityDrawdownSeries(Number(run.starting_balance), run.period_start, trades ?? []);
+  const logoBuffer = await readFile(join(process.cwd(), 'public', 'brand', 'trade-police-logo.png'));
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Trade Police';
@@ -124,11 +131,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     { width: 18 }, { width: 20 }, { width: 15 }, { width: 18 },
   ];
   overview.mergeCells('A1:H1');
-  overview.getCell('A1').value = 'TRADE POLICE';
-  overview.getCell('A1').font = { name: 'Aptos Display', size: 12, bold: true, color: { argb: WHITE } };
   overview.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
-  overview.getCell('A1').alignment = { vertical: 'middle' };
-  overview.getRow(1).height = 34;
+  overview.getRow(1).height = 42;
+  const logoImageId = workbook.addImage({ base64: `data:image/png;base64,${logoBuffer.toString('base64')}`, extension: 'png' });
+  overview.addImage(logoImageId, { tl: { col: 0.15, row: 0.12 }, ext: { width: 174, height: 45 } });
   overview.mergeCells('A2:H2');
   overview.getCell('A2').value = 'Historical backtest report';
   overview.getCell('A2').font = { name: 'Aptos Display', size: 24, bold: true, color: { argb: INK } };
@@ -383,13 +389,44 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const equitySheet = workbook.addWorksheet('Equity Time Series');
   configurePage(equitySheet, 'landscape');
-  equitySheet.columns = [{ width: 10 }, { width: 24 }, { width: 18 }, { width: 18 }, { width: 14 }];
-  equitySheet.addRow(['Trade #', 'Exit UTC', 'Balance before', 'Balance after', 'Net R']);
-  tableHeader(equitySheet.getRow(1));
-  (trades ?? []).forEach(trade => equitySheet.addRow([
-    trade.sequence, dateValue(trade.exit_timestamp), Number(trade.balance_before), Number(trade.balance_after), Number(trade.net_r),
-  ]));
-  if (!totalTrades) equitySheet.addRow(['No equity time series exists because the completed replay produced no simulated trades.']);
+  equitySheet.columns = [
+    { width: 10 }, { width: 24 }, { width: 18 }, { width: 18 }, { width: 16 },
+    { width: 14 }, { width: 18 }, { width: 16 }, { width: 16 },
+  ];
+  if (totalTrades) {
+    const chartSvg = renderEquityDrawdownSvg(equityPoints, { width: 1100, height: 560 });
+    const chartPng = await sharp(Buffer.from(chartSvg)).png().toBuffer();
+    const chartImageId = workbook.addImage({ base64: `data:image/png;base64,${chartPng.toString('base64')}`, extension: 'png' });
+    equitySheet.addImage(chartImageId, { tl: { col: 0, row: 0 }, ext: { width: 990, height: 504 } });
+    for (let row = 1; row <= 28; row += 1) equitySheet.getRow(row).height = 18;
+    const tableRow = 30;
+    equitySheet.getRow(tableRow).values = ['Trade #', 'Exit UTC', 'Balance before', 'Balance after', 'Net P&L', 'Net R', 'Peak balance', 'Drawdown %', 'Cumulative R'];
+    tableHeader(equitySheet.getRow(tableRow));
+    (trades ?? []).forEach((trade, index) => {
+      const point = equityPoints[index + 1];
+      equitySheet.addRow([
+        trade.sequence, dateValue(trade.exit_timestamp), Number(trade.balance_before), Number(trade.balance_after), Number(trade.net_pnl), Number(trade.net_r),
+        point.peakBalance, point.drawdownPercent / 100, point.cumulativeR,
+      ]);
+    });
+    equitySheet.getColumn(2).numFmt = 'mmm d, yyyy h:mm AM/PM';
+    for (const column of [3, 4, 5, 7, 9]) equitySheet.getColumn(column).numFmt = '#,##0.00';
+    equitySheet.getColumn(6).numFmt = '0.00" R"';
+    equitySheet.getColumn(8).numFmt = '0.00%';
+    equitySheet.autoFilter = { from: `A${tableRow}`, to: `I${tableRow}` };
+    equitySheet.pageSetup.printArea = `A1:I${equitySheet.lastRow!.number}`;
+  } else {
+    equitySheet.mergeCells('A1:I2');
+    equitySheet.getCell('A1').value = 'NO EQUITY CURVE — THE COMPLETED REPLAY PRODUCED ZERO SIMULATED TRADES';
+    equitySheet.getCell('A1').font = { name: 'Aptos Display', size: 16, bold: true, color: { argb: WHITE } };
+    equitySheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+    equitySheet.getCell('A1').alignment = { vertical: 'middle', wrapText: true };
+    equitySheet.mergeCells('A4:I7');
+    equitySheet.getCell('A4').value = `${outcome.explanation}\n\nUse Rule Diagnostics, Data Coverage, and Candidates to identify the first stage that reached zero.`;
+    equitySheet.getCell('A4').alignment = { vertical: 'top', wrapText: true };
+    equitySheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PALE } };
+    equitySheet.pageSetup.printArea = 'A1:I7';
+  }
 
   const metadataSheet = workbook.addWorksheet('Run Metadata');
   configurePage(metadataSheet, 'landscape');

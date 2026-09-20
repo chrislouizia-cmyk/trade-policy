@@ -6,6 +6,7 @@ const read=(file:string)=>readFileSync(new URL(`../${file}`,import.meta.url),'ut
 const detail=read('components/StrategyDetailPage.tsx');
 const exportRoute=read('app/api/backtests/[id]/export/route.ts');
 const reportRoute=read('app/api/backtests/[id]/report/route.ts');
+const chart=read('lib/backtesting/backtest-report-chart.ts');
 const outcome=read('lib/backtesting/backtest-report.ts');
 
 test('completed zero-trade runs are classified from diagnostics instead of presented as blanket success',()=>{
@@ -43,4 +44,17 @@ test('PDF report separates candidate gates from detector observations and avoids
   assert.match(reportRoute,/Candidate evidence ledger/);
   assert.match(reportRoute,/No-trade analysis/);
   assert.match(reportRoute,/disable browser headers and footers/);
+});
+
+test('PDF and Excel use the official brand asset and an explicit equity/drawdown visualization',()=>{
+  assert.match(reportRoute,/public', 'brand', 'trade-police-logo\.png/);
+  assert.match(reportRoute,/class="brand-logo"/);
+  assert.doesNotMatch(reportRoute,/class="shield"/);
+  assert.match(exportRoute,/workbook\.addImage/);
+  assert.match(exportRoute,/renderEquityDrawdownSvg/);
+  assert.match(exportRoute,/Drawdown %/);
+  assert.match(exportRoute,/Cumulative R/);
+  assert.match(chart,/ACCOUNT BALANCE/);
+  assert.match(chart,/DRAWDOWN FROM PRIOR PEAK/);
+  assert.match(chart,/TEST PERIOD \(UTC\)/);
 });
