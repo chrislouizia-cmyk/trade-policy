@@ -18,6 +18,18 @@ export const BACKTEST_PLAN_LIMITS = {
 
 export type BacktestPlanCode = keyof typeof BACKTEST_PLAN_LIMITS;
 
+export type BacktestUsageSummary = {
+  planCode: BacktestPlanCode;
+  window: 'LIFETIME' | 'MONTHLY';
+  periodStart: string | null;
+  periodEnd: string | null;
+  used: number;
+  reserved: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+};
+
 export function resolveBacktestPlanLimit(planCode: string | null | undefined): number | null {
   const normalized = String(planCode ?? 'FREE').trim().toUpperCase();
   return normalized in BACKTEST_PLAN_LIMITS ? BACKTEST_PLAN_LIMITS[normalized as BacktestPlanCode] : 0;
@@ -283,4 +295,70 @@ export async function getBacktestPlanCodeForUser(userId: string) {
   }
 
   return String(data).trim().toUpperCase() as BacktestPlanCode;
+}
+
+export async function getBacktestUsageSummaryForUser(
+  userId: string,
+  now: Date = new Date(),
+): Promise<BacktestUsageSummary> {
+  const admin = createAdminClient();
+  const planCode = await getBacktestPlanCodeForUser(userId);
+  const limit = resolveBacktestPlanLimit(planCode);
+  const period = getBacktestPeriod(now);
+
+  let usageQuery = admin
+    .from('backtest_usage')
+    .select('id, used_count, reserved_count')
+    .eq('user_id', userId)
+    .eq('plan_code', planCode);
+
+  if (planCode !== 'FREE') {
+    usageQuery = usageQuery.eq('billing_period_start', period.startKey);
+  }
+
+  const { data: usageRows, error: usageError } = await usageQuery;
+  if (usageError) {
+    throw new Error(`Backtest usage could not be loaded. ${usageError.message}`);
+  }
+
+  let used = 0;
+  let reserved = 0;
+
+  if (planCode === 'FREE') {
+    const usageIds = (usageRows ?? []).map((row) => String(row.id));
+    if (usageIds.length) {
+      const { data: reservations, error: reservationError } = await admin
+        .from('backtest_credit_reservations')
+        .select('status')
+        .eq('user_id', userId)
+        .eq('counts_against_limit', true)
+        .in('usage_id', usageIds)
+        .in('status', ['CONSUMED', 'RESERVED']);
+
+      if (reservationError) {
+        throw new Error(`Backtest usage reservations could not be loaded. ${reservationError.message}`);
+      }
+
+      used = (reservations ?? []).filter((row) => row.status === 'CONSUMED').length;
+      reserved = (reservations ?? []).filter((row) => row.status === 'RESERVED').length;
+    }
+  } else {
+    for (const row of usageRows ?? []) {
+      used += Number(row.used_count ?? 0);
+      reserved += Number(row.reserved_count ?? 0);
+    }
+  }
+
+  const unlimited = limit === null;
+  return {
+    planCode,
+    window: planCode === 'FREE' ? 'LIFETIME' : 'MONTHLY',
+    periodStart: planCode === 'FREE' ? null : period.startKey,
+    periodEnd: planCode === 'FREE' ? null : period.endKey,
+    used,
+    reserved,
+    limit,
+    remaining: unlimited ? null : Math.max(0, Number(limit) - used - reserved),
+    unlimited,
+  };
 }

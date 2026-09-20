@@ -117,6 +117,18 @@ type BacktestReadiness = {
   unsupportedRequiredRules: BacktestReadinessRule[];
 };
 
+type BacktestUsageSummary = {
+  planCode: string;
+  window: 'LIFETIME' | 'MONTHLY';
+  periodStart: string | null;
+  periodEnd: string | null;
+  used: number;
+  reserved: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -242,13 +254,18 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   );
   const enabledBacktestInstrumentKey = enabledBacktestInstruments.join('|');
   const [tab, setTab] = useState<TabKey>('overview');
-  const [runs, setRuns] = useState(initialRuns);
+  const [runs, setRuns] = useState(() => initialRuns.filter((run) => run.strategy_profile_id === strategy.id));
+  const [usage, setUsage] = useState<BacktestUsageSummary | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [readiness, setReadiness] = useState<BacktestReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRuns[0]?.id ?? null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(
+    initialRuns.find((run) => run.strategy_profile_id === strategy.id)?.id ?? null,
+  );
   const [reportResult, setReportResult] = useState<BacktestResultRow | null>(null);
   const [reportTrades, setReportTrades] = useState<BacktestTradeRow[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
@@ -263,26 +280,22 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
     executionModel: 'STANDARD',
   });
 
-  const normalizedPlanCode = normalizeBacktestPlanCode(planCode);
-  const limitValue = getPlanLimit(normalizedPlanCode);
-  const usageCount = useMemo(() => {
-    const completed = runs.filter((run) => run.status === 'COMPLETED');
-    if (normalizedPlanCode === 'FREE') return completed.length;
-    const now = new Date();
-    return completed.filter((run) => {
-      const createdAt = run.created_at ? new Date(run.created_at) : null;
-      if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
-      return createdAt.getUTCFullYear() === now.getUTCFullYear() && createdAt.getUTCMonth() === now.getUTCMonth();
-    }).length;
-  }, [runs, normalizedPlanCode]);
-  const reservedCount = runs.filter((run) => run.status === 'QUEUED' || run.status === 'RUNNING').length;
-  const chargeableCount = usageCount + reservedCount;
-  const remainingCredits = limitValue === null ? null : Math.max(0, limitValue - chargeableCount);
-  const usagePercent = limitValue === null ? 0 : (limitValue > 0 ? Math.min(100, (chargeableCount / limitValue) * 100) : 0);
-  const usageWindowLabel = normalizedPlanCode === 'FREE' ? 'Lifetime usage' : 'Monthly usage';
-  const backtestStatusLabel = limitValue === null
-    ? (normalizedPlanCode === 'FOUNDER' ? `${usageCount} completed - Founder access` : `${usageCount} completed - Unlimited`)
-    : `${usageCount} completed${reservedCount ? ` - ${reservedCount} reserved` : ''} - ${remainingCredits} available`;
+  const fallbackPlanCode = normalizeBacktestPlanCode(planCode);
+  const normalizedPlanCode = usage?.planCode ?? fallbackPlanCode;
+  const limitValue = usage ? usage.limit : getPlanLimit(normalizedPlanCode);
+  const usageCount = usage?.used ?? null;
+  const reservedCount = usage?.reserved ?? 0;
+  const chargeableCount = (usageCount ?? 0) + reservedCount;
+  const remainingCredits = usage?.remaining ?? (limitValue === null ? null : Math.max(0, limitValue - chargeableCount));
+  const usagePercent = usage && limitValue !== null && limitValue > 0
+    ? Math.min(100, (chargeableCount / limitValue) * 100)
+    : 0;
+  const usageWindowLabel = usage?.window === 'LIFETIME' || (!usage && normalizedPlanCode === 'FREE') ? 'Lifetime usage' : 'Monthly usage';
+  const backtestStatusLabel = !usage
+    ? (historyLoading ? 'Loading verified usage…' : 'Usage temporarily unavailable')
+    : limitValue === null
+      ? (normalizedPlanCode === 'FOUNDER' ? `${usage.used} completed - Founder access` : `${usage.used} completed - Unlimited`)
+      : `${usage.used} completed${reservedCount ? ` - ${reservedCount} reserved` : ''} - ${remainingCredits} available`;
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
   const selectedRunMetadata = asRecord(selectedRun?.metadata);
   const opportunityFunnel = asRecord(selectedRunMetadata?.opportunity_funnel) as OpportunityFunnel | null;
@@ -320,19 +333,27 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   }
 
   async function refreshBacktests() {
+    if (!strategy.id) return;
     try {
-      const response = await fetch('/api/backtests', { cache: 'no-store' });
+      const response = await fetch(`/api/backtests?strategyProfileId=${encodeURIComponent(strategy.id)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        console.warn('Backtest refresh returned a non-success response', { status: response.status });
-        return;
+        throw new Error(payload?.error?.message || 'Backtest history could not be loaded.');
       }
-      const payload = await response.json();
       const items = Array.isArray(payload.items) ? payload.items : [];
-      setRuns(items.filter((run: BacktestRunRow) => run.strategy_profile_id === strategy.id));
+      const strategyItems = items.filter((run: BacktestRunRow) => run.strategy_profile_id === strategy.id);
+      setRuns(strategyItems);
+      setSelectedRunId((current) => strategyItems.some((run: BacktestRunRow) => run.id === current)
+        ? current
+        : strategyItems[0]?.id ?? null);
+      setUsage(payload.usage && typeof payload.usage === 'object' ? payload.usage as BacktestUsageSummary : null);
+      setHistoryError('');
     } catch (error) {
-      console.warn('Backtest refresh temporarily unavailable', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const errorMessage = error instanceof Error ? error.message : 'Backtest history could not be loaded.';
+      console.warn('Backtest refresh temporarily unavailable', { error: errorMessage });
+      setHistoryError(errorMessage);
+    } finally {
+      setHistoryLoading(false);
     }
   }
 
@@ -353,8 +374,15 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
   }
 
   useEffect(() => {
-    if (tab === 'backtests') void refreshBacktestReadiness();
+    if (tab === 'backtests') {
+      void refreshBacktestReadiness();
+      void refreshBacktests();
+    }
   }, [tab, strategy.id]);
+
+  useEffect(() => {
+    void refreshBacktests();
+  }, [strategy.id]);
 
   useEffect(() => {
     const hasActiveRun = runs.some((run) => run.status === 'QUEUED' || run.status === 'RUNNING');
@@ -609,7 +637,7 @@ setReportLoading(false);
                 <div className="strategy-detail-backtest-stack">
                   <div>
                     <div className="strategy-detail-usage-row">
-                      <strong>{usageCount}</strong>
+                      <strong>{usageCount ?? '—'}</strong>
                       <small className="muted">{backtestStatusLabel}</small>
                     </div>
                     <div className="strategy-detail-progress-track">
@@ -661,8 +689,8 @@ setReportLoading(false);
 
                 <div className="strategy-detail-backtest-summary">
                   <div className="strategy-detail-usage-row">
-                    <strong>{usageCount}</strong>
-                    <small className="muted">{w('Plan')}: {normalizedPlanCode || 'FREE'} · {limitValue === null ? w('Unlimited') : `${remainingCredits}/${limitValue} ${w('credits left')}`}</small>
+                    <strong>{usageCount ?? '—'}</strong>
+                    <small className="muted">{w('Plan')}: {normalizedPlanCode || 'FREE'} · {!usage ? backtestStatusLabel : limitValue === null ? w('Unlimited') : `${remainingCredits}/${limitValue} ${w('credits left')}`}</small>
                   </div>
                   <div className="strategy-detail-progress-track large">
                     <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
@@ -741,8 +769,16 @@ setReportLoading(false);
               <section className="card">
                 <p className="eyebrow">{w('RUN HISTORY')}</p>
                 <h3>{w('Past runs')}</h3>
+                {historyError && (
+                  <div className="warning" role="alert" style={{ marginTop: 12 }}>
+                    <span>{historyError}</span>{' '}
+                    <button type="button" className="secondary" onClick={() => void refreshBacktests()}>Retry</button>
+                  </div>
+                )}
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-                  {runs.length === 0 ? (
+                  {historyLoading && runs.length === 0 ? (
+                    <p className="muted">{w('Loading past runs…')}</p>
+                  ) : runs.length === 0 ? (
                     <p className="muted">{w('No backtests have been queued for this strategy yet.')}</p>
                   ) : (
                     runs.map((run) => (

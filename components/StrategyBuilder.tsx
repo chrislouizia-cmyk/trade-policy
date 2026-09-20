@@ -149,7 +149,6 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   const [v2Draft,setV2Draft]=useState<StrategyBuilderV2State|null>(null);
   const [pendingNavigation,setPendingNavigation]=useState<null|(()=>void)>(null);
   const [dirtyPrompt,setDirtyPrompt]=useState(false);
-  const [strategyRuns, setStrategyRuns] = useState<any[]>([]);
   const normalizedRuleState=useMemo(()=>normalizePersistableStrategyRules(rules),[rules]);
   const finalReview=useMemo(()=>buildFinalReviewSummary(profile,normalizedRuleState.rules,sessions),[profile,normalizedRuleState,sessions]);
   const finalReviewNameError=validateStrategyName(profile.name);
@@ -166,22 +165,6 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     void loadAll(undefined, { preserveCurrentSelection: false });
     void trackBetaEventOnce('ONBOARDING_STARTED');
   }, [userId]);
-
-  useEffect(() => {
-    if (!profile.id || !userId) {
-      setStrategyRuns([]);
-      return;
-    }
-
-    const supabase = createClient();
-    void supabase
-      .from('backtest_runs')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('strategy_profile_id', profile.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setStrategyRuns(data ?? []));
-  }, [profile.id, userId]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') window.localStorage.setItem('trade-police-strategy-draft', JSON.stringify({ profile, sessions, rules, stopLimits }));
@@ -571,7 +554,6 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
         setSessions([]);
         setRules([]);
         setStopLimits([]);
-        setStrategyRuns([]);
         setV2State(undefined);
         setV2Baseline(null);
         setV2Draft(null);
@@ -674,6 +656,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
 
         <div className="stack strategy-main" data-step={builderStep}>
           <StrategyDetailPage
+            key={selectedProfile.id}
             strategy={{
               id: selectedProfile.id ?? '',
               name: selectedProfile.name,
@@ -698,7 +681,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
             }}
             rules={rules.map((rule) => ({ ...rule, id: rule.ruleKey ?? rule.label ?? undefined }))}
             sessions={sessions.map((session) => ({ ...session, id: session.id ?? session.sessionCode }))}
-            initialRuns={strategyRuns}
+            initialRuns={[]}
             planCode={planCode}
           />
         </div>

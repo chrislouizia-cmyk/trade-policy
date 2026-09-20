@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { createBacktestRun, freezeStrategyForBacktest, getBacktestPlanCodeForUser } from '@/lib/server/backtesting';
+import { createBacktestRun, freezeStrategyForBacktest, getBacktestPlanCodeForUser, getBacktestUsageSummaryForUser } from '@/lib/server/backtesting';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { loadStrategyById } from '@/lib/server/active-strategy';
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -109,17 +109,37 @@ export async function GET() {
       return apiError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
-    const { data, error } = await supabase
+    const strategyProfileId = new URL(request.url).searchParams.get('strategyProfileId');
+    if (strategyProfileId && !z.string().uuid().safeParse(strategyProfileId).success) {
+      return apiError('INVALID_STRATEGY_ID', 'Invalid strategy id.', 400);
+    }
+
+    let runsQuery = supabase
       .from('backtest_runs')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
+    if (strategyProfileId) {
+      runsQuery = runsQuery.eq('strategy_profile_id', strategyProfileId);
+    }
+
+    const [{ data, error }, usage] = await Promise.all([
+      runsQuery,
+      getBacktestUsageSummaryForUser(user.id).catch((usageError) => {
+        console.error('Backtest usage summary could not be loaded', {
+          userId: user.id,
+          error: usageError instanceof Error ? usageError.message : String(usageError),
+        });
+        return null;
+      }),
+    ]);
+
     if (error) {
       return apiError('BACKTEST_READ_FAILED', error.message, 500);
     }
 
-    return NextResponse.json({ items: data ?? [] }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ items: data ?? [], usage }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return apiError('BACKTEST_READ_FAILED', error instanceof Error ? error.message : 'Backtest list could not be loaded.', 500);
   }
