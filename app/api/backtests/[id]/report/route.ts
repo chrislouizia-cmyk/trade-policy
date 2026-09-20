@@ -1,4 +1,4 @@
-import { backtestOutcome, reportAccountName } from '@/lib/backtesting/backtest-report';
+import { buildBacktestReportModel } from '@/lib/backtesting/backtest-report-model';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 
@@ -74,17 +74,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   ]);
   if (resultError || tradesError || !result) return apiError('BACKTEST_REPORT_FAILED', 'Persisted backtest results could not be loaded.', 500);
 
-  const snapshot = record(run.strategy_snapshot_json);
-  const metadata = record(run.metadata);
-  const funnel = record(metadata.opportunity_funnel);
-  const ruleDiagnostics = list(metadata.rule_diagnostics);
-  const dataCoverage = list(metadata.historical_data_coverage);
-  const strategyRules = list(snapshot.rules);
-  const totalTrades = Number(result.total_trades ?? trades?.length ?? 0);
-  const outcome = backtestOutcome(totalTrades, metadata);
-  const strategyName = String(snapshot.name ?? run.strategy_profile_id);
-  const accountName = reportAccountName(user);
   const generatedAt = new Date();
+  const report = buildBacktestReportModel({ run, result, trades: trades ?? [], user, generatedAt });
+  const metadata = record(run.metadata);
+  const funnel = report.diagnostics.funnel;
+  const ruleDiagnostics = [...report.diagnostics.ruleDiagnostics];
+  const dataCoverage = [...report.diagnostics.dataCoverage];
+  const strategyRules = [...report.strategy.rules];
+  const totalTrades = report.performance.totalTrades;
+  const outcome = report.performance.outcome;
+  const strategyName = report.identity.strategyName;
+  const accountName = report.identity.clientName;
   const equityHtml = totalTrades ? equityChart(Number(run.starting_balance), (trades ?? []) as Record<string, unknown>[]) : '';
 
   const funnelRows: Array<[string, string]> = [
@@ -125,7 +125,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 <div class="toolbar"><a class="button" href="/api/backtests/${e(run.id)}/export">Download Excel</a><button class="button primary" id="print-report">Print / Save PDF</button></div>
 <main class="sheet"><header class="brand"><div class="wordmark"><span class="shield"></span>Trade Police</div><small>No trade without evidence.</small></header>
 <div class="content"><p class="eyebrow">Historical backtest report</p><h1 class="title">${e(strategyName)}</h1><p class="subtitle">${e(run.instrument)} · ${date(run.period_start)} to ${date(run.period_end)} · UTC</p>
-<section class="identity avoid-break"><div><span>Prepared for</span><strong>${e(accountName)}</strong></div><div><span>Account</span><strong>${e(user.email)}</strong></div><div><span>Report date</span><strong>${date(generatedAt, true)}</strong></div><div><span>Report ID</span><strong>${e(run.id)}</strong></div></section>
+<section class="identity avoid-break"><div><span>Prepared for</span><strong>${e(accountName)}</strong></div><div><span>Account</span><strong>${e(report.identity.clientEmail)}</strong></div><div><span>Report date</span><strong>${date(report.generatedAtUtc, true)}</strong></div><div><span>Report ID</span><strong>${e(report.identity.reportId)}</strong></div></section>
 <section class="outcome avoid-break"><p class="eyebrow">${e(outcome.code)}</p><h2>${e(outcome.title)}</h2><p>${e(outcome.explanation)}</p></section>
 <section class="metrics avoid-break">${metric('Ending balance', number(result.ending_balance ?? run.starting_balance, 2))}${metric('Total trades', number(totalTrades))}${metric('Net return', totalTrades ? `${number(result.net_return_percent, 2)}%` : 'N/A')}${metric('Win rate', totalTrades ? `${number(result.win_rate, 2)}%` : 'N/A')}${metric('Max drawdown', totalTrades ? `${number(result.max_drawdown_percent, 2)}%` : 'N/A')}${metric('Profit factor', totalTrades ? number(result.profit_factor, 2) : 'N/A')}${metric('Expectancy', totalTrades ? `${number(result.expectancy_r, 2)} R` : 'N/A')}${metric('Average R', totalTrades ? number(result.average_r, 2) : 'N/A')}</section>
 <section class="section grid-two"><div><div class="section-head"><div><p class="eyebrow">Configuration</p><h2>Replay parameters</h2></div></div><table><tbody><tr><td>Instrument</td><td>${e(run.instrument)}</td></tr><tr><td>Execution timeframe</td><td>${e(run.execution_timeframe)}</td></tr><tr><td>Canonical timezone</td><td>UTC</td></tr><tr><td>Starting balance</td><td>${number(run.starting_balance, 2)}</td></tr><tr><td>Data provider</td><td>${e(run.data_provider || 'Twelve Data')}</td></tr><tr><td>Engine version</td><td>${e(run.engine_version)}</td></tr><tr><td>Rule logic</td><td>${e(record(metadata.rule_logic).source ?? 'Legacy flat rules')}</td></tr><tr><td>Completed</td><td>${date(run.completed_at, true)}</td></tr></tbody></table></div><div><div class="section-head"><div><p class="eyebrow">Diagnostics</p><h2>Opportunity funnel</h2></div></div><table><tbody>${funnelHtml}</tbody></table></div></section>

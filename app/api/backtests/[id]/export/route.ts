@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { NextResponse } from 'next/server';
 
-import { backtestOutcome, reportAccountName } from '@/lib/backtesting/backtest-report';
+import { buildBacktestReportModel } from '@/lib/backtesting/backtest-report-model';
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 
@@ -92,17 +92,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   ]);
   if (resultError || tradesError || !result) return apiError('BACKTEST_EXPORT_FAILED', 'Persisted backtest results could not be loaded.', 500);
 
-  const snapshot = record(run.strategy_snapshot_json);
-  const metadata = record(run.metadata);
-  const funnel = record(metadata.opportunity_funnel);
-  const ruleDiagnostics = list(metadata.rule_diagnostics);
-  const dataCoverage = list(metadata.historical_data_coverage);
-  const strategyRules = list(snapshot.rules);
-  const totalTrades = Number(result.total_trades ?? trades?.length ?? 0);
-  const outcome = backtestOutcome(totalTrades, metadata);
-  const strategyName = String(snapshot.name ?? run.strategy_profile_id);
-  const accountName = reportAccountName(user);
   const generatedAt = new Date();
+  const report = buildBacktestReportModel({ run, result, trades: trades ?? [], user, generatedAt });
+  const metadata = record(run.metadata);
+  const funnel = report.diagnostics.funnel;
+  const ruleDiagnostics = [...report.diagnostics.ruleDiagnostics];
+  const dataCoverage = [...report.diagnostics.dataCoverage];
+  const strategyRules = [...report.strategy.rules];
+  const totalTrades = report.performance.totalTrades;
+  const outcome = report.performance.outcome;
+  const strategyName = report.identity.strategyName;
+  const accountName = report.identity.clientName;
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Trade Police';
@@ -137,7 +137,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   section(overview, 5, 'Report identity');
   field(overview, 6, 1, 'Client', accountName, 3);
   field(overview, 6, 5, 'Account email', user.email ?? '—', 3);
-  field(overview, 7, 1, 'Report ID', run.id, 3);
+  field(overview, 7, 1, 'Report ID', report.identity.reportId, 3);
   field(overview, 7, 5, 'Generated', generatedAt, 3);
   field(overview, 8, 1, 'Website', 'tradepolice.app', 3);
   field(overview, 8, 5, 'Completed', dateValue(run.completed_at), 3);
