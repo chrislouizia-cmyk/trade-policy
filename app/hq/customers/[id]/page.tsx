@@ -33,16 +33,27 @@ export default async function Page({
   const { supabase, role, displayName, permissions } = await getHQContext(
     "customers.view_metadata",
   );
-  const [{ data, error }, { data: operations, error: operationsError }] =
-    await Promise.all([
-      supabase.rpc("staff_customer_360", { p_customer_id: id }),
-      supabase.rpc("staff_customer_operational_detail", { p_customer_id: id }),
-    ]);
+  const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const hasAal2 = assurance?.currentLevel === "aal2";
+  const canViewTrading = permissions.includes("customers.view_trading") && hasAal2;
+  const canViewFeedback = permissions.includes("feedback.view") && hasAal2;
+  const { data, error } = await supabase.rpc("staff_customer_360", { p_customer_id: id });
   if (error) throw new Error("Customer profile could not be loaded.");
-  if (operationsError)
-    throw new Error("Customer operations could not be loaded.");
   if (!data) notFound();
-  const customer: any = { ...data, ...operations };
+  const [operationalResult, feedbackResult] = await Promise.all([
+    canViewTrading
+      ? supabase.rpc("staff_customer_operational_detail", { p_customer_id: id })
+      : Promise.resolve(null),
+    canViewFeedback
+      ? supabase.rpc("staff_customer_feedback_detail", { p_customer_id: id })
+      : Promise.resolve(null),
+  ]);
+  const operationsUnavailable = Boolean(operationalResult?.error);
+  const customer: any = {
+    ...data,
+    ...(operationalResult?.data ?? {}),
+    ...(feedbackResult?.data ?? {}),
+  };
   const salesDraftResult = permissions.includes("sales.view")
     ? await supabase.rpc("staff_sales_email_drafts_v2", {
           p_query: "",
@@ -72,12 +83,14 @@ export default async function Page({
             <h1>{customer.display_name || "Unnamed customer"}</h1>
             <p>{customer.email || "No email provided"}</p>
           </div>
-          <a
-            className="button-link secondary"
-            href={`/api/hq/customers/${id}/report`}
-          >
-            Download Customer Report
-          </a>
+          {canViewTrading && !operationsUnavailable && (
+            <a
+              className="button-link secondary"
+              href={`/api/hq/customers/${id}/report`}
+            >
+              Download Customer Report
+            </a>
+          )}
           {permissions.includes("sales.manage") && (
             <Link className="button-link primary" href={`/hq/sales/drafts/new?customer=${id}`}>
               Draft email
@@ -89,11 +102,11 @@ export default async function Page({
           aria-label="Customer summary"
         >
           {[
-            ["Trading accounts", accounts.length],
-            ["Strategies", strategies.length],
-            ["Analyses", customer.analysis_count ?? 0],
-            ["Open trades", customer.open_trades ?? 0],
-            ["Closed trades", customer.closed_trades ?? 0],
+            ["Trading accounts", canViewTrading ? customer.account_count ?? 0 : "Restricted"],
+            ["Strategies", canViewTrading ? customer.strategy_count ?? 0 : "Restricted"],
+            ["Analyses", canViewTrading ? customer.analysis_count ?? 0 : "Restricted"],
+            ["Open trades", canViewTrading ? customer.open_trades ?? 0 : "Restricted"],
+            ["Closed trades", canViewTrading ? customer.closed_trades ?? 0 : "Restricted"],
           ].map(([label, value]) => (
             <div key={String(label)}>
               <span>{label}</span>
@@ -132,7 +145,11 @@ export default async function Page({
         </section>
         <section className="customer-overview-section">
           <h2>Trading Accounts</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Customer trading access is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Trading data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={accounts}
             empty="No trading accounts"
             render={(account) => (
@@ -156,11 +173,15 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Strategies</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Strategy configuration is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Strategy data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={strategies}
             empty="No strategies"
             render={(strategy) => (
@@ -191,11 +212,15 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Recent Analyses</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Customer analyses are restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Analysis data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={analyses}
             empty="No analyses yet"
             render={(analysis) => (
@@ -219,11 +244,15 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Trade History</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Trade history is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Trade data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={trades}
             empty="No trades yet"
             render={(trade) => (
@@ -245,11 +274,11 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Feedback</h2>
-          {feedback === null ? (
+          {!canViewFeedback || feedbackResult?.error ? (
             <Empty>You do not have permission to view customer feedback.</Empty>
           ) : (
             <List

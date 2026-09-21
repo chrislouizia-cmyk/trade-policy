@@ -23,7 +23,11 @@ test('protected responses are not cached and unauthenticated traffic uses the co
 test('HQ authorization remains server enforced', () => {
   const guard = read('lib/hq-page.tsx');
   assert.match(guard, /has_staff_permission/);
-  assert.match(guard, /if\(!role\|\|!allowed\)redirect/);
+  assert.match(guard, /if\(!role\)redirect/);
+  assert.match(guard, /if\(mfaRequired&&assurance\?\.currentLevel!==['"]aal2['"]\)redirect\(['"]\/hq\/mfa['"]\)/);
+  assert.match(guard, /if\(!allowed\)redirect/);
+  assert.ok(guard.indexOf('if(!role)') < guard.indexOf('if(mfaRequired'));
+  assert.ok(guard.indexOf('if(mfaRequired') < guard.indexOf('if(!allowed)'));
 });
 
 test('auth logging excludes cookie names and session values', () => {

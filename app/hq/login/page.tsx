@@ -10,7 +10,14 @@ export default async function Page() {
     const { data: invitation } = await supabase.rpc('current_staff_invitation_onboarding_v1');
     if (invitation) redirect('/hq/onboarding');
     const { data: route } = await supabase.rpc('staff_workspace_route');
-    if (route) redirect(String(route));
+    if (route) {
+      const [{ data: mfaRequired }, { data: assurance }] = await Promise.all([
+        supabase.rpc('current_staff_mfa_requirement'),
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      ]);
+      if (mfaRequired && assurance?.currentLevel !== 'aal2') redirect('/hq/mfa');
+      redirect(String(route));
+    }
     await supabase.auth.signOut();
   }
 

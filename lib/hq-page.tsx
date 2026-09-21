@@ -6,12 +6,16 @@ export async function getHQContext(permission='hq.view'){
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
   if(!user)redirect('/hq/login');
-  const [{data:role},{data:allowed},{data:permissionRows}]=await Promise.all([
+  const [{data:role},{data:allowed},{data:permissionRows},{data:mfaRequired},{data:assurance}]=await Promise.all([
     supabase.rpc('current_staff_role'),
     supabase.rpc('has_staff_permission',{p_permission:permission}),
     supabase.rpc('current_staff_permissions'),
+    supabase.rpc('current_staff_mfa_requirement'),
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
   ]);
-  if(!role||!allowed)redirect('/hq/login?error=access');
+  if(!role)redirect('/hq/login?error=access');
+  if(mfaRequired&&assurance?.currentLevel!=='aal2')redirect('/hq/mfa');
+  if(!allowed)redirect('/hq/login?error=access');
   const displayName=await getUserDisplayName(supabase,user);
   const permissions=(permissionRows??[]).map((row:any)=>String(row.permission_key));
   return {supabase,user,role:String(role),displayName,permissions};

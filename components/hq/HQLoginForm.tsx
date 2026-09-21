@@ -26,11 +26,26 @@ export default function HQLoginForm() {
       return;
     }
 
+    const { data: invitation } = await supabase.rpc('current_staff_invitation_onboarding_v1');
+    if (invitation) {
+      window.location.assign('/hq/onboarding');
+      return;
+    }
+
     const { data: route, error: routeError } = await supabase.rpc('staff_workspace_route');
     if (routeError || !route) {
       await supabase.auth.signOut();
       setBusy(false);
       setMessage('This account is not authorized for Trade Police Headquarters. Customers must use the client portal.');
+      return;
+    }
+
+    const [{ data: mfaRequired }, { data: assurance }] = await Promise.all([
+      supabase.rpc('current_staff_mfa_requirement'),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+    ]);
+    if (mfaRequired && assurance?.currentLevel !== 'aal2') {
+      window.location.assign('/hq/mfa');
       return;
     }
 

@@ -16,12 +16,20 @@ export async function GET(
       { error: "Authentication required." },
       { status: 401 },
     );
-  const { data: allowed } = await supabase.rpc("has_staff_permission", {
-    p_permission: "customers.view_metadata",
-  });
+  const [{ data: allowed }, { data: assurance }] = await Promise.all([
+    supabase.rpc("has_staff_permission", {
+      p_permission: "customers.view_trading",
+    }),
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+  ]);
   if (!allowed)
     return NextResponse.json(
-      { error: "Customer metadata permission required." },
+      { error: "Customer trading permission required." },
+      { status: 403 },
+    );
+  if (assurance?.currentLevel !== "aal2")
+    return NextResponse.json(
+      { error: "Multi-factor authentication required." },
       { status: 403 },
     );
   const [
