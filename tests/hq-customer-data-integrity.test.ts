@@ -67,6 +67,25 @@ test('customer profile identifies failing RPCs and keeps optional Sales data fai
   assert.doesNotMatch(customerError, /Customer directory could not be loaded/);
 });
 
+test('customer profile traces and bounds every remote loading step', () => {
+  assert.match(customerPage, /HQ_CUSTOMER_STEP_TIMEOUT_MS = 12_000/);
+  assert.match(customerPage, /Promise\.race/);
+  assert.match(customerPage, /\[HQ_CUSTOMER_STEP_STARTED\]/);
+  assert.match(customerPage, /\[HQ_CUSTOMER_STEP_COMPLETED\]/);
+  assert.match(customerPage, /\[HQ_CUSTOMER_STEP_FAILED\]/);
+  for (const operation of [
+    'get_hq_context',
+    'get_mfa_assurance',
+    'staff_customer_360',
+    'staff_customer_operational_detail',
+    'staff_customer_feedback_detail',
+    'staff_sales_email_drafts_v2',
+  ]) assert.match(customerPage, new RegExp(operation));
+  assert.match(customerPage, /staff_customer_operational_detail[\s\S]*?catch\(unavailableCustomerRpcResult\)/);
+  assert.match(customerPage, /staff_customer_feedback_detail[\s\S]*?catch\(unavailableCustomerRpcResult\)/);
+  assert.match(customerPage, /staff_sales_email_drafts_v2[\s\S]*?catch\(unavailableCustomerRpcResult\)/);
+});
+
 test('feedback operations use permission profiles rather than legacy role allowlists', () => {
   const queue = migration.match(
     /create or replace function public\.staff_feedback_queue[\s\S]*?create or replace function public\.update_feedback_ticket/,

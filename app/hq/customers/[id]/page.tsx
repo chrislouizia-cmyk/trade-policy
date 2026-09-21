@@ -3,6 +3,68 @@ import { getHQContext, HQShell } from "@/lib/hq-page";
 import Link from "next/link";
 import CustomerNotesPanel from "@/components/hq/CustomerNotesPanel";
 
+const HQ_CUSTOMER_STEP_TIMEOUT_MS = 12_000;
+
+class HQCustomerStepTimeoutError extends Error {
+  constructor(operation: string) {
+    super(`${operation} exceeded ${HQ_CUSTOMER_STEP_TIMEOUT_MS}ms`);
+    this.name = "HQCustomerStepTimeoutError";
+  }
+}
+
+function readableStepError(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown customer-profile failure";
+}
+
+async function traceCustomerStep<T>(
+  operation: string,
+  customerId: string,
+  action: () => PromiseLike<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  console.info("[HQ_CUSTOMER_STEP_STARTED]", { operation, customerId });
+
+  try {
+    const result = await Promise.race([
+      Promise.resolve(action()),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new HQCustomerStepTimeoutError(operation)),
+          HQ_CUSTOMER_STEP_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    console.info("[HQ_CUSTOMER_STEP_COMPLETED]", {
+      operation,
+      customerId,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    console.error("[HQ_CUSTOMER_STEP_FAILED]", {
+      operation,
+      customerId,
+      durationMs: Date.now() - startedAt,
+      timedOut: error instanceof HQCustomerStepTimeoutError,
+      message: readableStepError(error),
+    });
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function unavailableCustomerRpcResult(error: unknown) {
+  return {
+    data: null,
+    error: {
+      code: error instanceof HQCustomerStepTimeoutError ? "HQ_STEP_TIMEOUT" : "HQ_STEP_FAILED",
+      message: readableStepError(error),
+    },
+  };
+}
+
 function logCustomerRpcFailure(
   operation: string,
   customerId: string,
@@ -46,10 +108,16 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { supabase, role, displayName, permissions } = await getHQContext(
-    "customers.view_metadata",
+  const { supabase, role, displayName, permissions } = await traceCustomerStep(
+    "get_hq_context",
+    id,
+    () => getHQContext("customers.view_metadata"),
   );
-  const { data: assurance } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const { data: assurance } = await traceCustomerStep(
+    "get_mfa_assurance",
+    id,
+    () => supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+  );
   const hasAal2 = assurance?.currentLevel === "aal2";
   const canViewTrading = permissions.includes("customers.view_trading") && hasAal2;
   const canViewFeedback = permissions.includes("feedback.view") && hasAal2;
@@ -58,7 +126,11 @@ export default async function Page({
     permissions.includes("support.manage") || permissions.includes("sales.manage")
   );
   const canViewCompliance = permissions.includes("compliance.view");
-  const { data, error } = await supabase.rpc("staff_customer_360", { p_customer_id: id });
+  const { data, error } = await traceCustomerStep(
+    "staff_customer_360",
+    id,
+    () => supabase.rpc("staff_customer_360", { p_customer_id: id }),
+  );
   if (error) {
     logCustomerRpcFailure("staff_customer_360", id, error);
     throw new Error("Customer profile could not be loaded.");
@@ -66,10 +138,14 @@ export default async function Page({
   if (!data) notFound();
   const [operationalResult, feedbackResult] = await Promise.all([
     canViewTrading
-      ? supabase.rpc("staff_customer_operational_detail", { p_customer_id: id })
+      ? traceCustomerStep("staff_customer_operational_detail", id, () =>
+          supabase.rpc("staff_customer_operational_detail", { p_customer_id: id }),
+        ).catch(unavailableCustomerRpcResult)
       : Promise.resolve(null),
     canViewFeedback
-      ? supabase.rpc("staff_customer_feedback_detail", { p_customer_id: id })
+      ? traceCustomerStep("staff_customer_feedback_detail", id, () =>
+          supabase.rpc("staff_customer_feedback_detail", { p_customer_id: id }),
+        ).catch(unavailableCustomerRpcResult)
       : Promise.resolve(null),
   ]);
   if (operationalResult?.error)
@@ -83,7 +159,8 @@ export default async function Page({
     ...(feedbackResult?.data ?? {}),
   };
   const salesDraftResult = permissions.includes("sales.view")
-    ? await supabase.rpc("staff_sales_email_drafts_v2", {
+    ? await traceCustomerStep("staff_sales_email_drafts_v2", id, () =>
+        supabase.rpc("staff_sales_email_drafts_v2", {
           p_query: "",
           p_page: 1,
           p_page_size: 25,
@@ -91,7 +168,8 @@ export default async function Page({
           p_template: "ALL",
           p_language: "ALL",
           p_customer_id: id,
-        })
+        }),
+      ).catch(unavailableCustomerRpcResult)
     : null;
   if (salesDraftResult?.error)
     logCustomerRpcFailure("staff_sales_email_drafts_v2", id, salesDraftResult.error);

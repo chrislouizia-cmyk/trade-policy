@@ -60,7 +60,7 @@ test('metadata-only Customer 360 does not disclose trading aggregates', () => {
 
 test('Customer 360 only requests sensitive datasets when the caller has trading permission and AAL2', () => {
   assert.match(customerPage, /permissions\.includes\("customers\.view_trading"\) && hasAal2/);
-  assert.match(customerPage, /canViewTrading[\s\S]*\? supabase\.rpc\("staff_customer_operational_detail"/);
+  assert.match(customerPage, /canViewTrading[\s\S]*\?[\s\S]*supabase\.rpc\("staff_customer_operational_detail"/);
   assert.match(customerPage, /Customer trading access is restricted/);
   assert.match(customerPage, /Strategy configuration is restricted/);
   assert.match(customerPage, /Trade history is restricted/);
