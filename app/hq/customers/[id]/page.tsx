@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getHQContext, HQShell } from "@/lib/hq-page";
 import Link from "next/link";
+import CustomerNotesPanel from "@/components/hq/CustomerNotesPanel";
 
 function Empty({ children = "Not available yet" }: { children?: string }) {
   return <p className="muted customer-overview-empty">{children}</p>;
@@ -37,6 +38,11 @@ export default async function Page({
   const hasAal2 = assurance?.currentLevel === "aal2";
   const canViewTrading = permissions.includes("customers.view_trading") && hasAal2;
   const canViewFeedback = permissions.includes("feedback.view") && hasAal2;
+  const canViewNotes = permissions.includes("support.view") || permissions.includes("sales.view");
+  const canManageNotes = hasAal2 && (
+    permissions.includes("support.manage") || permissions.includes("sales.manage")
+  );
+  const canViewCompliance = permissions.includes("compliance.view");
   const { data, error } = await supabase.rpc("staff_customer_360", { p_customer_id: id });
   if (error) throw new Error("Customer profile could not be loaded.");
   if (!data) notFound();
@@ -73,7 +79,9 @@ export default async function Page({
     analyses = customer.analyses ?? [],
     trades = customer.trades ?? [],
     feedback = customer.feedback,
-    timeline = customer.timeline ?? [];
+    timeline = customer.timeline ?? [],
+    notes = customer.notes ?? [],
+    flags = customer.flags ?? [];
   return (
     <HQShell displayName={displayName} role={role} permissions={permissions}>
       <main className="customer-overview-page">
@@ -278,8 +286,10 @@ export default async function Page({
         </section>
         <section className="customer-overview-section">
           <h2>Feedback</h2>
-          {!canViewFeedback || feedbackResult?.error ? (
+          {!canViewFeedback ? (
             <Empty>You do not have permission to view customer feedback.</Empty>
+          ) : feedbackResult?.error ? (
+            <Empty>Customer feedback is temporarily unavailable. No records were assumed.</Empty>
           ) : (
             <List
               rows={feedback ?? []}
@@ -337,7 +347,7 @@ export default async function Page({
         <section className="customer-overview-section">
           <h2>Activity Timeline</h2>
           <List
-            rows={timeline}
+            rows={timeline.filter((item: any) => item.type !== "NOTE")}
             empty="No customer activity recorded"
             render={(item) => (
               <>
@@ -352,31 +362,34 @@ export default async function Page({
             )}
           />
         </section>
-        <section className="customer-overview-section">
-          <h2>Notes</h2>
-          <List
-            rows={timeline.filter((item: any) => item.type === "NOTE")}
-            empty="Not available yet"
-            render={(item) => (
-              <>
-                <strong>{item.title || "Internal note"}</strong>
-                <small>
-                  {item.detail}
-                  {item.created_at
-                    ? ` · ${new Date(item.created_at).toLocaleString()}`
-                    : ""}
-                </small>
-              </>
-            )}
+        {canViewNotes ? (
+          <CustomerNotesPanel
+            customerId={id}
+            initialNotes={notes}
+            canManage={canManageNotes}
           />
-        </section>
-        <section className="customer-overview-section">
-          <h2>Internal Flags</h2>
-          <Empty>
-            No permitted internal flags are available under the current data
-            contract.
-          </Empty>
-        </section>
+        ) : null}
+        {canViewCompliance ? (
+          <section className="customer-overview-section">
+            <h2>Compliance Flags</h2>
+            <List
+              rows={flags}
+              empty="No compliance cases recorded for this customer."
+              render={(item) => (
+                <>
+                  <strong>{item.title || item.type}</strong>
+                  <small>
+                    {item.severity} · {item.status}
+                    {item.created_at
+                      ? ` · ${new Date(item.created_at).toLocaleString()}`
+                      : ""}
+                  </small>
+                  <Link href={`/hq/compliance/cases/${item.id}`}>Open case</Link>
+                </>
+              )}
+            />
+          </section>
+        ) : null}
       </main>
     </HQShell>
   );

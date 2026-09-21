@@ -41,11 +41,13 @@ export default function CustomerDirectory({
   rows,
   total,
   summary,
+  canViewTrading,
   params,
 }: {
   rows: any[];
   total: number;
   summary: Record<string, number>;
+  canViewTrading: boolean;
   params: Params;
 }) {
   const pages = Math.max(1, Math.ceil(total / params.pageSize));
@@ -84,8 +86,8 @@ export default function CustomerDirectory({
               <option value="last_activity">Last activity</option>
               <option value="name">Name</option>
               <option value="plan">Plan</option>
-              <option value="account_count">Accounts</option>
-              <option value="analysis_count">Analyses</option>
+              {canViewTrading ? <option value="account_count">Accounts</option> : null}
+              {canViewTrading ? <option value="analysis_count">Analyses</option> : null}
               <option value="status">Status</option>
             </select>
           </label>
@@ -138,9 +140,9 @@ export default function CustomerDirectory({
                         {readable(customer.plan, "Not assigned")}
                       </span>
                     </td>
-                    <td>{readable(customer.active_strategy)}</td>
-                    <td>{customer.account_count}</td>
-                    <td>{customer.analysis_count}</td>
+                    <td>{canViewTrading ? readable(customer.active_strategy) : "Restricted"}</td>
+                    <td>{canViewTrading ? customer.account_count : "Restricted"}</td>
+                    <td>{canViewTrading ? customer.analysis_count : "Restricted"}</td>
                     <td>
                       {customer.last_activity_at
                         ? new Date(customer.last_activity_at).toLocaleString()
@@ -180,15 +182,15 @@ export default function CustomerDirectory({
                   </div>
                   <div>
                     <dt>Active strategy</dt>
-                    <dd>{readable(customer.active_strategy)}</dd>
+                    <dd>{canViewTrading ? readable(customer.active_strategy) : "Restricted"}</dd>
                   </div>
                   <div>
                     <dt>Trading accounts</dt>
-                    <dd>{customer.account_count}</dd>
+                    <dd>{canViewTrading ? customer.account_count : "Restricted"}</dd>
                   </div>
                   <div>
                     <dt>Analyses</dt>
-                    <dd>{customer.analysis_count}</dd>
+                    <dd>{canViewTrading ? customer.analysis_count : "Restricted"}</dd>
                   </div>
                   <div className="wide">
                     <dt>Last activity</dt>

@@ -21,6 +21,7 @@ export default async function HQHome(){
       />
     </HQShell>;
   }
-  const {data:overview}=await supabase.rpc('staff_workspace_overview');
-  return <HQShell displayName={displayName} role={role} permissions={permissions}><WorkspaceDashboard overview={overview??{}} role={role}/></HQShell>;
+  const {data:overview,error}=await supabase.rpc('staff_workspace_overview');
+  if(error)console.error('[HQ_WORKSPACE_OVERVIEW_FAILED]',{role,code:error.code,message:error.message});
+  return <HQShell displayName={displayName} role={role} permissions={permissions}><WorkspaceDashboard overview={error?{}:(overview??{})} role={role}/></HQShell>;
 }

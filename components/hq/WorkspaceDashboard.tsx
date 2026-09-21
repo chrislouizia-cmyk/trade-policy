@@ -64,7 +64,7 @@ export default function WorkspaceDashboard({overview,role}:{overview:Overview;ro
     </section>
 
     <div className="grid grid-3 metric-grid hq-metric-grid">
-      {c.cards.map(([label,key,sub])=>{const href=cardDestination[key],card=<div className="card metric hq-metric"><span className="muted">{label}</span><strong>{String(overview[key]??0)}</strong><small>{sub}</small></div>;return href?<a className="hq-metric-link" key={key} href={href} aria-label={`${label}: view matching detail`}>{card}</a>:<div key={key}>{card}</div>})}
+      {c.cards.map(([label,key,sub])=>{const value=overview[key],available=typeof value==='number',href=available?cardDestination[key]:undefined,card=<div className="card metric hq-metric"><span className="muted">{label}</span><strong>{available?String(value):'—'}</strong><small>{available?sub:'Data unavailable'}</small></div>;return href?<a className="hq-metric-link" key={key} href={href} aria-label={`${label}: view matching detail`}>{card}</a>:<div key={key}>{card}</div>})}
     </div>
 
     <div className="grid grid-2 hq-access-grid">
