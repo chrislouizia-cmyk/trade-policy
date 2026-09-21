@@ -10,6 +10,7 @@ const migration = fs.readFileSync(
 );
 const directory = fs.readFileSync(path.join(root, 'components/hq/CustomerDirectory.tsx'), 'utf8');
 const customerPage = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/page.tsx'), 'utf8');
+const customerError = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/error.tsx'), 'utf8');
 const notesPanel = fs.readFileSync(path.join(root, 'components/hq/CustomerNotesPanel.tsx'), 'utf8');
 const workspace = fs.readFileSync(path.join(root, 'components/hq/WorkspaceDashboard.tsx'), 'utf8');
 const supportPage = fs.readFileSync(path.join(root, 'app/hq/support/page.tsx'), 'utf8');
@@ -50,6 +51,20 @@ test('Customer 360 uses real compliance cases and does not render a placeholder 
   assert.match(migration, /from public\.compliance_cases cc where cc\.customer_user_id=p\.id/);
   assert.match(customerPage, /Compliance Flags/);
   assert.doesNotMatch(customerPage, /No permitted internal flags are available/);
+});
+
+test('customer profile identifies failing RPCs and keeps optional Sales data fail-soft', () => {
+  assert.match(customerPage, /\[HQ_CUSTOMER_RPC_FAILED\]/);
+  for (const operation of [
+    'staff_customer_360',
+    'staff_customer_operational_detail',
+    'staff_customer_feedback_detail',
+    'staff_sales_email_drafts_v2',
+  ]) assert.match(customerPage, new RegExp(operation));
+  assert.doesNotMatch(customerPage, /Customer Sales drafts could not be loaded/);
+  assert.match(customerPage, /Sales drafts are temporarily unavailable/);
+  assert.match(customerError, /Customer profile could not be loaded/);
+  assert.doesNotMatch(customerError, /Customer directory could not be loaded/);
 });
 
 test('feedback operations use permission profiles rather than legacy role allowlists', () => {

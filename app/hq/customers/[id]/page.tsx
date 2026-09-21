@@ -3,6 +3,21 @@ import { getHQContext, HQShell } from "@/lib/hq-page";
 import Link from "next/link";
 import CustomerNotesPanel from "@/components/hq/CustomerNotesPanel";
 
+function logCustomerRpcFailure(
+  operation: string,
+  customerId: string,
+  error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined,
+) {
+  console.error("[HQ_CUSTOMER_RPC_FAILED]", {
+    operation,
+    customerId,
+    code: error?.code ?? "UNKNOWN",
+    message: error?.message ?? "Unknown Supabase error",
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+  });
+}
+
 function Empty({ children = "Not available yet" }: { children?: string }) {
   return <p className="muted customer-overview-empty">{children}</p>;
 }
@@ -44,7 +59,10 @@ export default async function Page({
   );
   const canViewCompliance = permissions.includes("compliance.view");
   const { data, error } = await supabase.rpc("staff_customer_360", { p_customer_id: id });
-  if (error) throw new Error("Customer profile could not be loaded.");
+  if (error) {
+    logCustomerRpcFailure("staff_customer_360", id, error);
+    throw new Error("Customer profile could not be loaded.");
+  }
   if (!data) notFound();
   const [operationalResult, feedbackResult] = await Promise.all([
     canViewTrading
@@ -54,6 +72,10 @@ export default async function Page({
       ? supabase.rpc("staff_customer_feedback_detail", { p_customer_id: id })
       : Promise.resolve(null),
   ]);
+  if (operationalResult?.error)
+    logCustomerRpcFailure("staff_customer_operational_detail", id, operationalResult.error);
+  if (feedbackResult?.error)
+    logCustomerRpcFailure("staff_customer_feedback_detail", id, feedbackResult.error);
   const operationsUnavailable = Boolean(operationalResult?.error);
   const customer: any = {
     ...data,
@@ -72,8 +94,12 @@ export default async function Page({
         })
     : null;
   if (salesDraftResult?.error)
-    throw new Error("Customer Sales drafts could not be loaded.");
-  const salesDrafts = salesDraftResult ? salesDraftResult.data?.rows ?? [] : null;
+    logCustomerRpcFailure("staff_sales_email_drafts_v2", id, salesDraftResult.error);
+  const salesDrafts = salesDraftResult
+    ? salesDraftResult.error
+      ? undefined
+      : salesDraftResult.data?.rows ?? []
+    : null;
   const accounts = customer.accounts ?? [],
     strategies = customer.strategies ?? [],
     analyses = customer.analyses ?? [],
@@ -321,6 +347,8 @@ export default async function Page({
           </div>
           {salesDrafts === null ? (
             <Empty>You do not have permission to view Sales drafts.</Empty>
+          ) : salesDrafts === undefined ? (
+            <Empty>Sales drafts are temporarily unavailable. The rest of this customer profile remains available.</Empty>
           ) : (
             <List
               rows={salesDrafts}
