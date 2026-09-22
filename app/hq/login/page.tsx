@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import HQLoginForm from '@/components/hq/HQLoginForm';
@@ -24,7 +25,14 @@ export default async function Page() {
   return (
     <main className="auth-page hq-login-page">
       <section className="auth-card portal-auth-card">
-        <img src="/brand/trade-police-mark.png" alt="Trade Police" className="brand-mark" width={42} height={42} />
+        <Image
+          src="/brand/trade-police-hq-mark.png"
+          alt="Trade Police Headquarters"
+          className="hq-login-mark"
+          width={147}
+          height={147}
+          priority
+        />
         <span className="eyebrow">TRADE POLICE HEADQUARTERS</span>
         <h1>Employee sign in</h1>
         <p>Headquarters is reserved for Trade Police employees. Your email determines your assigned workspace and permissions.</p>
