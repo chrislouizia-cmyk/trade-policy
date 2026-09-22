@@ -8,6 +8,10 @@ const migration = fs.readFileSync(
   path.join(root, 'supabase/migrations/20260921175426_hq_customer_data_integrity.sql'),
   'utf8',
 );
+const customerNotesRepair = fs.readFileSync(
+  path.join(root, 'supabase/migrations/20260922004209_repair_customer_notes_staff_author_contract.sql'),
+  'utf8',
+);
 const directory = fs.readFileSync(path.join(root, 'components/hq/CustomerDirectory.tsx'), 'utf8');
 const customerPage = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/page.tsx'), 'utf8');
 const customerError = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/error.tsx'), 'utf8');
@@ -44,6 +48,17 @@ test('customer notes are permission checked, MFA protected, validated, and audit
   assert.match(rpc, /'CREATE_CUSTOMER_NOTE'/);
   assert.match(notesPanel, /staff_customer_note_create/);
   assert.match(notesPanel, /No internal notes recorded/);
+});
+
+test('legacy customer_notes tables are upgraded to the canonical staff author contract', () => {
+  assert.match(
+    customerNotesRepair,
+    /alter table public\.customer_notes\s+add column if not exists staff_user_id uuid/,
+  );
+  assert.match(customerNotesRepair, /foreign key \(staff_user_id\)/);
+  assert.match(customerNotesRepair, /references auth\.users\(id\)\s+on delete set null/);
+  assert.doesNotMatch(customerNotesRepair, /\b(drop table|truncate|delete from)\b/i);
+  assert.match(customerNotesRepair, /notify pgrst, 'reload schema'/);
 });
 
 test('Customer 360 uses real compliance cases and does not render a placeholder flag section', () => {
