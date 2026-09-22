@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getHQContext, HQShell } from "@/lib/hq-page";
 import Link from "next/link";
 import CustomerNotesPanel from "@/components/hq/CustomerNotesPanel";
+import CustomerWorkspaceTabs from "@/components/hq/CustomerWorkspaceTabs";
 
 const HQ_CUSTOMER_STEP_TIMEOUT_MS = 12_000;
 
@@ -82,6 +83,20 @@ function logCustomerRpcFailure(
 
 function Empty({ children = "Not available yet" }: { children?: string }) {
   return <p className="muted customer-overview-empty">{children}</p>;
+}
+
+function formatDate(value: unknown, dateOnly = false) {
+  if (!value) return dateOnly ? "Date unavailable" : "No recorded activity";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return dateOnly ? date.toLocaleDateString() : date.toLocaleString();
+}
+
+function humanize(value: unknown) {
+  return String(value || "Not available")
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 function List({
   rows,
@@ -186,6 +201,47 @@ export default async function Page({
     timeline = customer.timeline ?? [],
     notes = customer.notes ?? [],
     flags = customer.flags ?? [];
+
+  const operationalTimeline = [
+    ...timeline.filter((item: any) => item.type !== "NOTE"),
+    ...analyses.map((analysis: any) => ({
+      id: `analysis-${analysis.id}`,
+      type: "ANALYSIS",
+      title: `${analysis.instrument || "Market"} analysis ${humanize(analysis.outcome)}`,
+      detail: [analysis.direction, analysis.confidence ? `${analysis.confidence}% confidence` : null]
+        .filter(Boolean)
+        .join(" · ") || "Analysis completed",
+      created_at: analysis.created_at,
+    })),
+    ...trades.map((trade: any) => ({
+      id: `trade-${trade.id}`,
+      type: "TRADE",
+      title: `${trade.instrument || "Trade"} · ${humanize(trade.status_label || trade.status)}`,
+      detail: trade.record_kind === "LEGACY_EVIDENCE"
+        ? "Preserved historical evidence; not counted as an active position."
+        : [trade.direction, trade.outcome, trade.result_r != null ? `${trade.result_r}R` : null]
+            .filter(Boolean)
+            .join(" · ") || "Canonical trade lifecycle event",
+      created_at: trade.closed_at || trade.opened_at,
+    })),
+    ...((feedback ?? []) as any[]).map((item: any) => ({
+      id: `feedback-${item.id}`,
+      type: "FEEDBACK",
+      title: `${humanize(item.type)} feedback`,
+      detail: `${humanize(item.status)} · ${item.message || "No detail"}`,
+      created_at: item.created_at,
+    })),
+    ...((salesDrafts ?? []) as any[]).map((draft: any) => ({
+      id: `draft-${draft.id}`,
+      type: "SALES_DRAFT",
+      title: draft.subject || "Untitled sales draft",
+      detail: `${humanize(draft.status)} · ${humanize(draft.template_type)}`,
+      created_at: draft.updated_at,
+    })),
+  ]
+    .filter((item) => item.created_at)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 60);
   return (
     <HQShell displayName={displayName} role={role} permissions={permissions}>
       <main className="customer-overview-page">
@@ -195,19 +251,18 @@ export default async function Page({
             <h1>{customer.display_name || "Unnamed customer"}</h1>
             <p>{customer.email || "No email provided"}</p>
           </div>
-          {canViewTrading && !operationsUnavailable && (
-            <a
-              className="button-link secondary"
-              href={`/api/hq/customers/${id}/report`}
-            >
-              Download Customer Report
-            </a>
-          )}
-          {permissions.includes("sales.manage") && (
-            <Link className="button-link primary" href={`/hq/sales/drafts/new?customer=${id}`}>
-              Draft email
-            </Link>
-          )}
+          <div className="customer-360-actions">
+            {canViewTrading && !operationsUnavailable && (
+              <a className="button-link secondary" href={`/api/hq/customers/${id}/report`}>
+                Download report
+              </a>
+            )}
+            {permissions.includes("sales.manage") && (
+              <Link className="button-link primary" href={`/hq/sales/drafts/new?customer=${id}`}>
+                Draft email
+              </Link>
+            )}
+          </div>
         </header>
         <section
           className="customer-overview-summary"
@@ -226,6 +281,8 @@ export default async function Page({
             </div>
           ))}
         </section>
+        <CustomerWorkspaceTabs
+          overview={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Profile</h2>
           <dl className="customer-profile-grid">
@@ -255,6 +312,8 @@ export default async function Page({
             </div>
           </dl>
         </section>
+          </div>}
+          trading={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Trading Accounts</h2>
           {!canViewTrading ? (
@@ -369,9 +428,12 @@ export default async function Page({
             empty="No trades yet"
             render={(trade) => (
               <>
-                <strong>
-                  {trade.instrument} · {trade.direction} · {trade.status}
-                </strong>
+                <div className="customer-360-row-heading">
+                  <strong>{trade.instrument} · {trade.direction}</strong>
+                  <span className={`customer-360-state ${trade.is_currently_active ? "active" : "historical"}`}>
+                    {trade.status_label || humanize(trade.status)}
+                  </span>
+                </div>
                 <small>
                   Entry {trade.entry ?? "—"} · SL {trade.stop_loss ?? "—"} · TP{" "}
                   {trade.take_profit ?? "—"}
@@ -384,10 +446,38 @@ export default async function Page({
                     ? ` · Closed ${new Date(trade.closed_at).toLocaleString()}`
                     : ""}
                 </small>
+                {trade.record_kind === "LEGACY_EVIDENCE" ? (
+                  <small className="customer-360-evidence-note">
+                    Preserved historical evidence; not counted as an active position.
+                  </small>
+                ) : null}
               </>
             )}
           />}
         </section>
+          </div>}
+          activity={<div className="customer-360-grid single">
+            <section className="customer-overview-section customer-360-timeline">
+              <div className="section-title">
+                <h2>Activity Timeline</h2>
+                <small className="muted">Analyses, trades, feedback and customer operations</small>
+              </div>
+              <List
+                rows={operationalTimeline}
+                empty="No authorized customer activity is available."
+                render={(item) => (
+                  <>
+                    <div className="customer-360-row-heading">
+                      <strong>{item.title || humanize(item.type)}</strong>
+                      <span className="customer-360-event-type">{humanize(item.type)}</span>
+                    </div>
+                    <small>{item.detail || "No detail"} · {formatDate(item.created_at)}</small>
+                  </>
+                )}
+              />
+            </section>
+          </div>}
+          relationship={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Feedback</h2>
           {!canViewFeedback ? (
@@ -435,9 +525,9 @@ export default async function Page({
                 <>
                   <strong>{draft.subject || "Untitled draft"}</strong>
                   <small>
-                    {draft.template_type} · {draft.status} · {draft.language}
+                    {humanize(draft.template_type)} · {humanize(draft.status)} · {humanize(draft.language)}
                     {draft.generated_by_ai ? " · AI-generated" : ""}
-                    {draft.created_by ? ` · Author ${draft.created_by}` : ""}
+                    {!draft.generated_by_ai ? " · Staff-authored" : ""}
                     {draft.updated_at
                       ? ` · Updated ${new Date(draft.updated_at).toLocaleString()}`
                       : ""}
@@ -449,24 +539,6 @@ export default async function Page({
               )}
             />
           )}
-        </section>
-        <section className="customer-overview-section">
-          <h2>Activity Timeline</h2>
-          <List
-            rows={timeline.filter((item: any) => item.type !== "NOTE")}
-            empty="No customer activity recorded"
-            render={(item) => (
-              <>
-                <strong>{item.title || item.type}</strong>
-                <small>
-                  {item.detail || "No detail"}
-                  {item.created_at
-                    ? ` · ${new Date(item.created_at).toLocaleString()}`
-                    : ""}
-                </small>
-              </>
-            )}
-          />
         </section>
         {canViewNotes ? (
           <CustomerNotesPanel
@@ -496,6 +568,8 @@ export default async function Page({
             />
           </section>
         ) : null}
+          </div>}
+        />
       </main>
     </HQShell>
   );

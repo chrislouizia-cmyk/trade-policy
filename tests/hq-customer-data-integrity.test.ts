@@ -12,8 +12,14 @@ const customerNotesRepair = fs.readFileSync(
   path.join(root, 'supabase/migrations/20260922004209_repair_customer_notes_staff_author_contract.sql'),
   'utf8',
 );
+const tradeTruthMigration = fs.readFileSync(
+  path.join(root, 'supabase/migrations/20260922044130_reconcile_hq_customer_trade_truth.sql'),
+  'utf8',
+);
 const directory = fs.readFileSync(path.join(root, 'components/hq/CustomerDirectory.tsx'), 'utf8');
 const customerPage = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/page.tsx'), 'utf8');
+const customerTabs = fs.readFileSync(path.join(root, 'components/hq/CustomerWorkspaceTabs.tsx'), 'utf8');
+const customerStyles = fs.readFileSync(path.join(root, 'app/trade-police.css'), 'utf8');
 const customerError = fs.readFileSync(path.join(root, 'app/hq/customers/[id]/error.tsx'), 'utf8');
 const notesPanel = fs.readFileSync(path.join(root, 'components/hq/CustomerNotesPanel.tsx'), 'utf8');
 const workspace = fs.readFileSync(path.join(root, 'components/hq/WorkspaceDashboard.tsx'), 'utf8');
@@ -66,6 +72,41 @@ test('Customer 360 uses real compliance cases and does not render a placeholder 
   assert.match(migration, /from public\.compliance_cases cc where cc\.customer_user_id=p\.id/);
   assert.match(customerPage, /Compliance Flags/);
   assert.doesNotMatch(customerPage, /No permitted internal flags are available/);
+});
+
+test('Customer 360 reconciles live trade state without mutating historical evidence', () => {
+  const rpc = tradeTruthMigration.match(
+    /create or replace function public\.staff_customer_operational_detail[\s\S]*?grant execute on function public\.staff_customer_operational_detail\(uuid\) to authenticated;/,
+  )?.[0] ?? '';
+  assert.match(rpc, /from public\.active_trades active_trade/);
+  assert.match(rpc, /\(active_trade\.status='OPEN'\) as is_currently_active/);
+  assert.match(rpc, /'LEGACY_EVIDENCE'::text as record_kind/);
+  assert.match(rpc, /'HISTORICAL_UNRESOLVED'/);
+  assert.match(rpc, /not exists[\s\S]*at_link\.trade_record_id=tr\.id/);
+  assert.match(rpc, /trade_state_authority','active_trades'/);
+  assert.doesNotMatch(tradeTruthMigration, /\b(delete from|update public\.trade_records|truncate|drop table)\b/i);
+});
+
+test('Customer 360 composes an evidence-backed activity timeline', () => {
+  assert.match(customerPage, /const operationalTimeline = \[/);
+  for (const source of ['analyses.map', 'trades.map', 'feedback ??', 'salesDrafts ??']) {
+    assert.match(customerPage, new RegExp(source.replace(/[?]/g, '\\?')));
+  }
+  assert.match(customerPage, /sort\(\(a, b\) => new Date\(b\.created_at\)/);
+  assert.match(customerPage, /Preserved historical evidence; not counted as an active position/);
+  assert.doesNotMatch(customerPage, /Author \$\{draft\.created_by\}/);
+});
+
+test('Customer 360 uses an accessible compact responsive tab workspace', () => {
+  assert.match(customerTabs, /role="tablist"/);
+  assert.match(customerTabs, /role="tab"/);
+  assert.match(customerTabs, /aria-selected/);
+  assert.match(customerTabs, /role="tabpanel"/);
+  assert.match(customerTabs, /Overview/);
+  assert.match(customerTabs, /Relationship & risk/);
+  assert.match(customerStyles, /Customer 360: compact operational workspace/);
+  assert.match(customerStyles, /\.customer-360-grid\{display:grid;grid-template-columns:repeat\(2/);
+  assert.match(customerStyles, /@media\(max-width:560px\)/);
 });
 
 test('customer profile identifies failing RPCs and keeps optional Sales data fail-soft', () => {

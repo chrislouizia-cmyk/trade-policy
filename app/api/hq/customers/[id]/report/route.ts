@@ -47,6 +47,27 @@ export async function GET(
   if (!profile)
     return NextResponse.json({ error: "Customer not found." }, { status: 404 });
   const customer = { ...profile, ...operations };
+  const reportTimeline = [
+    ...(customer.timeline ?? []).filter((item: any) => item.type !== "NOTE"),
+    ...(customer.analyses ?? []).map((analysis: any) => ({
+      type: "ANALYSIS",
+      title: `${analysis.instrument || "Market"} analysis`,
+      detail: [analysis.direction, analysis.outcome].filter(Boolean).join(" · "),
+      created_at: analysis.created_at,
+    })),
+    ...(customer.trades ?? []).map((trade: any) => ({
+      type: "TRADE",
+      title: `${trade.instrument || "Trade"} · ${trade.status_label || trade.status}`,
+      detail: trade.record_kind === "LEGACY_EVIDENCE"
+        ? "Preserved historical evidence; not counted as an active position."
+        : [trade.direction, trade.outcome, trade.result_r != null ? `${trade.result_r}R` : null]
+            .filter(Boolean)
+            .join(" · "),
+      created_at: trade.closed_at || trade.opened_at,
+    })),
+  ]
+    .filter((item: any) => item.created_at)
+    .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Trade Police HQ";
   const overview = workbook.addWorksheet("Overview");
@@ -100,6 +121,10 @@ export async function GET(
         "stop_loss",
         "take_profit",
         "status",
+        "status_label",
+        "record_kind",
+        "is_currently_active",
+        "evidence_id",
         "opened_at",
         "closed_at",
         "outcome",
@@ -108,7 +133,7 @@ export async function GET(
     ],
     [
       "Activity Timeline",
-      customer.timeline ?? [],
+      reportTimeline,
       ["type", "title", "detail", "created_at"],
     ],
   ] as [string, any[], string[]][]) {
