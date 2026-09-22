@@ -16,6 +16,24 @@ test('installed app icons use full-resolution, square Trade Police artwork', () 
   assert.deepEqual(pngDimensions('app/apple-icon.png'), { width: 180, height: 180 });
   assert.deepEqual(pngDimensions('public/brand/trade-police-app-icon-192.png'), { width: 192, height: 192 });
   assert.deepEqual(pngDimensions('public/brand/trade-police-app-icon-512.png'), { width: 512, height: 512 });
+  assert.deepEqual(pngDimensions('public/brand/trade-police-hq-icon-180.png'), { width: 180, height: 180 });
+  assert.deepEqual(pngDimensions('public/brand/trade-police-hq-icon-192.png'), { width: 192, height: 192 });
+  assert.deepEqual(pngDimensions('public/brand/trade-police-hq-icon-512.png'), { width: 512, height: 512 });
+});
+
+test('HQ has a distinct install identity without introducing another visual shell', () => {
+  const clientIcon = fs.readFileSync(path.join(root, 'public/brand/trade-police-app-icon-512.png'));
+  const hqIcon = fs.readFileSync(path.join(root, 'public/brand/trade-police-hq-icon-512.png'));
+  const layout = fs.readFileSync(path.join(root, 'app/hq/layout.tsx'), 'utf8');
+  const manifest = fs.readFileSync(path.join(root, 'app/hq/manifest.webmanifest/route.ts'), 'utf8');
+
+  assert.notDeepEqual(clientIcon, hqIcon);
+  assert.match(layout, /title: 'Trade Police HQ'/);
+  assert.match(layout, /manifest: '\/hq\/manifest\.webmanifest'/);
+  assert.match(layout, /return children/);
+  assert.match(manifest, /id: '\/hq'/);
+  assert.match(manifest, /short_name: 'TP HQ'/);
+  assert.match(manifest, /trade-police-hq-icon-512\.png/);
 });
 
 test('metadata and manifest expose the refreshed install artwork', () => {

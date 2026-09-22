@@ -15,10 +15,10 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [
-      { url: '/icon.png?v=2026-09-22', type: 'image/png', sizes: '512x512' },
-      { url: '/favicon.ico?v=2026-09-22', sizes: 'any' },
+      { url: '/icon.png?v=2026-09-22-center', type: 'image/png', sizes: '512x512' },
+      { url: '/favicon.ico?v=2026-09-22-center', sizes: 'any' },
     ],
-    apple: [{ url: '/apple-icon.png?v=2026-09-22', type: 'image/png', sizes: '180x180' }],
+    apple: [{ url: '/apple-icon.png?v=2026-09-22-center', type: 'image/png', sizes: '180x180' }],
   },
 };
 
