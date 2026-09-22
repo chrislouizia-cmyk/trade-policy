@@ -12,12 +12,13 @@ import { getRequestLocale } from '@/lib/i18n/server';
 export const metadata: Metadata = {
   title: 'Trade Police',
   description: 'No trade without evidence.',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
-      { url: '/icon.png?v=2026-08-20', type: 'image/png' },
-      { url: '/favicon.ico?v=2026-08-20', sizes: 'any' },
+      { url: '/icon.png?v=2026-09-22', type: 'image/png', sizes: '512x512' },
+      { url: '/favicon.ico?v=2026-09-22', sizes: 'any' },
     ],
-    apple: '/apple-icon.png?v=2026-08-20',
+    apple: [{ url: '/apple-icon.png?v=2026-09-22', type: 'image/png', sizes: '180x180' }],
   },
 };
 
