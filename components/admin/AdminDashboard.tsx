@@ -1,386 +1,145 @@
 import Link from "next/link";
 import SystemHealth from "@/components/hq/SystemHealth";
 
-type Overview = Record<string, unknown>;
+type Metrics = {
+  totalCustomers?: number;
+  newCustomers30d?: number;
+  activeCustomers7d?: number;
+  analysesToday?: number;
+  openTrades?: number;
+  activeStrategies?: number;
+  openSupport?: number;
+  openFeedback?: number;
+  openCompliance?: number;
+  openIncidents?: number;
+  failedActionsToday?: number;
+  overdueFollowUps?: number;
+};
+type WorkItem = {
+  kind: string;
+  id?: string;
+  priority?: string;
+  title: string;
+  detail?: string;
+  occurredAt: string;
+  dueAt?: string | null;
+  href: string;
+};
+type CommandCenter = {
+  generatedAt: string;
+  metrics: Metrics;
+  attention: WorkItem[];
+  activity: WorkItem[];
+};
 type Customer = {
   customer_id: string;
   email: string | null;
   display_name: string | null;
   plan: string | null;
   subscription_status: string | null;
-  created_at: string;
-  strategy_count: number;
   active_strategy: string | null;
   account_count: number;
   analysis_count: number;
   last_activity_at: string | null;
 };
-type Incident = {
-  id: number;
-  public_code: string;
-  internal_code: string;
-  provider: string | null;
-  endpoint: string | null;
-  severity: string;
-  message: string | null;
-  created_at: string;
-  resolved_at?: string | null;
-};
-type Metric = { label: string; value: unknown; sub: string; href?:string };
+type Metric = {label:string;value:number|undefined;sub:string;href:string;tone?:"attention"};
 
-function display(value: unknown) {
-  return typeof value === "number" ? String(value) : "—";
-}
-function MetricCard({ metric }: { metric: Metric }) {
-  const available = typeof metric.value === "number";
-  const card=(
-    <div className="card metric hq-executive-metric">
-      <span>{metric.label}</span>
-      <strong>{display(metric.value)}</strong>
-      <small>{available ? metric.sub : "Not available yet"}</small>
-    </div>
-  );
-  return metric.href?<Link className="hq-metric-link" href={metric.href} aria-label={`${metric.label}: view matching detail`}>{card}</Link>:card;
-}
-function IncidentRows({ rows, empty }: { rows: Incident[]; empty: string }) {
-  return rows.length === 0 ? (
-    <div className="empty-state compact">
-      <strong>{empty}</strong>
-      <span>Sanitized operational incidents will appear here.</span>
-    </div>
-  ) : (
-    <>
-      {rows.map((incident) => (
-        <div className="event-row" key={incident.id}>
-          <div>
-            <strong>{incident.public_code}</strong>
-            <small>
-              {incident.endpoint || "Internal"} ·{" "}
-              {incident.provider || "Internal"}
-            </small>
-          </div>
-          <div>
-            <span className={`status-pill ${incident.severity.toLowerCase()}`}>
-              {incident.resolved_at ? "Resolved" : incident.severity}
-            </span>
-            <small>{new Date(incident.created_at).toLocaleString()}</small>
-            {incident.resolved_at && (
-              <small>
-                Resolved {new Date(incident.resolved_at).toLocaleString()}
-              </small>
-            )}
-          </div>
-        </div>
-      ))}
-    </>
-  );
+const human=(value:string)=>value.replaceAll("_"," ").toLowerCase().replace(/\b\w/g,letter=>letter.toUpperCase());
+const timestamp=(value:string|null|undefined)=>value?new Date(value).toLocaleString():"Not recorded";
+const number=(value:unknown)=>typeof value==="number"?value:0;
+
+function MetricCard({metric}:{metric:Metric}){
+  const available=typeof metric.value==="number";
+  return <Link className={`hq-command-metric${metric.tone?` ${metric.tone}`:""}`} href={metric.href}>
+    <span>{metric.label}</span>
+    <strong>{available?metric.value:"—"}</strong>
+    <small>{available?metric.sub:"Data source unavailable"}</small>
+  </Link>;
 }
 
-export default function AdminDashboard({
-  overview,
-  customers,
-  incidents,
-  permissions,
-}: {
-  overview: Overview;
-  customers: Customer[];
-  incidents: Incident[];
-  permissions: string[];
-}) {
-  const can = (permission: string) => permissions.includes(permission);
-  const primary: Metric[] = [
-    {
-      label: "Active customers",
-      value: overview.active_customers_7d,
-      sub: "Activity in the last 7 days",
-      href:"/hq/customers?sort=last_activity",
-    },
-    {
-      label: "Analyses today",
-      value: overview.analyses_today,
-      sub: "Market analysis events today",
-      href:"/hq/system",
-    },
-    {
-      label: "Open trades",
-      value: overview.open_trades,
-      sub: "Across customer accounts",
-      href:"/hq/system",
-    },
-    {
-      label: "Strategies",
-      value: overview.strategies,
-      sub: "Active, non-archived profiles",
-      href:"/hq/system/strategy-compatibility?status=ACTIVE",
-    },
+function Queue({items}:{items:WorkItem[]}){
+  if(!items.length)return <div className="hq-command-empty"><strong>No urgent work is waiting.</strong><span>New cross-department exceptions will appear here.</span></div>;
+  return <div className="hq-command-queue">{items.map((item,index)=><Link href={item.href} className="hq-command-row" key={`${item.kind}-${item.id??index}`}>
+    <span className={`hq-command-kind ${item.priority?.toLowerCase()??""}`}>{human(item.kind)}</span>
+    <div><strong>{item.title}</strong><small>{item.detail||"No additional context"}</small></div>
+    <div className="hq-command-time"><b>{human(item.priority||"Review")}</b><time>{item.dueAt?`Due ${timestamp(item.dueAt)}`:timestamp(item.occurredAt)}</time></div>
+    <span aria-hidden="true">→</span>
+  </Link>)}</div>;
+}
+
+function Activity({items}:{items:WorkItem[]}){
+  if(!items.length)return <div className="hq-command-empty"><strong>No company activity recorded.</strong><span>Customer and authorized staff events will appear here.</span></div>;
+  return <div className="hq-command-activity">{items.map((item,index)=><Link href={item.href} key={`${item.kind}-${item.occurredAt}-${index}`}>
+    <span aria-hidden="true" />
+    <div><strong>{human(item.title)}</strong><small>{item.detail||human(item.kind)}</small></div>
+    <time>{timestamp(item.occurredAt)}</time>
+  </Link>)}</div>;
+}
+
+export default function AdminDashboard({commandCenter,customers,permissions,loadError}:{commandCenter:CommandCenter|null;customers:Customer[];permissions:string[];loadError:string|null}){
+  const can=(permission:string)=>permissions.includes(permission);
+  const metrics=commandCenter?.metrics??{};
+  const primary:Metric[]=[
+    {label:"Total customers",value:metrics.totalCustomers,sub:`${number(metrics.newCustomers30d)} joined in 30 days`,href:"/hq/customers"},
+    {label:"Active customers",value:metrics.activeCustomers7d,sub:"Used Trade Police in 7 days",href:"/hq/customers?sort=last_activity"},
+    {label:"Analyses today",value:metrics.analysesToday,sub:"Canonical analysis events",href:"/hq/system"},
+    {label:"Open trades",value:metrics.openTrades,sub:"Canonical active-trade records",href:"/hq/system"},
+    {label:"Active strategies",value:metrics.activeStrategies,sub:"Non-archived customer strategies",href:"/hq/system/strategy-compatibility?status=ACTIVE"},
   ];
-  const secondary: Metric[] = [
-    {
-      label: "Open feedback",
-      value: overview.open_feedback,
-      sub: "Open or under review",
-      href:"/hq/support",
-    },
-    {
-      label: "Open incidents",
-      value: overview.open_incidents,
-      sub: "Unresolved system incidents",
-      href:"/hq/system/queue?status=OPEN",
-    },
+  const attention:Metric[]=[
+    {label:"Support",value:metrics.openSupport,sub:"Open or waiting for customer",href:"/hq/support",tone:"attention"},
+    {label:"Compliance",value:metrics.openCompliance,sub:"Unresolved review cases",href:"/hq/compliance/cases",tone:"attention"},
+    {label:"Incidents",value:metrics.openIncidents,sub:"Unresolved operational incidents",href:"/hq/system/queue?status=OPEN",tone:"attention"},
+    {label:"Overdue follow-ups",value:metrics.overdueFollowUps,sub:"Sales follow-ups past due",href:"/hq/sales",tone:"attention"},
   ];
-  const actions = [
-    can("customers.view_metadata") && [
-      "View all customers",
-      "Search the full customer directory",
-      "/hq/customers",
-    ],
-    can("sales.view") && [
-      "Open CRM",
-      "Review leads and customer opportunities",
-      "/hq/sales",
-    ],
-    can("support.view") && [
-      "Open support",
-      "Review customer support work",
-      "/hq/support",
-    ],
-    can("compliance.view") && [
-      "Compliance queue",
-      "Review permitted compliance cases",
-      "/hq/compliance",
-    ],
-  ].filter(Boolean) as string[][];
-  const modules = [
-    {
-      name: "Customers",
-      route: "/hq/customers",
-      permission: "customers.view_metadata",
-      metrics: [
-        ["Active customers", overview.active_customers_7d],
-        ["New customers", overview.new_customers_30d],
-      ],
-    },
-    {
-      name: "Trading Intelligence",
-      route: "/hq/system",
-      permission: "system.health",
-      metrics: [
-        ["Analyses today", overview.analyses_today],
-        ["Open incidents", overview.open_incidents],
-      ],
-    },
-    {
-      name: "Trade Monitoring",
-      route: "/hq/system",
-      permission: "system.health",
-      metrics: [
-        ["Open trades", overview.open_trades],
-        ["Open feedback", overview.open_feedback],
-      ],
-    },
-    {
-      name: "Compliance",
-      route: "/hq/compliance",
-      permission: "compliance.view",
-      metrics: [
-        ["Open cases", overview.open_cases],
-        ["High priority", overview.high_priority],
-      ],
-    },
-    {
-      name: "Support",
-      route: "/hq/support",
-      permission: "support.view",
-      metrics: [
-        ["Open tickets", overview.open_tickets],
-        ["Open feedback", overview.open_feedback],
-      ],
-    },
-    {
-      name: "System",
-      route: "/hq/system",
-      permission: "system.health",
-      metrics: [
-        ["Open incidents", overview.open_incidents],
-        ["Failed actions", overview.failed_actions_today],
-      ],
-    },
-  ].filter((module) => can(module.permission));
-  const openIncidents = incidents.filter((incident) => !incident.resolved_at);
+  const departments=[
+    {name:"Customers",detail:`${number(metrics.totalCustomers)} total · ${number(metrics.activeCustomers7d)} active in 7 days`,href:"/hq/customers",permission:"customers.view_metadata"},
+    {name:"Sales",detail:`${number(metrics.overdueFollowUps)} overdue follow-ups`,href:"/hq/sales",permission:"sales.view"},
+    {name:"Support",detail:`${number(metrics.openSupport)} tickets · ${number(metrics.openFeedback)} feedback items`,href:"/hq/support",permission:"support.view"},
+    {name:"Compliance",detail:`${number(metrics.openCompliance)} unresolved cases`,href:"/hq/compliance",permission:"compliance.view"},
+    {name:"System operations",detail:`${number(metrics.openIncidents)} incidents · ${number(metrics.failedActionsToday)} failures today`,href:"/hq/system",permission:"system.health"},
+  ].filter(item=>can(item.permission));
 
-  return (
-    <div className="stack admin-shell executive-dashboard">
-      {can("system.health") && <SystemHealth />}
-      <section className="hq-executive-section">
-        <div className="hq-section-heading">
-          <div>
-            <span className="eyebrow">COMPANY PERFORMANCE</span>
-            <h1>Executive overview</h1>
-          </div>
-          <small>Private operational metadata only</small>
-        </div>
-        <h2>Primary business KPIs</h2>
-        <div className="hq-kpi-grid">
-          {primary.filter(metric=>typeof metric.value==='number').map((metric) => (
-            <MetricCard key={metric.label} metric={metric} />
-          ))}
-        </div>
-        <h2>Operating KPIs</h2>
-        <div className="hq-kpi-grid secondary">
-          {secondary.filter(metric=>typeof metric.value==='number').map((metric) => (
-            <MetricCard key={metric.label} metric={metric} />
-          ))}
-        </div>
+  return <main className="hq-command-center">
+    <header className="hq-command-hero">
+      <div><span className="eyebrow">EXECUTIVE OPERATIONS</span><h1>Company command center</h1><p>One verified view of customer activity, company workload, and operating health.</p></div>
+      <div className="hq-command-freshness"><span>DATA SNAPSHOT</span><strong>{commandCenter?timestamp(commandCenter.generatedAt):"Unavailable"}</strong><small>Live operational records · not estimated</small></div>
+    </header>
+
+    {loadError&&<div className="hq-command-error" role="alert"><strong>Command center unavailable</strong><span>{loadError}</span><Link href="/hq">Retry</Link></div>}
+
+    <section className="hq-command-section" aria-labelledby="company-pulse-title">
+      <div className="hq-command-heading"><div><span className="eyebrow">COMPANY PULSE</span><h2 id="company-pulse-title">What is happening now</h2></div><Link href="/hq/system">Open operational detail</Link></div>
+      <div className="hq-command-metric-grid primary">{primary.map(metric=><MetricCard metric={metric} key={metric.label}/>)}</div>
+      <div className="hq-command-metric-grid attention">{attention.map(metric=><MetricCard metric={metric} key={metric.label}/>)}</div>
+    </section>
+
+    <div className="hq-command-main-grid">
+      <section className="card hq-command-panel">
+        <div className="hq-command-heading"><div><span className="eyebrow">NEEDS ATTENTION</span><h2>Executive action queue</h2></div><small>Prioritized across departments</small></div>
+        <Queue items={commandCenter?.attention??[]}/>
       </section>
-
-      {actions.length > 0 && (
-        <section className="card hq-executive-card">
-          <div className="hq-section-heading">
-            <div>
-              <span className="eyebrow">ACTION CENTER</span>
-              <h2>Quick actions</h2>
-            </div>
-          </div>
-          <div className="hq-quick-actions">
-            {actions.map(([label, subtitle, route]) => (
-              <Link href={route} key={route}>
-                <span aria-hidden="true">→</span>
-                <strong>{label}</strong>
-                <small>{subtitle}</small>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="card hq-executive-card">
-        <div className="hq-section-heading">
-          <div>
-            <span className="eyebrow">RECENT ACTIVITY</span>
-            <h2>System incident activity</h2>
-          </div>
-          <small>Current audit source: system_incidents</small>
-        </div>
-        <IncidentRows
-          rows={incidents.slice(0, 8)}
-          empty="No incident activity recorded"
-        />
-      </section>
-
-      {can("customers.view_metadata") && (
-        <section className="card hq-executive-card customer-control">
-          <div className="hq-section-heading">
-            <div>
-              <span className="eyebrow">CUSTOMERS</span>
-              <h2>Customer control</h2>
-            </div>
-            <div className="hq-customer-summary-actions">
-              <form action="/hq/customers">
-                <input name="q" aria-label="Search all customers" placeholder="Search customers" />
-                <button type="submit">Search</button>
-              </form>
-              <Link className="button-link secondary" href="/hq/customers">View all customers</Link>
-            </div>
-          </div>
-          {customers.length === 0 ? (
-            <div className="empty-state compact">
-              <strong>No customers found</strong>
-              <span>Customer records will appear after signup.</span>
-            </div>
-          ) : (
-            <div className="hq-customer-table">
-              <div className="hq-customer-row hq-customer-head">
-                <span>Customer</span>
-                <span>Plan</span>
-                <span>Active strategy</span>
-                <span>Accounts</span>
-                <span>Analyses</span>
-                <span>Last activity</span>
-                <span>Status</span>
-                <span>Open</span>
-              </div>
-              {customers.map((customer) => (
-                <div className="hq-customer-row" key={customer.customer_id}>
-                  <span data-label="Customer">
-                    <strong>
-                      {customer.display_name || "Unnamed customer"}
-                    </strong>
-                    <small>{customer.email || "No email"}</small>
-                  </span>
-                  <span data-label="Plan">
-                    {customer.plan || "Not assigned"}
-                  </span>
-                  <span data-label="Active strategy">
-                    <strong>{customer.active_strategy || "—"}</strong>
-                    {!customer.active_strategy && <small>Not available yet</small>}
-                  </span>
-                  <span data-label="Accounts">{customer.account_count}</span>
-                  <span data-label="Analyses">{customer.analysis_count}</span>
-                  <span data-label="Last activity">
-                    {customer.last_activity_at
-                      ? new Date(customer.last_activity_at).toLocaleString()
-                      : "No recorded activity"}
-                  </span>
-                  <span data-label="Status">
-                    <span className="status-pill">
-                      {customer.subscription_status || "Unknown"}
-                    </span>
-                  </span>
-                  <span data-label="Open">
-                    <Link href={`/hq/customers/${customer.customer_id}`}>
-                      Open
-                    </Link>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      <section className="card hq-executive-card">
-        <div className="hq-section-heading">
-          <div>
-            <span className="eyebrow">COMPANY OPERATIONS</span>
-            <h2>Company Operations</h2>
-          </div>
-        </div>
-        <div className="hq-module-grid">
-          {modules.map((module) => (
-            <details className="hq-module-card" key={module.name}>
-              <summary>
-                <strong>{module.name}</strong>
-                <span>Open</span>
-              </summary>
-              <div className="hq-module-card-body">
-              {module.metrics.filter(([,value])=>typeof value==='number').map(([label, value]) => (
-                <p key={String(label)}>
-                  <span>{String(label)}</span>
-                  <strong>{display(value)}</strong>
-                </p>
-              ))}
-              <Link href={module.route}>Open {module.name}</Link>
-              </div>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      <section className="card hq-executive-card">
-        <div className="hq-section-heading">
-          <div>
-            <span className="eyebrow">INCIDENTS</span>
-            <h2>Open system incidents</h2>
-          </div>
-        </div>
-        <IncidentRows rows={openIncidents.slice(0, 8)} empty="No open incidents" />
-        {openIncidents.length > 8 && (
-          <div className="hq-condensed-list-footer">
-            <span>Showing 8 of {openIncidents.length} recent open incidents</span>
-            <Link className="button-link secondary" href="/hq/system/queue?status=OPEN">View full incident queue</Link>
-          </div>
-        )}
+      <section className="card hq-command-panel">
+        <div className="hq-command-heading"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Company timeline</h2></div><small>Customers and authorized staff</small></div>
+        <Activity items={commandCenter?.activity??[]}/>
       </section>
     </div>
-  );
+
+    {can("customers.view_metadata")&&<section className="card hq-command-panel">
+      <div className="hq-command-heading"><div><span className="eyebrow">CUSTOMER PULSE</span><h2>Recently active customers</h2></div><Link href="/hq/customers">Open directory</Link></div>
+      {customers.length?<div className="hq-command-customers">{customers.map(customer=><Link href={`/hq/customers/${customer.customer_id}`} key={customer.customer_id}>
+        <div><strong>{customer.display_name||"Unnamed customer"}</strong><small>{customer.email||"No email"}</small></div>
+        <span>{human(customer.plan||"Not assigned")}</span>
+        <div><strong>{customer.active_strategy||"No active strategy"}</strong><small>{customer.account_count} accounts · {customer.analysis_count} analyses</small></div>
+        <time>{timestamp(customer.last_activity_at)}</time><b>{human(customer.subscription_status||"Unknown")}</b>
+      </Link>)}</div>:<div className="hq-command-empty"><strong>No customers found.</strong><span>Customer records appear after signup.</span></div>}
+    </section>}
+
+    <section className="hq-command-section">
+      <div className="hq-command-heading"><div><span className="eyebrow">DEPARTMENTS</span><h2>Operating workspaces</h2></div><small>Permission-scoped destinations</small></div>
+      <div className="hq-command-departments">{departments.map(item=><Link href={item.href} key={item.name}><strong>{item.name}</strong><span>{item.detail}</span><b>Open →</b></Link>)}</div>
+    </section>
+
+    {can("system.health")&&<SystemHealth/>}
+  </main>;
 }

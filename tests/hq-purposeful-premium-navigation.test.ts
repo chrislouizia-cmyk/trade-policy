@@ -22,11 +22,16 @@ test('HQ navigation keeps one disclosure open and dismisses it predictably',()=>
   assert.doesNotMatch(nav,/open=\{active \|\| undefined\}/);
 });
 
-test('executive cards expose verified values and a real destination',()=>{
+test('executive command center exposes verified values and real destinations',()=>{
   const dashboard=read('components/admin/AdminDashboard.tsx');
-  assert.match(dashboard,/typeof metric\.value==='number'/);
-  assert.match(dashboard,/module\.metrics\.filter/);
-  assert.match(dashboard,/<details className="hq-module-card"/);
+  assert.match(dashboard,/typeof metric\.value==="number"/);
+  assert.match(dashboard,/Company command center/);
+  assert.match(dashboard,/Executive action queue/);
+  assert.match(dashboard,/Company timeline/);
+  assert.match(dashboard,/href:"\/hq\/support"/);
+  assert.match(dashboard,/href:"\/hq\/compliance\/cases"/);
+  assert.match(dashboard,/href:"\/hq\/system\/queue\?status=OPEN"/);
+  assert.doesNotMatch(dashboard,/<details className="hq-module-card"/);
   assert.doesNotMatch(dashboard,/label: "Authorizations today"[\s\S]{0,100}value: undefined/);
   assert.doesNotMatch(dashboard,/label: "Trades blocked today"[\s\S]{0,100}value: undefined/);
 });
@@ -48,13 +53,13 @@ test('HQ premium layer covers department workspaces and responsive navigation',(
   assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
 });
 
-test('executive mobile overview caps incident previews and links the full queue',()=>{
+test('executive overview uses one bounded cross-department queue',()=>{
   const page=read('app/hq/page.tsx');
   const dashboard=read('components/admin/AdminDashboard.tsx');
   const css=read('app/hq-premium.css');
-  assert.match(page,/admin_recent_incidents'.*p_limit:16/);
-  assert.match(dashboard,/openIncidents\.slice\(0, 8\)/);
-  assert.match(dashboard,/View full incident queue/);
-  assert.match(css,/\.hq-condensed-list-footer/);
-  assert.match(css,/\.hq-executive-card \.event-row\{display:grid/);
+  assert.match(page,/staff_owner_command_center/);
+  assert.doesNotMatch(page,/admin_recent_incidents/);
+  assert.match(dashboard,/commandCenter\?\.attention\?\?\[\]/);
+  assert.match(css,/\.hq-command-main-grid/);
+  assert.match(css,/@media\(max-width:520px\)/);
 });
