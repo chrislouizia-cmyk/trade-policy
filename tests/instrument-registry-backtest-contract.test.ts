@@ -18,19 +18,22 @@ test('canonical registry contains exactly the initial 17 instruments',()=>{
   assert.ok(!registry.includes("symbol:'NAS100'"));
 });
 test('historical cache and executor use canonical provider mapping',()=>{
-  assert.match(cache,/twelveDataSymbolFor/);
-  assert.match(executor,/twelveDataSymbolFor/);
+  assert.match(cache,/run\.metadata\?\.providerSymbol/);
+  assert.match(executor,/providerSymbolForRun/);
+  assert.match(executor,/run\.metadata\?\.providerSymbol/);
   assert.ok(!cache.includes('currently supports XAUUSD only'));
   assert.ok(!executor.includes('currently supports XAUUSD only'));
 });
 test('backtest API rejects unsupported or strategy-disabled instruments before run creation',()=>{
-  assert.match(api,/isSupportedInstrument\(payload\.instrument\)/);
-  assert.match(api,/strategy\.instruments\.includes\(payload\.instrument\)/);
-  assert.ok(api.indexOf('isSupportedInstrument(payload.instrument)') < api.indexOf('createBacktestRun({'));
+  assert.match(api,/instrument_catalog/);
+  assert.match(api,/canUseInstrument\(catalogInstrument, 'BACKTEST', instrumentAccess\)/);
+  assert.match(api,/strategy\.instruments\.includes\(requestedInstrument\)/);
+  assert.ok(api.indexOf("canUseInstrument(catalogInstrument, 'BACKTEST', instrumentAccess)") < api.indexOf('createBacktestRun({'));
 });
 test('strategy builders consume canonical supported universe',()=>{
   assert.match(builder,/strategyCatalogInstruments\(\)/);
-  assert.match(builder2,/SUPPORTED_INSTRUMENT_SYMBOLS/);
+  assert.match(builder2,/InstrumentSelector/);
+  assert.doesNotMatch(builder2,/SUPPORTED_INSTRUMENT_SYMBOLS/);
 });
 test('083 aligns database constraint to canonical 17',()=>{
   for(const symbol of expected) assert.ok(migration.includes(`'${symbol}'`),symbol);

@@ -1,4 +1,5 @@
 import type { StrategyRule } from '@/types/trade';
+import { resolveActiveStrategyDnaRuleId } from '../active-strategy-evidence.ts';
 import { TRADING_DNA_RULES, validateTradingDnaCondition } from './registry.ts';
 import { getTradingDnaOperator } from './operators.ts';
 import type { TradingDnaOperator, TradingDnaRuleDefinition, TradingDnaValidationIssue } from './types.ts';
@@ -10,10 +11,7 @@ export type ComposerNode=ComposerGroup|ComposerCondition;
 
 const PREFIX='dna.v1.';
 const registryById=new Map(TRADING_DNA_RULES.map(rule=>[rule.id,rule]));
-const normalizedLegacyAliases:Record<string,string>={h4trendaligned:'structure.trend-alignment',h1trendaligned:'structure.trend-alignment',structurepattern:'structure.higher-high',liquiditysweep:'smart-money.liquidity-sweep',chochconfirmed:'structure.choch',bosconfirmed:'structure.bos',orderblock:'smart-money.order-block',fairvaluegap:'smart-money.fair-value-gap',premiumdiscount:'smart-money.discount',premiumdiscounted:'smart-money.discount',premium_discount:'smart-money.discount',premiumdiscounts:'smart-money.discount',retestconfirmed:'price-action.retest',rejectioncandle:'price-action.strong-rejection',volumeconfirmation:'volume.above-average',sessionrequirement:'session.london',newsfilter:'external.high-impact-news',correlationfilter:'external.correlation',trendalignmenth1:'structure.trend-alignment',trendalignmenth4:'structure.trend-alignment',breakofstructure:'structure.bos',break_of_structure:'structure.bos',breakofstructureconfirmed:'structure.bos'};
-
-function normalizeLegacyRuleKey(ruleKey:string){return ruleKey.trim().toLowerCase().replace(/[^a-z0-9]+/g,'');}
-export function resolveComposerRuleId(ruleKey:string):string|null{if(!ruleKey)return null;if(registryById.has(ruleKey))return ruleKey;const decoded=decode(ruleKey);if(decoded?.condition?.ruleId){return decoded.condition.ruleId;}const normalized=normalizeLegacyRuleKey(ruleKey);return normalized&&normalizedLegacyAliases[normalized]?normalizedLegacyAliases[normalized]:null;}
+export function resolveComposerRuleId(ruleKey:string):string|null{if(!ruleKey)return null;if(registryById.has(ruleKey))return ruleKey;const decoded=decode(ruleKey);if(decoded?.condition?.ruleId){return decoded.condition.ruleId;}return resolveActiveStrategyDnaRuleId(ruleKey);}
 
 export function createComposerGroup(id='root',logic:ComposerLogic='ALL'):ComposerGroup{return {kind:'GROUP',id,logic,children:[]};}
 export function createComposerCondition(rule:TradingDnaRuleDefinition,id:string):ComposerCondition{return {kind:'CONDITION',id,ruleId:rule.id,operator:rule.supportedOperators[0],inputs:{...rule.defaultValues},operands:[]};}

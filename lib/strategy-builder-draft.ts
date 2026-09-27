@@ -1,3 +1,6 @@
+import { defaultStopMethod, type CatalogInstrument, type MarketType } from './instrument-catalog.ts';
+import { getSupportedInstrument } from './instrument-registry.ts';
+
 export type StrategyDraftState = {
   profile: {
     id?: string;
@@ -63,41 +66,45 @@ export function hydrateDraftFromSavedProfile(profile: StrategyDraftState['profil
   };
 }
 
-export function deriveStopLimitsForInstruments(instruments: string[], limits: StrategyDraftState['stopLimits']): StrategyDraftState['stopLimits'] {
+function marketTypeFor(symbol: string, catalog: readonly CatalogInstrument[]): MarketType {
+  const resolved = catalog.find((item) => item.symbol === symbol)?.marketType;
+  if (resolved) return resolved;
+  return getSupportedInstrument(symbol)?.marketType ?? 'FOREX';
+}
+
+function defaultStopLimit(instrument: string, marketType: MarketType): StrategyDraftState['stopLimits'][number] {
+  if (marketType === 'FOREX') return { instrument, method: 'PIPS', minimumValue: 10, preferredValue: 18, maximumValue: 25 };
+  if (marketType === 'METALS') return { instrument, method: 'POINTS', minimumValue: 80, preferredValue: 180, maximumValue: 300 };
+  if (marketType === 'STOCKS' || marketType === 'ETFS' || marketType === 'CRYPTO') {
+    return { instrument, method: 'PERCENT', minimumValue: 0.25, preferredValue: 0.75, maximumValue: 2 };
+  }
+  return { instrument, method: defaultStopMethod(marketType), minimumValue: 4, preferredValue: 12, maximumValue: 40 };
+}
+
+export function deriveStopLimitsForInstruments(instruments: string[], limits: StrategyDraftState['stopLimits'], catalog: readonly CatalogInstrument[] = []): StrategyDraftState['stopLimits'] {
   const byInstrument = new Map(limits.map((limit) => [limit.instrument, limit]));
   return instruments.map((instrument) => {
     const existing = byInstrument.get(instrument);
     return existing
       ? { ...existing, instrument }
-      : {
-          instrument,
-          method: instrument.startsWith('XAU') || instrument.startsWith('XAG') ? 'POINTS' : 'PIPS',
-          minimumValue: instrument.startsWith('XAU') ? 80 : 10,
-          preferredValue: instrument.startsWith('XAU') ? 180 : 18,
-          maximumValue: instrument.startsWith('XAU') ? 300 : 25,
-        };
+      : defaultStopLimit(instrument, marketTypeFor(instrument, catalog));
   });
 }
 
-export function buildPayloadInstruments(instruments: string[]) {
+export function buildPayloadInstruments(instruments: string[], catalog: readonly CatalogInstrument[] = []) {
   return instruments.map((symbol, index) => ({
     symbol,
-    market_type: symbol.startsWith('XAU') || symbol.startsWith('XAG') ? 'METALS' : 'FOREX',
-    provider_symbol: null,
+    market_type: marketTypeFor(symbol, catalog),
+    provider_symbol: catalog.find((item) => item.symbol === symbol)?.providerSymbol ?? getSupportedInstrument(symbol)?.twelveDataSymbol ?? null,
     sort_order: index,
     enabled: true,
   }));
 }
 
-export function buildPayloadStopLimits(instruments: string[], stopLimits: StrategyDraftState['stopLimits']) {
+export function buildPayloadStopLimits(instruments: string[], stopLimits: StrategyDraftState['stopLimits'], catalog: readonly CatalogInstrument[] = []) {
   return instruments.map((instrument) => {
-    const current = stopLimits.find((limit) => limit.instrument === instrument) ?? {
-      instrument,
-      method: instrument.startsWith('XAU') || instrument.startsWith('XAG') ? 'POINTS' : 'PIPS',
-      minimumValue: instrument.startsWith('XAU') ? 80 : 10,
-      preferredValue: instrument.startsWith('XAU') ? 180 : 18,
-      maximumValue: instrument.startsWith('XAU') ? 300 : 25,
-    };
+    const current = stopLimits.find((limit) => limit.instrument === instrument)
+      ?? defaultStopLimit(instrument, marketTypeFor(instrument, catalog));
 
     return {
       instrument,

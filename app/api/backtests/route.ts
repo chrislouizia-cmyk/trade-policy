@@ -5,8 +5,9 @@ import { createBacktestRun, freezeStrategyForBacktest, getBacktestPlanCodeForUse
 import { apiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { loadStrategyById } from '@/lib/server/active-strategy';
-import { isSupportedInstrument } from '@/lib/instrument-registry';
+import { canUseInstrument, canonicalSymbol, catalogInstrumentFromRow } from '@/lib/instrument-catalog';
 import { buildHistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
+import { resolveInstrumentAccessContext } from '@/lib/server/instrument-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,13 +45,35 @@ export async function POST(request: Request) {
     }
 
     const payload = parsed.data;
+    const instrumentAccess = await resolveInstrumentAccessContext(supabase);
     const strategy = await loadStrategyById(supabase, user.id, payload.strategyProfileId);
-    if (!isSupportedInstrument(payload.instrument)) {
+    const requestedInstrument = canonicalSymbol(payload.instrument);
+    const { data: strategyInstrumentRows, error: strategyInstrumentError } = await supabase
+      .from('strategy_instruments')
+      .select('symbol,market_type,provider_symbol')
+      .eq('strategy_id', payload.strategyProfileId)
+      .eq('user_id', user.id)
+      .eq('symbol', requestedInstrument)
+      .eq('enabled', true)
+      .limit(2);
+    if (strategyInstrumentError) throw strategyInstrumentError;
+    if (strategyInstrumentRows?.length !== 1) {
+      return apiError('BACKTEST_INSTRUMENT_NOT_IN_STRATEGY', `${payload.instrument} is not uniquely enabled for this strategy.`, 400);
+    }
+    const strategyInstrument = strategyInstrumentRows[0]!;
+    const { data: catalogRow, error: catalogError } = await supabase
+      .from('instrument_catalog')
+      .select('symbol,display_name,market_type,category,provider_symbol,exchange,country,base_currency,quote_currency,is_active,metadata')
+      .eq('symbol', requestedInstrument)
+      .eq('market_type', strategyInstrument.market_type)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (catalogError) throw catalogError;
+    const catalogInstrument = catalogRow ? catalogInstrumentFromRow(catalogRow as any) : null;
+    if (!catalogInstrument || !canUseInstrument(catalogInstrument, 'BACKTEST', instrumentAccess)) {
       return apiError('BACKTEST_INSTRUMENT_UNSUPPORTED', `Backtesting is not available for ${payload.instrument}.`, 400);
     }
-    if (!strategy.instruments.includes(payload.instrument)) {
-      return apiError('BACKTEST_INSTRUMENT_NOT_IN_STRATEGY', `${payload.instrument} is not enabled for this strategy.`, 400);
-    }
+    if (!strategy.instruments.includes(requestedInstrument)) return apiError('BACKTEST_INSTRUMENT_NOT_IN_STRATEGY', `${payload.instrument} is not enabled for this strategy.`, 400);
     const historicalRulePlan = buildHistoricalRulePlan(strategy);
     if (historicalRulePlan.unsupportedRequiredRules.length) {
       return apiError(
@@ -70,7 +93,7 @@ export async function POST(request: Request) {
       strategyRevisionId: frozen.strategyRevisionId,
       strategySnapshotHash: frozen.strategySnapshotHash,
       strategySnapshotJson: frozen.strategySnapshotJson,
-      instrument: payload.instrument,
+      instrument: requestedInstrument,
       executionTimeframe: payload.executionTimeframe,
       periodStart: payload.periodStart,
       periodEnd: payload.periodEnd,
@@ -80,7 +103,13 @@ export async function POST(request: Request) {
       engineVersion: payload.engineVersion,
       dataProvider: payload.dataProvider,
       dataRevisionFingerprint: payload.dataRevisionFingerprint,
-      metadata: payload.metadata,
+      metadata: {
+        ...payload.metadata,
+        providerSymbol: catalogInstrument.providerSymbol,
+        marketType: catalogInstrument.marketType,
+        exchange: catalogInstrument.exchange ?? null,
+        instrumentCapabilities: [...catalogInstrument.capabilities],
+      },
       planCode,
       idempotencyKey: payload.idempotencyKey ?? null,
     });

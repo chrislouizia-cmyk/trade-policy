@@ -33,6 +33,7 @@ import {useLocale} from '@/components/i18n/LocaleProvider';
 import {workspaceText} from '@/lib/i18n/workspace-copy';
 import {writeUserScopedSelection} from '@/lib/user-session-state';
 import {reconcileStrategyDeletion} from '@/lib/strategy-deletion-state';
+import {catalogInstrumentFromRow} from '@/lib/instrument-catalog';
 
 const TIMEFRAMES = ['M1','M3','M5','M15','M30','H1','H2','H4','H6','H8','H12','D1','W1','MN'];
 const BUILDER_STEPS = [
@@ -222,8 +223,8 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   }, [profiles, selectedStrategyId, requestedMode, v2Baseline, v2Draft]);
 
   useEffect(() => {
-    setStopLimits((current) => deriveStopLimitsForInstruments(profile.instruments, current));
-  }, [profile.instruments]);
+    setStopLimits((current) => deriveStopLimitsForInstruments(profile.instruments, current, catalog));
+  }, [profile.instruments, catalog]);
 
   function updateUserTimezone(timezone: string) {
     setUserTimezone(timezone);
@@ -243,7 +244,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       async () => {
         const [{ data: profileRows, error: profileError }, { data: catalogRows, error: catalogError }] = await Promise.all([
           supabase.from('strategy_profiles').select('*').order('is_archived', { ascending: true }).order('created_at', { ascending: true }),
-          supabase.from('instrument_catalog').select('symbol,display_name,market_type,category').eq('is_active', true).order('symbol'),
+          supabase.from('instrument_catalog').select('symbol,display_name,market_type,category,provider_symbol,exchange,country,base_currency,quote_currency,is_active,metadata').eq('is_active', true).order('symbol').limit(250),
         ]);
 
         if (profileError) {
@@ -258,7 +259,10 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
       },
       async ({ profileRows, catalogRows }) => {
         if (catalogRows?.length) {
-          setCatalog(catalogRows.map((row: any) => ({ symbol: row.symbol, displayName: row.display_name, marketType: row.market_type, category: row.category })));
+          setCatalog(catalogRows.flatMap((row: any) => {
+            const instrument = catalogInstrumentFromRow(row);
+            return instrument ? [instrument] : [];
+          }));
         }
 
         const mapped = (profileRows ?? []).map(profileFromRow);
@@ -464,7 +468,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
     };
     const response=await fetch('/api/strategies/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       strategyId:saveProfile.id??null,activate:Boolean(saveProfile.isDefault),profile:row,
-      instruments:buildPayloadInstruments(saveProfile.instruments), sessions:saveSessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})), rules:strategyRulePersistenceRows(saveRules),stopLimits:buildPayloadStopLimits(saveProfile.instruments, saveStops),
+      instruments:buildPayloadInstruments(saveProfile.instruments, catalog), sessions:saveSessions.map(session=>({session_code:session.sessionCode,name:session.name,timezone:session.timezone,start_time:session.startTime,end_time:session.endTime,days:session.days,allow_open_outside:session.allowOpenOutside,allow_hold_outside:session.allowHoldOutside,is_custom:Boolean(session.isCustom)})), rules:strategyRulePersistenceRows(saveRules),stopLimits:buildPayloadStopLimits(saveProfile.instruments, saveStops, catalog),
     })});
     const result=await response.json();
     if(!response.ok)throw new Error(apiErrorMessage(result,'Could not save strategy.'));
@@ -630,7 +634,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
   if (learningConfirmation) return <><section className="card strategy-save-success" aria-live="polite"><strong>Strategy saved — {savedStrategy?.name??learningConfirmation.profile.name}</strong><p>{savedStrategy?.isDefault?'Active strategy':'Saved strategy — not active.'}</p><button type="button" onClick={()=>{setLearningConfirmation(null);void loadAll(savedStrategy?.id)}}>View strategy</button></section><StrategyLearningConfirmation profile={learningConfirmation.profile} rules={learningConfirmation.rules} onEdit={()=>{void trackBetaEvent('METHODOLOGY_REJECTED',learningConfirmation.profile.id);setLearningConfirmation(null);setBuilderStep('identity')}} onConfirm={()=>{void trackBetaEvent('METHODOLOGY_CONFIRMED',learningConfirmation.profile.id);setVerification(learningConfirmation);setLearningConfirmation(null)}}/></>;
   if (canonicalCompletion) return <section className="card strategy-save-success" aria-live="polite"><p className="eyebrow">{w(canonicalCompletion.isDefault?'STRATEGY SAVED AND ACTIVE':'STRATEGY SAVED')}</p><h2>{canonicalCompletion.name}</h2><p>{w(canonicalCompletion.isDefault?'Trade Police will now use this strategy for new decisions.':'Your strategy is saved. It will not replace your active strategy.')}</p><p className="muted">{w('Next, you can check a market setup against these rules or return to your strategies.')}</p><div className="button-row"><a className="button-link primary" href={`/validate?strategy=${encodeURIComponent(canonicalCompletion.id)}`}>{w('Check a setup')}</a><button type="button" onClick={()=>{const id=canonicalCompletion.id;setCanonicalCompletion(null);void loadAll(id)}}>{w('View my strategies')}</button></div></section>;
   if (v2EntryOpen) {
-    return <><StrategyBuilderV2 key={`${v2EntryMode}:${profile.id??'new'}`} profile={profile} initialState={v2State} mode={v2EntryMode} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Review and confirm the current strategy before saving, or discard the changes.</p><div className="button-row"><button className="primary" onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Continue to review</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
+    return <><StrategyBuilderV2 key={`${v2EntryMode}:${profile.id??'new'}`} profile={profile} initialState={v2State} mode={v2EntryMode} catalog={catalog} onInstrumentResolved={(instrument)=>setCatalog((current)=>current.some((item)=>item.symbol===instrument.symbol&&item.marketType===instrument.marketType)?current:[...current,instrument])} onApply={handleV2Apply} onStateChange={(state)=>{setV2Draft(state);setV2Baseline(current=>current??state)}} onCancel={() => { if(v2Baseline&&v2Draft&&isStrategyDirty(v2Baseline,v2Draft)){setPendingNavigation(()=>()=>{setV2EntryOpen(false);setBuilderStep('identity')});setDirtyPrompt(true);return;} setV2EntryOpen(false); setBuilderStep('identity'); }} />{dirtyPrompt&&<div className="full-report-overlay" role="dialog" aria-modal="true"><section className="full-report-modal"><header className="full-report-header"><h2>Unsaved changes</h2></header><div className="full-report-body"><p>Review and confirm the current strategy before saving, or discard the changes.</p><div className="button-row"><button className="primary" onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Continue to review</button><button onClick={()=>{setV2Draft(v2Baseline);setV2State(v2Baseline??undefined);const next=pendingNavigation;setDirtyPrompt(false);setPendingNavigation(null);next?.()}}>Discard changes</button><button onClick={()=>{setDirtyPrompt(false);setPendingNavigation(null)}}>Cancel</button></div></div></section></div>}</>;
   }
 
   if (selectedProfile) {
@@ -720,7 +724,7 @@ export default function StrategyBuilder({ userId, planCode = 'FREE' }: { userId:
           </div>
         </div>
 
-        <div className="card builder-section step-markets"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('What do you trade?')}</h2><p>{w('Choose every instrument that belongs to this strategy.')}</p></div></div><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} /></div>
+        <div className="card builder-section step-markets"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('What do you trade?')}</h2><p>{w('Choose every instrument that belongs to this strategy.')}</p></div></div><InstrumentSelector catalog={catalog} selected={profile.instruments} onChange={(instruments) => setProfile({ ...profile, instruments })} onInstrumentResolved={(instrument)=>setCatalog((current)=>current.some((item)=>item.symbol===instrument.symbol&&item.marketType===instrument.marketType)?current:[...current,instrument])} /></div>
 
         <div className="card builder-section step-timeframes"><div className="conversation-prompt"><span aria-hidden="true">TP</span><div><h2>{w('How do you read price from context to entry?')}</h2><p>{w('Teach me the five layers you use to move from the bigger picture to the trigger.')}</p></div></div><div className="grid grid-3">
           {([['macroTimeframe','Macro'],['trendTimeframe','Trend'],['confirmationTimeframe','Confirmation'],['entryTimeframe','Entry'],['triggerTimeframe','Trigger']] as [keyof StrategyProfile,string][]).map(([key,label]) => <label key={String(key)}>{label}<select value={String(profile[key] ?? '')} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}>{TIMEFRAMES.map((timeframe) => <option key={timeframe}>{timeframe}</option>)}</select></label>)}

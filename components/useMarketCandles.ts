@@ -180,7 +180,7 @@ export function getPollingIntervalMs(timeframe: string): number {
   }
 }
 
-export function useMarketCandles(instrument: string, timeframe: string, options?: {seedCandles?: readonly Candle[];seedProvider?: string|null;automaticLoad?: boolean}) {
+export function useMarketCandles(instrument: string, timeframe: string, options?: {seedCandles?: readonly Candle[];seedProvider?: string|null;automaticLoad?: boolean;strategyId?:string}) {
   const seedCandles=options?.seedCandles??[];
   const automaticLoad=options?.automaticLoad??false;
   const [range, setRange] = useState(() => candleRangeForTimeframe(timeframe));
@@ -227,6 +227,7 @@ export function useMarketCandles(instrument: string, timeframe: string, options?
 
     const controller = new AbortController();
     const params = new URLSearchParams({ instrument, timeframe, from: activeRange.from, to: activeRange.to });
+    if(options?.strategyId)params.set('strategyId',options.strategyId);
     try {
       const response = await fetch(`/api/market/candles?${params}`, { cache: 'no-store', signal: controller.signal,headers:{'Idempotency-Key':crypto.randomUUID()} });
       const payload = await readApiResponse(response) as { candles?: Candle[]; provider?: string; error?: unknown; message?: string } | null;
@@ -268,7 +269,7 @@ export function useMarketCandles(instrument: string, timeframe: string, options?
         }
       }
     }
-  }, [instrument, timeframe]);
+  }, [instrument, timeframe, options?.strategyId]);
 
   const refetch = useCallback(async () => {
     if (inFlightRef.current || loading || refreshing) return;

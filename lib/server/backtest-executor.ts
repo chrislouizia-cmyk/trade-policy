@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 
-import { twelveDataSymbolFor } from '@/lib/instrument-registry';
+import { providerSymbol as fallbackProviderSymbol } from '@/lib/market-data';
 
 import { buildLiveAnalysis, type Candle } from '@/lib/market-analysis';
 import { evaluateHistoricalRulePlan, type HistoricalRuleEvaluationResult } from '@/lib/backtesting/historical-detectors';
@@ -11,9 +11,15 @@ import { strategyTimeframes } from '@/lib/strategy-timeframes';
 import type { BacktestRun } from '@/types/backtesting';
 import type { StrategyProfile } from '@/types/trade';
 import { HISTORICAL_TIMEFRAMES } from '@/lib/backtesting/historical-timeframes';
+import { evaluateBacktestRiskGeometry } from '@/lib/backtesting/risk-geometry';
 
 const FRAME_MINUTES: Record<string, number> = Object.fromEntries(Object.entries(HISTORICAL_TIMEFRAMES).map(([timeframe, capability]) => [timeframe, capability.minutes]));
 const TWELVE_INTERVAL: Record<string, string> = Object.fromEntries(Object.entries(HISTORICAL_TIMEFRAMES).map(([timeframe, capability]) => [timeframe, capability.providerInterval]));
+
+function providerSymbolForRun(run: BacktestRun): string {
+  const frozen = run.metadata?.providerSymbol;
+  return typeof frozen === 'string' && frozen.trim() ? frozen.trim() : fallbackProviderSymbol(run.instrument);
+}
 
 type SimulatedTrade = {
   sequence: number; signal_timestamp: string; entry_timestamp: string; exit_timestamp: string;
@@ -147,7 +153,7 @@ function isoWithoutZone(value: number) {
   return new Date(value).toISOString().slice(0, 19);
 }
 
-async function fetchHistoricalFrame(instrument: string, timeframe: string, startAt: string, endAt: string): Promise<Candle[]> {
+async function fetchHistoricalFrame(instrument: string, providerSymbol: string, timeframe: string, startAt: string, endAt: string): Promise<Candle[]> {
   const apiKey = process.env.TWELVE_DATA_API_KEY;
   if (!apiKey) throw new Error('TWELVE_DATA_API_KEY is not configured for the backtest executor.');
   const minutes = FRAME_MINUTES[timeframe];
@@ -166,7 +172,7 @@ async function fetchHistoricalFrame(instrument: string, timeframe: string, start
     const chunkEnd = Math.min(endMs, cursor + chunkSpanMs);
     const url = new URL('https://api.twelvedata.com/time_series');
     const params = {
-      symbol: twelveDataSymbolFor(instrument), interval, timezone: 'UTC',
+      symbol: providerSymbol, interval, timezone: 'UTC',
       start_date: isoWithoutZone(cursor), end_date: isoWithoutZone(chunkEnd), order: 'ASC', apikey: apiKey,
     };
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -464,7 +470,7 @@ export function simulateBacktestFromSeries(
 
     let analysis;
     try {
-      analysis = buildLiveAnalysis(run.instrument, strategy, series, 'Twelve Data historical replay', twelveDataSymbolFor(run.instrument), signalTimestampUtc);
+      analysis = buildLiveAnalysis(run.instrument, strategy, series, 'Twelve Data historical replay', providerSymbolForRun(run), signalTimestampUtc);
       diagnostics.analysis_completed += 1;
     } catch (error) {
       diagnostics.analysis_errors += 1;
@@ -564,12 +570,20 @@ export function simulateBacktestFromSeries(
     const signalEntry = (candidate.entryLow + candidate.entryHigh) / 2;
     const originalStopDistance = Math.abs(signalEntry - candidate.stopLoss);
     const originalTargetDistance = Math.abs(candidate.takeProfit - signalEntry);
-    if (!(originalStopDistance > 0) || !(originalTargetDistance > 0)) {
+    const riskGeometry = evaluateBacktestRiskGeometry(strategy, run.instrument, signalEntry, candidate.stopLoss, candidate.takeProfit);
+    if (!riskGeometry.passed) {
       diagnostics.rejected_invalid_risk_geometry += 1;
       recordCandidateEvent({
         direction: eventDirection(candidate.direction), disposition: 'ABORTED', terminal_stage: 'RISK_GEOMETRY',
-        terminal_reason: 'The setup passed, but entry, stop, and target did not form valid positive risk geometry.', blocking_rule_id: 'risk-geometry',
-        evidence: { signal_entry: signalEntry, stop_loss: candidate.stopLoss, take_profit: candidate.takeProfit, original_stop_distance: originalStopDistance, original_target_distance: originalTargetDistance },
+        terminal_reason: riskGeometry.reason === 'STOP_BELOW_MINIMUM'
+          ? 'The setup passed, but its structural stop was below the saved minimum and was rejected as scalp-like.'
+          : riskGeometry.reason === 'STOP_ABOVE_MAXIMUM'
+            ? 'The setup passed, but its structural stop exceeded the saved strategy maximum.'
+            : riskGeometry.reason === 'RR_BELOW_MINIMUM'
+              ? 'The setup passed, but its reward/risk was below the saved hard minimum.'
+              : 'The setup passed, but entry, stop, and target did not form valid positive risk geometry.',
+        blocking_rule_id: riskGeometry.reason === 'RR_BELOW_MINIMUM'?'minimum-rr':'risk-geometry',
+        evidence: { signal_entry: signalEntry, stop_loss: candidate.stopLoss, take_profit: candidate.takeProfit, original_stop_distance: originalStopDistance, original_target_distance: originalTargetDistance, ...riskGeometry },
         official_trade_sequence: null, official_performance: false,
       });
       i += 1;
@@ -687,7 +701,7 @@ export function simulateBacktestFromSeries(
     metadata: {
       executor: 'TRADE_POLICE_BACKTEST_V1',
       provider: 'Twelve Data',
-      provider_symbol: twelveDataSymbolFor(run.instrument),
+      provider_symbol: providerSymbolForRun(run),
       candidate_evidence_version: 1,
       historical_data_fingerprint: historicalDataFingerprint(run.instrument, historical, frames),
       canonical_timezone: 'UTC',
@@ -760,7 +774,7 @@ export async function executeBacktestRun(run: BacktestRun): Promise<BacktestExec
     const minutes = FRAME_MINUTES[frame];
     if (!minutes || !TWELVE_INTERVAL[frame]) throw new Error(`Historical backtesting does not yet support timeframe ${frame}.`);
     const warmupStart = new Date(periodStart - minutes * 60_000 * historicalWarmupBars(rulePlan, frame)).toISOString();
-    historical[frame] = await fetchHistoricalFrame(run.instrument, frame, warmupStart, new Date(periodEnd).toISOString());
+    historical[frame] = await fetchHistoricalFrame(run.instrument, providerSymbolForRun(run), frame, warmupStart, new Date(periodEnd).toISOString());
   }
   const output = simulateBacktestFromSeries(run, strategy, historical);
   if (!output.complete) throw new Error('Unbounded backtest execution unexpectedly returned a checkpoint.');

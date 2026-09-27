@@ -17,7 +17,7 @@ test('every Trading DNA registry rule is executable',()=>{
   let tree=createComposerGroup();const facts:Record<string,unknown>={};
   TRADING_DNA_RULES.forEach((rule,index)=>{const fixture=executableCondition(rule.id,index);tree=appendComposerNode(tree,'root',fixture.condition);facts[fixture.condition.id]=fixture.actual});
   const report=evaluateTradingDnaRuntime(strategyRulesFromComposerTree(tree),{facts},()=> '2026-01-01T00:00:00.000Z');
-  assert.equal(report.conditions.length,53);
+  assert.equal(report.conditions.length,TRADING_DNA_RULES.length);
   assert.equal(report.counts.pending,0);
   assert.ok(report.conditions.every(item=>item.reason.length>0));
 });

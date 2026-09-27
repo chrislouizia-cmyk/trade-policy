@@ -126,10 +126,10 @@ export function extractProviderPrice(payload: Record<string, unknown>): number |
 export async function fetchSeries(symbol: string, timeframe: string, outputsize = 120): Promise<Candle[]> {
   return (await fetchSeriesWithTelemetry(symbol,timeframe,outputsize)).value;
 }
-export async function fetchSeriesWithTelemetry(symbol: string, timeframe: string, outputsize = 120): Promise<ProviderResult<Candle[]>> {
+export async function fetchSeriesWithTelemetry(symbol: string, timeframe: string, outputsize = 120, providerSymbolOverride?: string): Promise<ProviderResult<Candle[]>> {
   if (!isMarketDataTimeframe(timeframe)) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
   const result = await request({
-    endpoint: 'time_series', symbol: providerSymbol(symbol),
+    endpoint: 'time_series', symbol: providerSymbolOverride?.trim() || providerSymbol(symbol),
     interval: MARKET_DATA_INTERVALS[timeframe],
     outputsize: String(outputsize), order: 'ASC',
   });
@@ -161,13 +161,13 @@ export function normalizeTwelveDataCandles(values: unknown[], symbol = 'instrume
   return candles;
 }
 
-export async function fetchSeriesRange(symbol: string, timeframe: string, from: string, to: string): Promise<Candle[]> {
-  return (await fetchSeriesRangeWithTelemetry(symbol,timeframe,from,to)).value;
+export async function fetchSeriesRange(symbol: string, timeframe: string, from: string, to: string, providerSymbolOverride?: string): Promise<Candle[]> {
+  return (await fetchSeriesRangeWithTelemetry(symbol,timeframe,from,to,providerSymbolOverride)).value;
 }
-export async function fetchSeriesRangeWithTelemetry(symbol: string, timeframe: string, from: string, to: string): Promise<ProviderResult<Candle[]>> {
+export async function fetchSeriesRangeWithTelemetry(symbol: string, timeframe: string, from: string, to: string, providerSymbolOverride?: string): Promise<ProviderResult<Candle[]>> {
   if (!isMarketDataTimeframe(timeframe)) throw new Error(`Unsupported market-data timeframe: ${timeframe}.`);
   const result = await request({
-    endpoint: 'time_series', symbol: providerSymbol(symbol), interval: MARKET_DATA_INTERVALS[timeframe],
+    endpoint: 'time_series', symbol: providerSymbolOverride?.trim() || providerSymbol(symbol), interval: MARKET_DATA_INTERVALS[timeframe],
     start_date: new Date(from).toISOString(), end_date: new Date(to).toISOString(), outputsize: '5000', order: 'ASC', timezone: 'UTC',
   });
   const json=result.value;
@@ -178,8 +178,8 @@ export async function fetchSeriesRangeWithTelemetry(symbol: string, timeframe: s
 export async function fetchPriceQuote(symbol: string): Promise<{ price: number; providerTimestamp: string | null; providerEventTimeMs: number | null; serverReceivedAt: string; raw: Record<string, unknown> }> {
   return (await fetchPriceQuoteWithTelemetry(symbol)).value;
 }
-export async function fetchPriceQuoteWithTelemetry(symbol: string):Promise<ProviderResult<{ price: number; providerTimestamp: string | null; providerEventTimeMs: number | null; serverReceivedAt: string; raw: Record<string, unknown> }>>{
-  const result = await request({ endpoint: 'quote', symbol: providerSymbol(symbol) });
+export async function fetchPriceQuoteWithTelemetry(symbol: string, providerSymbolOverride?: string):Promise<ProviderResult<{ price: number; providerTimestamp: string | null; providerEventTimeMs: number | null; serverReceivedAt: string; raw: Record<string, unknown> }>>{
+  const result = await request({ endpoint: 'quote', symbol: providerSymbolOverride?.trim() || providerSymbol(symbol) });
   const json=result.value;
   const payload = json as Record<string, unknown>;
   const price = extractProviderPrice(payload);

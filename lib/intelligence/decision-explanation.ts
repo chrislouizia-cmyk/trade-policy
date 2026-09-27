@@ -36,6 +36,11 @@ function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorization
   // the required evidence report. A candidate is only a market suggestion and
   // must not turn a complete required setup back into WAIT.
   if(!result&&requiredConditions.length>0)return 'READY';
+  if(!result&&analysis.setupReadiness){
+    if(analysis.setupReadiness.state==='NOT_READY')return 'BLOCKED';
+    if(analysis.setupReadiness.state==='WAITING_FOR_CONFIRMATION'||analysis.setupReadiness.state==='CONFIGURATION_REQUIRED')return 'WAIT';
+    if(analysis.setupReadiness.state==='READY')return 'READY';
+  }
   if(authorizationEligibility){
     if(authorizationEligibility.state==='BLOCKED'||authorizationEligibility.state==='DATA_UNAVAILABLE')return authorizationEligibility.state==='BLOCKED'?'BLOCKED':'DATA_UNAVAILABLE';
     if(authorizationEligibility.state==='WAIT')return 'WAIT';
@@ -44,7 +49,7 @@ function verdictFor(analysis:ChartAnalysis,result:TradeResult|null,authorization
   if(result?.verdict==='AUTHORIZED')return 'READY';
   if(result?.verdict==='REJECTED')return 'BLOCKED';
   if(result?.verdict==='WAIT')return 'WAIT';
-  return analysis.candidates.some(candidate=>candidate.status==='READY')?'READY':'WAIT';
+  return 'WAIT';
 }
 
 function actionFor(condition:ConditionEvidence,narrative?:DecisionNarrative):NextAction|undefined{

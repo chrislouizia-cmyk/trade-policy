@@ -5,12 +5,11 @@ import { CandlestickSeries, ColorType, createChart, LineStyle, type IChartApi, t
 
 import { buildChartPositionOverlayLayout, type ChartPositionOverlayLayout } from '@/lib/chart-position-overlay';
 import type { Candle } from '@/lib/market-analysis';
-import { getSupportedInstrument } from '@/lib/instrument-registry';
 import { assessPositionGeometry, resolveLifecycleAnchorIndex, type PositionOverlayModel } from '@/lib/position-geometry';
 import { deriveMarketSummary, formatPrice, useMarketCandles } from './useMarketCandles';
 import { buildDisplayChartData, deriveDisplayChartTime } from './chartDisplayTime';
 
-type Props = { instrument: string; timeframe: string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; onDataReady?: (candleCount:number) => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
+type Props = { instrument: string; timeframe: string; strategyId?:string; overlay: PositionOverlayModel | null; onOverlayClick?: () => void; onDataReady?: (candleCount:number) => void; seedCandles?: readonly Candle[]; seedProvider?: string|null };
 const EMPTY_CANDLES:readonly Candle[]=[];
 
 type PriceLine = ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
@@ -64,7 +63,7 @@ export function getTimeframeSeconds(timeframe: string): number {
   }
 }
 
-export default function MarketPositionChart({ instrument, timeframe, overlay, onOverlayClick,onDataReady,seedCandles=EMPTY_CANDLES,seedProvider=null }: Props) {
+export default function MarketPositionChart({ instrument, timeframe, strategyId, overlay, onOverlayClick,onDataReady,seedCandles=EMPTY_CANDLES,seedProvider=null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -81,8 +80,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [positionVisual, setPositionVisual] = useState<ChartPositionOverlayLayout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument,timeframe,{seedCandles,seedProvider,automaticLoad:false});
-  const instrumentMeta = getSupportedInstrument(instrument);
+  const { candles, loading, refreshing, error, provider, refetch } = useMarketCandles(instrument,timeframe,{seedCandles,seedProvider,automaticLoad:false,strategyId});
   const priceScaleConfig = useMemo(() => getInstrumentPriceScaleConfig(instrument), [instrument]);
   const isInitialLoad = loading && candles.length === 0;
 
@@ -335,7 +333,7 @@ export default function MarketPositionChart({ instrument, timeframe, overlay, on
     <div className="market-position-header">
       <div className="market-position-symbol-block">
         <strong>{instrument}</strong>
-        <span>{instrumentMeta?.displayName ?? 'Instrument'}</span>
+        <span>Verified market instrument</span>
       </div>
       <div className="market-position-meta-block">
         <span className="market-position-timeframe">{timeframe}</span>

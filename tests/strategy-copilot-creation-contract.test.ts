@@ -98,6 +98,17 @@ test('natural-language risk and RR survive when the model omits both values', ()
   assert.equal(mapped.assessment.missingFields.includes('minimumRR'), false);
 });
 
+test('Copilot accepts provider-catalog instruments dynamically and still rejects unknown symbols', () => {
+  const stockReply = reply({ strategyDraft: { ...reply().strategyDraft, instrument: 'AAPL', instruments: ['AAPL'] } });
+  const accepted = normalizeStrategyCopilotReply(stockReply, emptyStrategyCopilotDraft(), { supportedInstruments: ['AAPL'] });
+  assert.deepEqual(accepted.strategyDraft.instruments, ['AAPL']);
+  assert.equal(accepted.unresolvedQuestions.some((item) => item.includes('Unsupported instrument')), false);
+
+  const rejected = normalizeStrategyCopilotReply(stockReply, emptyStrategyCopilotDraft(), { supportedInstruments: ['MSFT'] });
+  assert.deepEqual(rejected.strategyDraft.instruments, undefined);
+  assert.equal(rejected.unresolvedQuestions.some((item) => item === 'Unsupported instrument: AAPL'), true);
+});
+
 test('an explicit answer repairs sensitive provenance even when its value is unchanged', () => {
   const inferred = mapCopilotReplyToCanonicalCreation({
     userMessage: 'Build a conservative London strategy for me.',

@@ -62,9 +62,11 @@ This version adds a screenshot-free live-data mode. The embedded TradingView cha
 
 ```env
 TWELVE_DATA_API_KEY=your_twelve_data_api_key
+TWELVE_DATA_INTERNAL_TEST_ENABLED=false
+TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED=false
 ```
 
-Create a Twelve Data API key, add it to `.env.local`, and restart `npm run dev`.
+Create a Twelve Data API key, add it to `.env.local`, and restart `npm run dev`. Set `TWELVE_DATA_INTERNAL_TEST_ENABLED=true` only for a closed internal testing environment; access is additionally limited to accepted active staff accounts. Keep `TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED=false` until client-facing display rights are contractually confirmed.
 
 ### Additional Supabase migration
 

@@ -41,6 +41,7 @@ export const METHODOLOGY_LIBRARY: MethodologyLibrary[] = [
     summary: 'Liquidity, structure, and execution context.',
     rules: [
       { key: 'liquidity-sweep', label: 'Liquidity Sweep', capability: 'AUTOMATIC', description: 'Sweep of prior highs and lows before trend continuation or reversal.' },
+      { key: 'displacement', label: 'Displacement', capability: 'AUTOMATIC', description: 'Impulse candle whose body expands beyond the configured ATR and candle-range thresholds.' },
       { key: 'choch', label: 'CHoCH', capability: 'AUTOMATIC', description: 'Change of character after prior structure breaks.' },
       { key: 'bos', label: 'BOS', capability: 'AUTOMATIC', description: 'Break of structure confirming directional continuation.' },
       { key: 'order-block', label: 'Order Block', capability: 'MANUAL', description: 'Contextual supply or demand zone requiring confirmation.' },
@@ -348,6 +349,9 @@ export function parseCopilotPrompt(prompt: string): {
 
   if (lower.includes('liquidity sweep') || lower.includes('liquidity')) selectedRuleKeys.push('liquidity-sweep');
   if (lower.includes('choch')) selectedRuleKeys.push('choch');
+  if (lower.includes('displacement')) selectedRuleKeys.push('displacement');
+  if (lower.includes('bos') || lower.includes('break of structure')) selectedRuleKeys.push('bos');
+  if (lower.includes('retest')) selectedRuleKeys.push('retest');
   if (lower.includes('order block') || lower.includes('ob')) selectedRuleKeys.push('order-block');
   if (lower.includes('fair value gap') || lower.includes('fvg')) selectedRuleKeys.push('fair-value-gap');
   if (lower.includes('support')) selectedRuleKeys.push('support-zone');

@@ -8,6 +8,7 @@ export type HistoricalDetectorId =
   | 'market-structure.bos'
   | 'market-structure.choch'
   | 'market-structure.liquidity-sweep'
+  | 'price-action.displacement'
   | 'price-action.range-break'
   | 'price-action.breakout-confirmation'
   | 'market-structure.trend-alignment'
@@ -78,6 +79,7 @@ const DETECTOR_VERSION: Record<HistoricalDetectorId, string> = {
   'market-structure.bos': '1.0.0',
   'market-structure.choch': '1.0.0',
   'market-structure.liquidity-sweep': '1.0.0',
+  'price-action.displacement': '1.0.0',
   'price-action.range-break': '1.0.0',
   'price-action.breakout-confirmation': '1.0.0',
   'market-structure.trend-alignment': '1.0.0',
@@ -99,6 +101,7 @@ const aliases: Record<string, HistoricalDetectorId> = {
   bos: 'market-structure.bos', bosconfirmed: 'market-structure.bos', breakofstructure: 'market-structure.bos', structurebos: 'market-structure.bos',
   choch: 'market-structure.choch', chochconfirmed: 'market-structure.choch', changeofcharacter: 'market-structure.choch', structurechoch: 'market-structure.choch',
   liquiditysweep: 'market-structure.liquidity-sweep', liquiditygrab: 'market-structure.liquidity-sweep', smartmoneyliquiditysweep: 'market-structure.liquidity-sweep',
+  displacement: 'price-action.displacement', smartmoneydisplacement: 'price-action.displacement', impulse: 'price-action.displacement', impulsecandle: 'price-action.displacement',
   rangebreak: 'price-action.range-break', priceactionrangebreak: 'price-action.range-break',
   breakoutconfirmation: 'price-action.breakout-confirmation', priceactionbreakoutconfirmation: 'price-action.breakout-confirmation', breakoutclose: 'price-action.breakout-confirmation',
   trendalignment: 'market-structure.trend-alignment', h4trendaligned: 'market-structure.trend-alignment', h1trendaligned: 'market-structure.trend-alignment', structuretrendalignment: 'market-structure.trend-alignment',
@@ -138,6 +141,7 @@ export const HISTORICAL_OPERATOR_MATRIX: Readonly<Record<HistoricalDetectorId, R
   'market-structure.bos': EVENT_OPERATORS,
   'market-structure.choch': EVENT_OPERATORS,
   'market-structure.liquidity-sweep': EVENT_OPERATORS,
+  'price-action.displacement': EVENT_OPERATORS,
   'price-action.range-break': EVENT_OPERATORS,
   'price-action.breakout-confirmation': EVENT_OPERATORS,
   'market-structure.trend-alignment': EVENT_OPERATORS,
@@ -261,6 +265,11 @@ function canonicalRule(strategy: StrategyProfile, rule: StrategyRule, index: num
       parameters.excursionToleranceAbsolute = numberValue(inputs, ['excursionToleranceAbsolute'], 0, sources);
       parameters.reclaimToleranceAbsolute = numberValue(inputs, ['reclaimToleranceAbsolute'], 0, sources);
       parameters.bosConflictPolicy = inputs.bosConflictPolicy ?? 'BOS_WINS'; sources.bosConflictPolicy = inputs.bosConflictPolicy ? explicit() : defaulted();
+      break;
+    case 'price-action.displacement':
+      parameters.atrPeriod = numberValue(inputs, ['atrPeriod', 'period'], 14, sources);
+      parameters.atrMultiple = numberValue(inputs, ['atrMultiple'], 1.1, sources);
+      parameters.bodyRangeRatio = numberValue(inputs, ['bodyRangeRatio'], 0.65, sources);
       break;
     case 'price-action.range-break':
       lookback = numberValue(inputs, ['lookback', 'period'], 20, sources, 'lookback'); parameters.lookback = lookback;

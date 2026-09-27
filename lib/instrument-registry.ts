@@ -1,3 +1,5 @@
+import type { CatalogInstrument } from '@/lib/instrument-catalog';
+
 export type SupportedInstrument = {
   symbol: string;
   displayName: string;
@@ -33,8 +35,41 @@ export const SUPPORTED_INSTRUMENTS = [
 export const SUPPORTED_INSTRUMENT_SYMBOLS = SUPPORTED_INSTRUMENTS.map((item) => item.symbol);
 const bySymbol = new Map(SUPPORTED_INSTRUMENTS.map((item) => [item.symbol, item] as const));
 
+export function normalizeInstrumentSymbol(value: string): string | null {
+  const normalized = value.trim().toUpperCase().replace(/[\s/_-]+/g, '');
+  return bySymbol.has(normalized as (typeof SUPPORTED_INSTRUMENTS)[number]['symbol']) ? normalized : null;
+}
+
+/** Extracts only catalog instruments, preserving the trader's order and removing duplicates. */
+export function extractSupportedInstrumentSymbols(value: string): string[] {
+  const matches = value.matchAll(/\b(?:[A-Z]{3}\s*\/\s*[A-Z]{3}|[A-Z]{6})\b/gi);
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const match of matches) {
+    const symbol = normalizeInstrumentSymbol(match[0]);
+    if (!symbol || seen.has(symbol)) continue;
+    seen.add(symbol);
+    result.push(symbol);
+  }
+  return result;
+}
+
+export function extractUnsupportedInstrumentSymbols(value: string): string[] {
+  const knownCodes = new Set<string>(SUPPORTED_INSTRUMENTS.flatMap((item) => [item.base, item.quote]));
+  const result: string[] = [];
+  for (const match of value.matchAll(/\b([A-Z]{3})\s*(?:\/|_|-)?\s*([A-Z]{3})\b/gi)) {
+    const base = match[1]!.toUpperCase();
+    const quote = match[2]!.toUpperCase();
+    if (!knownCodes.has(base) || !knownCodes.has(quote)) continue;
+    const candidate = `${base}${quote}`;
+    if (!normalizeInstrumentSymbol(candidate) && !result.includes(candidate)) result.push(candidate);
+  }
+  return result;
+}
+
 export function getSupportedInstrument(symbol: string) {
-  return bySymbol.get(symbol.toUpperCase() as (typeof SUPPORTED_INSTRUMENTS)[number]['symbol']) ?? null;
+  const normalized = normalizeInstrumentSymbol(symbol);
+  return normalized ? bySymbol.get(normalized as (typeof SUPPORTED_INSTRUMENTS)[number]['symbol']) ?? null : null;
 }
 
 export function isSupportedInstrument(symbol: string): boolean {
@@ -47,6 +82,16 @@ export function twelveDataSymbolFor(symbol: string): string {
   return instrument.twelveDataSymbol;
 }
 
-export function strategyCatalogInstruments() {
-  return SUPPORTED_INSTRUMENTS.map(({symbol,displayName,category,marketType}) => ({symbol,displayName,category,marketType}));
+export function strategyCatalogInstruments(): CatalogInstrument[] {
+  return SUPPORTED_INSTRUMENTS.map(({symbol,displayName,category,marketType,twelveDataSymbol,base,quote}) => ({
+    symbol,
+    displayName,
+    category,
+    marketType,
+    providerSymbol:twelveDataSymbol,
+    baseCurrency:base,
+    quoteCurrency:quote,
+    availability:'AVAILABLE' as const,
+    capabilities:['QUOTE','HISTORICAL','BACKTEST','LIVE_ANALYSIS'],
+  }));
 }

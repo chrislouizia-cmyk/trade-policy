@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { buildStrategyCopilotInstructions, emptyStrategyCopilotDraft, ensureStrategyCopilotSession, hasGeneratedStrategyDraft, mergeStrategyCopilotDraft, normalizeStrategyCopilotReply, strategyCopilotSchema, upsertStrategyCopilotSession } from '@/lib/strategy-copilot';
 import { mapCopilotReplyToCanonicalCreation } from '@/lib/strategy-copilot-creation';
 import type { CanonicalCreationDraft } from '@/lib/strategy-creation-contract';
+import { canUseInstrument, canonicalSymbol, catalogInstrumentFromRow } from '@/lib/instrument-catalog';
+import { resolveInstrumentAccessContext } from '@/lib/server/instrument-access';
 
 export const runtime = 'nodejs';
 
@@ -163,7 +165,27 @@ export async function POST(request: Request) {
     }
 
     const parsed = JSON.parse(text);
-    const normalized = normalizeStrategyCopilotReply(parsed, previousDraft, { userMessage: body.message });
+    const rawStrategyDraft = parsed?.strategyDraft && typeof parsed.strategyDraft === 'object' ? parsed.strategyDraft : {};
+    const rawCandidates = [
+      ...(typeof rawStrategyDraft.instrument === 'string' ? [rawStrategyDraft.instrument] : []),
+      ...(Array.isArray(rawStrategyDraft.instruments) ? rawStrategyDraft.instruments.filter((item: unknown): item is string => typeof item === 'string') : []),
+      ...(previousDraft.instruments ?? []),
+      ...(previousDraft.instrument ? [previousDraft.instrument] : []),
+    ];
+    const candidateSymbols = [...new Set(rawCandidates.map(canonicalSymbol).filter(Boolean))];
+    const { data: catalogRows, error: catalogError } = candidateSymbols.length
+      ? await auth.from('instrument_catalog')
+        .select('symbol,display_name,market_type,category,provider_symbol,exchange,country,base_currency,quote_currency,is_active,metadata')
+        .in('symbol', candidateSymbols)
+        .eq('is_active', true)
+      : { data: [], error: null };
+    if (catalogError) throw catalogError;
+    const instrumentAccess = await resolveInstrumentAccessContext(auth);
+    const supportedInstruments = (catalogRows ?? []).flatMap((row: any) => {
+      const instrument = catalogInstrumentFromRow(row);
+      return instrument && canUseInstrument(instrument, 'LIVE_ANALYSIS', instrumentAccess) ? [instrument.symbol] : [];
+    });
+    const normalized = normalizeStrategyCopilotReply(parsed, previousDraft, { userMessage: body.message, supportedInstruments });
     const nextDraft = mergeStrategyCopilotDraft(previousDraft, normalized.strategyDraft, { acceptNormalizedSensitiveChanges: true });
     const canonical = mapCopilotReplyToCanonicalCreation({
       userMessage: body.message,

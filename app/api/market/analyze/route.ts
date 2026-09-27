@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { buildLiveAnalysis, MarketAnalysisError } from '@/lib/market-analysis';
-import { fetchSeriesWithTelemetry, MarketDataProviderError, providerSymbol } from '@/lib/market-data';
+import { fetchSeriesWithTelemetry, MarketDataProviderError } from '@/lib/market-data';
 import { type ChartAnalysis, type Instrument } from '@/types/trade';
 import { loadStrategyById } from '@/lib/server/active-strategy';
 import { apiError, publicApiError } from '@/lib/server/public-error';
@@ -14,6 +14,8 @@ import {finalizeAnalysis,reserveAnalysis} from '@/lib/billing/entitlements';
 import {createAdminClient} from '@/lib/supabase/admin';
 import {strategyRevisionId} from '@/lib/historical-decisions/strategy-revision';
 import {withTwelveDataCredits,ProviderCreditLimitError} from '@/lib/server/provider-credit-coordinator';
+import {canUseInstrument,canonicalSymbol,catalogInstrumentFromRow} from '@/lib/instrument-catalog';
+import {resolveInstrumentAccessContext} from '@/lib/server/instrument-access';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -48,23 +50,37 @@ export async function POST(req: Request) {
     if(!reservation.allowed)return apiError('ANALYSIS_LIMIT_REACHED',`Your ${reservation.state.entitlements.monthlyAnalysisLimit ?? ''}-analysis cycle limit has been reached. Your analyses renew on ${reservation.state.usagePeriodEnd}. Upgrade to continue.`,429,{limit:reservation.state.entitlements.monthlyAnalysisLimit,used:reservation.state.usage,periodStart:reservation.state.usagePeriodStart,renewsAt:reservation.state.usagePeriodEnd});
     usage={userId:user.id,requestKey};
     const body=await req.json().catch(()=>null) as {instrument?:Instrument;strategyId?:string;strategyRevisionId?:string}|null;
-    const instrument=body?.instrument;
-    if (!instrument) return apiError('INSTRUMENT_REQUIRED','An instrument is required.',400);
+    const requestedInstrument=body?.instrument;
+    if (!requestedInstrument) return apiError('INSTRUMENT_REQUIRED','An instrument is required.',400);
+    const instrument=canonicalSymbol(requestedInstrument);
     if(!body?.strategyId||!body.strategyRevisionId)return apiError('STRATEGY_CONTEXT_REQUIRED','The selected strategy and revision are required.',400);
     const strategy = await loadStrategyById(supabase,user.id,body.strategyId);
     const currentStrategyRevisionId=strategyRevisionId(strategy);
     if(body.strategyRevisionId!==currentStrategyRevisionId)return apiError('STRATEGY_REVISION_CHANGED','The selected strategy changed. Reload it before checking the market.',409);
     if (!strategy.instruments.includes(instrument)) return apiError('INSTRUMENT_DISABLED','Instrument is disabled in this strategy.',400,{instrument});
+    const {data:strategyInstrumentRows,error:strategyInstrumentError}=await supabase.from('strategy_instruments')
+      .select('symbol,market_type,provider_symbol').eq('strategy_id',body.strategyId).eq('user_id',user.id)
+      .eq('symbol',instrument).eq('enabled',true).limit(2);
+    if(strategyInstrumentError)throw strategyInstrumentError;
+    if(strategyInstrumentRows?.length!==1)return apiError('INSTRUMENT_AMBIGUOUS','The strategy instrument is missing or ambiguous.',409,{instrument});
+    const strategyInstrument=strategyInstrumentRows[0]!;
+    const instrumentAccess=await resolveInstrumentAccessContext(supabase);
+    const {data:catalogRow,error:catalogError}=await supabase.from('instrument_catalog')
+      .select('symbol,display_name,market_type,category,provider_symbol,exchange,country,base_currency,quote_currency,is_active,metadata')
+      .eq('symbol',instrument).eq('market_type',strategyInstrument.market_type).eq('is_active',true).maybeSingle();
+    if(catalogError)throw catalogError;
+    const catalogInstrument=catalogRow?catalogInstrumentFromRow(catalogRow as any):null;
+    if(!catalogInstrument||!canUseInstrument(catalogInstrument,'LIVE_ANALYSIS',instrumentAccess))return apiError('INSTRUMENT_UNAVAILABLE','Live analysis is not available for this instrument under the current data capability.',409,{instrument});
     const timeframes = strategyTimeframes(strategy);
     const values = await withTwelveDataCredits({requestKey:`analysis:${user.id}:${requestKey}`,operation:'live.analysis',priority:'LIVE',credits:timeframes.length},async()=>{
-      const results=await Promise.all(timeframes.map((timeframe)=>fetchSeriesWithTelemetry(instrument,timeframe)));
+      const results=await Promise.all(timeframes.map((timeframe)=>fetchSeriesWithTelemetry(instrument,timeframe,120,catalogInstrument.providerSymbol)));
       return{value:results.map(result=>result.value),telemetry:{
         creditsUsed:results.at(-1)?.telemetry.creditsUsed??null,creditsLeft:results.at(-1)?.telemetry.creditsLeft??null,
         requestCredits:results.reduce((sum,result)=>sum+(result.telemetry.requestCredits??1),0),observedAt:new Date().toISOString(),
       }};
     });
     const series = Object.fromEntries(timeframes.map((timeframe, index) => [timeframe, values[index]]));
-    const analysis = buildLiveAnalysis(instrument, strategy, series, 'Twelve Data',providerSymbol(instrument));
+    const analysis = buildLiveAnalysis(instrument, strategy, series, 'Twelve Data',catalogInstrument.providerSymbol);
     const displayName = await getUserDisplayName(supabase, user);
     const structuredAnalysis = analysis as unknown as ChartAnalysis;
     const deterministicCommentary = buildAICommentary(structuredAnalysis, strategy, displayName);

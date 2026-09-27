@@ -11,9 +11,10 @@ export type LiveSetupReadiness={percentage:number|null;state:LiveReadinessState;
 const evidenceMap:Record<string,string[]>={
   h4TrendAligned:['structure.trend-alignment'],h1TrendAligned:['structure.trend-alignment'],structurePattern:['structure.higher-high','structure.higher-low','structure.lower-high','structure.lower-low'],
   liquiditySweep:['smart-money.liquidity-sweep'],chochConfirmed:['structure.choch'],bosConfirmed:['structure.bos'],fairValueGap:['smart-money.fair-value-gap'],
+  displacement:['smart-money.displacement'],
   retestConfirmed:['price-action.retest'],premiumDiscount:['smart-money.premium','smart-money.discount'],rejectionCandle:['price-action.strong-rejection'],volumeConfirmation:['volume.above-average','volume.spike'],
 };
-const sources:Record<string,string>={h4TrendAligned:'trend timeframe market data',h1TrendAligned:'multi-timeframe market data',structurePattern:'price-structure detector',liquiditySweep:'liquidity-sweep detector',chochConfirmed:'CHoCH detector',bosConfirmed:'BOS detector',orderBlock:'order-block detector',fairValueGap:'fair-value-gap detector',retestConfirmed:'retest detector',premiumDiscount:'premium/discount range detector',rejectionCandle:'rejection-candle detector',volumeConfirmation:'volume detector'};
+const sources:Record<string,string>={h4TrendAligned:'trend timeframe market data',h1TrendAligned:'multi-timeframe market data',structurePattern:'price-structure detector',liquiditySweep:'liquidity-sweep detector',chochConfirmed:'CHoCH detector',bosConfirmed:'BOS detector',orderBlock:'order-block detector',fairValueGap:'fair-value-gap detector',retestConfirmed:'retest detector',displacement:'displacement detector',premiumDiscount:'premium/discount range detector',rejectionCandle:'rejection-candle detector',volumeConfirmation:'volume detector'};
 const liveSetupRuleIds=new Set([...Object.values(evidenceMap).flat(),'smart-money.order-block']);
 
 export function preserveLiveSetupEvidence(context:TradingDnaRuntimeContext,report:TradingDnaEvidenceReport):TradingDnaRuntimeContext{
@@ -46,16 +47,22 @@ function readinessRules(strategy:StrategyProfile){
   return Object.entries(strategy.evidenceWeights??{}).map(([ruleKey,weight])=>({ruleKey,label:ruleKey,enabled:true,mandatory:required.has(ruleKey as never),weight:Number(weight),minimumConfidence:0,timeframeRole:'ENTRY' as const,evaluationMode:'AUTOMATIC' as const}));
 }
 function collectReadinessDiagnostics(strategy:StrategyProfile,evidence:Record<string,EvidenceAssessment>,report:TradingDnaEvidenceReport):ReadinessDiagnostics {
-  const ruleKeys=(strategy.rules??[]).filter(rule=>rule.enabled).map(rule=>rule.ruleKey);
+  const enabledRules=(strategy.rules??[]).filter(rule=>rule.enabled);
+  const ruleKeys=enabledRules.map(rule=>rule.ruleKey);
   const evidenceKeys=Object.keys(evidence??{});
   const resolvedRuleIds=new Set(ruleKeys.map((ruleKey)=>resolveComposerRuleId(ruleKey)).filter((ruleId):ruleId is string=>Boolean(ruleId)));
   const normalizedEvidenceIds=new Set(evidenceKeys.map((evidenceKey)=>{
     const resolved=resolveComposerRuleId(evidenceKey);
     return resolved ?? null;
   }).filter((ruleId):ruleId is string=>Boolean(ruleId)));
-  const unmatchedStrategyRuleKeys=ruleKeys.filter((ruleKey)=>!resolveComposerRuleId(ruleKey));
+  const unmatchedStrategyRuleKeys=enabledRules.filter((rule)=>String(rule.evaluationMode??'AUTOMATIC').toUpperCase()==='AUTOMATIC'&&!resolveComposerRuleId(rule.ruleKey)).map(rule=>rule.ruleKey);
   const unmatchedEvidenceKeys=evidenceKeys.filter((evidenceKey)=>!normalizedEvidenceIds.has(resolveComposerRuleId(evidenceKey) ?? ''));
-  const hasUsableRequiredRules = (strategy.rules ?? []).some((rule) => rule.enabled && rule.mandatory && !!resolveComposerRuleId(rule.ruleKey) && ['AUTOMATIC', 'MANUAL', 'EXTERNAL'].includes(String(rule.evaluationMode ?? '').toUpperCase()) && Number(rule.weight ?? 0) > 0);
+  const hasUsableRequiredRules = enabledRules.some((rule) => {
+    const mode=String(rule.evaluationMode??'AUTOMATIC').toUpperCase();
+    return rule.mandatory&&Number(rule.weight??0)>0&&(
+      mode==='MANUAL'||mode==='EXTERNAL'||(mode==='AUTOMATIC'&&Boolean(resolveComposerRuleId(rule.ruleKey)))
+    );
+  });
   const reason = !hasUsableRequiredRules
     ? 'ZERO_REQUIRED_RULES: no valid mandatory rule could be reconstructed for this strategy.'
     : evidenceKeys.length === 0 || report.conditions.length === 0

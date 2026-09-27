@@ -33,12 +33,17 @@ function readMetadata(profile:StrategyProfile):V2PersistedMetadata|undefined {
 }
 function limits(logic:StrategyBuilderV2StopLogic|undefined):StopLimit[]|undefined{return logic&&typeof logic!=='string'&&Array.isArray(logic.limits)?clone(logic.limits):undefined;}
 function exit(logic:StrategyBuilderV2TargetLogic|undefined):Record<string,unknown>|undefined{return logic&&typeof logic!=='string'&&logic.exitConfig?clone(logic.exitConfig):undefined;}
-function storedRule(rule:RuleSelection):StrategyRule { const automatic=rule.capability==='AUTOMATIC';return {ruleKey:rule.key,label:rule.label,enabled:true,mandatory:rule.requirement==='REQUIRED'&&rule.capability!=='DESCRIPTIVE',weight:automatic?10:rule.capability==='MANUAL'?8:rule.capability==='EXTERNAL'?6:4,minimumConfidence:automatic?72:60,timeframeRole:rule.timeframe.includes('H')?'MACRO':'TRIGGER',evaluationMode:automatic?'AUTOMATIC':rule.capability==='EXTERNAL'?'EXTERNAL':'MANUAL'}; }
+function storedRule(rule:RuleSelection,profile:StrategyProfile):StrategyRule {
+ const automatic=rule.capability==='AUTOMATIC';
+ const timeframeRole:StrategyRule['timeframeRole']=rule.timeframe===profile.macroTimeframe?'MACRO':rule.timeframe===profile.trendTimeframe?'TREND':rule.timeframe===profile.confirmationTimeframe?'CONFIRMATION':rule.timeframe===profile.entryTimeframe?'ENTRY':rule.timeframe===profile.triggerTimeframe?'TRIGGER':'ENTRY';
+ return {ruleKey:rule.key,label:rule.label,enabled:true,mandatory:rule.requirement==='REQUIRED'&&rule.capability!=='DESCRIPTIVE',weight:automatic?10:rule.capability==='MANUAL'?8:rule.capability==='EXTERNAL'?6:4,minimumConfidence:automatic?72:60,timeframeRole,evaluationMode:automatic?'AUTOMATIC':rule.capability==='EXTERNAL'?'EXTERNAL':'MANUAL'};
+}
 function legacySelections(profile:StrategyProfile,rules:StrategyRule[]):RuleSelection[]{return rules.map(rule=>({key:rule.ruleKey,label:rule.label,capability:rule.evaluationMode==='AUTOMATIC'?'AUTOMATIC':rule.evaluationMode==='EXTERNAL'?'EXTERNAL':'MANUAL',requirement:rule.mandatory?'REQUIRED':'OPTIONAL',timeframe:profile.entryTimeframe,group:'ALL'}));}
 
 /** Pure mapping from V2 semantic state to the existing profile, rule, and session contracts. */
 export function v2StateToPersistedStrategy(baseProfile:StrategyProfile,state:StrategyBuilderV2State):V2Persisted {
- const normalizedRules=normalizePersistableStrategyRules(state.ruleSelections.map(storedRule)).rules;
+ const roleProfile={...baseProfile,macroTimeframe:state.contextTimeframe??baseProfile.macroTimeframe,entryTimeframe:state.executionTimeframe??baseProfile.entryTimeframe};
+ const normalizedRules=normalizePersistableStrategyRules(state.ruleSelections.map(rule=>storedRule(rule,roleProfile))).rules;
  const normalizedSelections=state.ruleSelections.map((rule,index)=>({...rule,key:normalizedRules[index].ruleKey}));
  const ruleTree=state.ruleTree?normalizePersistedV2RuleTree(state.ruleTree):normalizedSelections.length?createPersistedV2RuleTree(normalizedSelections):undefined;
  const metadata:V2PersistedMetadata={kind:'TRADE_POLICE_V2_METADATA',version:1,methodologyIds:[...state.methodologyIds],ruleSelections:clone(normalizedSelections),...(ruleTree?{ruleTree}:{}),...(state.contextTimeframe!==undefined?{contextTimeframe:state.contextTimeframe}:{}),...(state.executionTimeframe!==undefined?{executionTimeframe:state.executionTimeframe}:{}),...(state.stopLogic!==undefined?{stopLogic:clone(state.stopLogic)}:{}),...(state.targetLogic!==undefined?{targetLogic:clone(state.targetLogic)}:{}),...(state.direction!==undefined?{direction:state.direction}:{})};

@@ -37,11 +37,13 @@ export function getAiDockStatus({
   if (!analysis) return { label: 'WATCHING MARKET', detail: 'Ready for live analysis.', variant: 'neutral' };
   if (result?.verdict === 'AUTHORIZED') return { label: 'READY', detail: 'The validation engine approved the setup.', variant: 'positive' };
   if (result?.verdict === 'REJECTED') return { label: 'BLOCKED', detail: 'A policy condition failed.', variant: 'warning' };
-  if (result?.verdict === 'WAIT' || analysis.liveAnalysisConfidence == null || analysis.liveAnalysisConfidence < threshold) {
-    return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' };
+  if (result?.verdict === 'WAIT') return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' };
+  const setupReady = analysis.setupReadiness?.state === 'READY';
+  if (setupReady && analysis.liveAnalysisConfidence != null && analysis.liveAnalysisConfidence >= threshold) {
+    return { label: 'READY', detail: 'Setup rules are complete; final risk review remains.', variant: 'positive' };
   }
   if (analysis.candidates.some((candidate) => candidate.status === 'READY')) {
-    return { label: 'READY', detail: 'The setup is ready for review.', variant: 'positive' };
+    return { label: 'WAIT', detail: 'Technical candidate found; required confirmations remain.', variant: 'warning' };
   }
   return { label: 'WAIT', detail: 'Confirmation is incomplete.', variant: 'warning' };
 }

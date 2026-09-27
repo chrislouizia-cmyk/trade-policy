@@ -11,6 +11,8 @@ import { strategyRulePersistenceRows } from '@/lib/strategy-rule-persistence';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { loadStrategyById } from '@/lib/server/active-strategy';
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
+import { MARKET_TYPES, canUseInstrument, canonicalSymbol, catalogInstrumentFromRow } from '@/lib/instrument-catalog';
+import { resolveInstrumentAccessContext } from '@/lib/server/instrument-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,9 +90,13 @@ const schema = z.object({
         }
       }
     }),
-  instruments: z
-    .array(z.record(z.string(), z.unknown()))
-    .min(1),
+  instruments: z.array(z.object({
+    symbol: z.string().trim().min(1),
+    market_type: z.enum(MARKET_TYPES),
+    provider_symbol: z.string().nullable().optional(),
+    sort_order: z.number().int().nonnegative().optional(),
+    enabled: z.boolean().optional(),
+  }).passthrough()).min(1),
   sessions: z.array(z.record(z.string(), z.unknown())),
   rules: z.array(strategyRuleSchema),
   stopLimits: z.array(z.record(z.string(), z.unknown())),
@@ -125,7 +131,47 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = parsed.data;
+    const requestedInstruments = parsed.data.instruments.map((instrument) => ({
+      ...instrument,
+      symbol: canonicalSymbol(instrument.symbol),
+    }));
+    const requestedSymbols = [...new Set(requestedInstruments.map((instrument) => instrument.symbol))];
+    const { data: catalogRows, error: catalogError } = await supabase
+      .from('instrument_catalog')
+      .select('symbol,display_name,market_type,category,provider_symbol,exchange,country,base_currency,quote_currency,is_active,metadata')
+      .in('symbol', requestedSymbols);
+    if (catalogError) throw catalogError;
+
+    const catalog = new Map((catalogRows ?? []).flatMap((row: any) => {
+      const instrument = catalogInstrumentFromRow(row);
+      return instrument ? [[`${instrument.marketType}:${instrument.symbol}`, instrument] as const] : [];
+    }));
+    const instrumentAccess = await resolveInstrumentAccessContext(supabase);
+    const unavailable = requestedInstruments.filter((requested) => {
+      const instrument = catalog.get(`${requested.market_type}:${requested.symbol}`);
+      return !instrument || !canUseInstrument(instrument, 'LIVE_ANALYSIS', instrumentAccess);
+    });
+    if (unavailable.length) {
+      return apiError(
+        'UNSUPPORTED_INSTRUMENT',
+        `Unsupported or unavailable instrument${unavailable.length === 1 ? '' : 's'}: ${unavailable.map((item) => `${item.symbol} (${item.market_type})`).join(', ')}.`,
+        409,
+      );
+    }
+
+    const payload = {
+      ...parsed.data,
+      profile: {
+        ...parsed.data.profile,
+        instruments: requestedSymbols,
+        market_types: [...new Set(requestedInstruments.map((instrument) => instrument.market_type))],
+      } as Record<string, unknown> & { evidence_weights?: Record<string, number> },
+      instruments: requestedInstruments.map((instrument) => ({
+        ...instrument,
+        market_type: catalog.get(`${instrument.market_type}:${instrument.symbol}`)!.marketType,
+        provider_symbol: catalog.get(`${instrument.market_type}:${instrument.symbol}`)!.providerSymbol,
+      })),
+    };
     const persistenceRules = strategyRulePersistenceRows(payload.rules);
     const requiredEvidence = deriveRequiredEvidence(payload.rules, payload.profile.evidence_weights ?? {});
     if (!requiredEvidence.length && payload.activate) {

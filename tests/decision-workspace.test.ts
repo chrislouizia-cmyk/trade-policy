@@ -159,7 +159,27 @@ test('decision hero maps deterministic states to primary verdicts', () => {
     analysis: baseAnalysis({ candidates: [{ ...baseAnalysis().candidates[0], status: 'READY' }] }),
     result: null,
     threshold: 40,
+  }).verdict, 'WAIT');
+  assert.equal(getDecisionHeroState({
+    analyzing: false,
+    analysis: baseAnalysis({
+      liveAnalysisConfidence: 100,
+      candidates: [{ ...baseAnalysis().candidates[0], status: 'READY' }],
+      setupReadiness: {percentage:100,state:'READY',required:{passed:2,failed:0,pending:0},optional:{passed:0,failed:0,pending:0},totalRequiredWeight:20,passingRequiredWeight:20,formula:'fixture',blockers:[],pendingConfirmations:[]},
+    }),
+    result: null,
+    threshold: 75,
   }).verdict, 'READY');
+});
+
+test('technical candidates are presented separately from final confirmations and blockers',()=>{
+  const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
+  const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
+  assert.match(tradeValidator,/TECHNICAL CANDIDATE/);
+  assert.match(tradeValidator,/Mandatory confirmations still control the final decision/);
+  assert.match(decisionHero,/>Technical candidate</);
+  assert.match(decisionHero,/>Manual confirmations</);
+  assert.match(decisionHero,/>Rule blockers</);
 });
 
 test('Analyze page is framed around the trade decision question', () => {

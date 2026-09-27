@@ -1,10 +1,13 @@
 import { METHODOLOGY_LIBRARY, type Capability, type RuleGroupType, type RuleRequirement, type RuleSelection } from './strategy-builder-v2.ts';
 import type { CanonicalCreationDraft } from './strategy-creation-contract.ts';
+import { SUPPORTED_INSTRUMENT_SYMBOLS, extractSupportedInstrumentSymbols } from './instrument-registry.ts';
+import { canonicalSymbol } from './instrument-catalog.ts';
 
 export type StrategyCopilotIntent = 'CREATE' | 'UPDATE' | 'CLARIFY' | 'NONE';
 export type StrategyCopilotDraft = {
   name?: string;
   instrument?: string;
+  instruments?: string[];
   sessions: string[];
   timeframes: string[];
   rules: RuleSelection[];
@@ -35,7 +38,6 @@ const catalog = new Map(METHODOLOGY_LIBRARY.flatMap((library) => library.rules).
 const methodologyCatalog = new Set(METHODOLOGY_LIBRARY.map((library) => library.id));
 const sessions = new Set(['London', 'New York', 'Sydney', 'Tokyo']);
 const timeframes = new Set(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1']);
-const instruments = new Set(['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', 'USDCHF', 'NAS100']);
 const detectorIds = new Set([...catalog.keys()]);
 const sessionStore = new Map<string, StrategyCopilotSessionState>();
 
@@ -111,6 +113,7 @@ export function mergeStrategyCopilotDraft(
   return {
     name: next.name ?? previous.name,
     instrument: next.instrument ?? previous.instrument,
+    instruments: next.instruments?.length ? [...next.instruments] : previous.instruments?.length ? [...previous.instruments] : undefined,
     sessions: mergedSessions,
     timeframes: mergedTimeframes,
     rules: mergedRulesList,
@@ -138,8 +141,10 @@ export function isKnownStrategyDetector(detectorId: string): boolean {
   return detectorIds.has(detectorId);
 }
 
-export function rejectUnsupportedStrategyCopilotFields(draft: Record<string, unknown>): string[] {
+export function rejectUnsupportedStrategyCopilotFields(draft: Record<string, unknown>, supportedInstrumentSymbols: readonly string[] = SUPPORTED_INSTRUMENT_SYMBOLS): string[] {
   const unsupported: string[] = [];
+  const supported = new Set(supportedInstrumentSymbols.map(canonicalSymbol));
+  const acceptsInstrument = (value: string) => supported.has(canonicalSymbol(value));
   if (draft.methodology && typeof draft.methodology === 'string' && !isKnownStrategyMethodology(draft.methodology)) {
     unsupported.push(`Unsupported methodology: ${draft.methodology}`);
   }
@@ -158,8 +163,13 @@ export function rejectUnsupportedStrategyCopilotFields(draft: Record<string, unk
       if (typeof entry === 'string' && !isKnownStrategyDetector(entry)) unsupported.push(`Unsupported detector: ${entry}`);
     }
   }
-  if (draft.instrument && typeof draft.instrument === 'string' && !instruments.has(draft.instrument)) {
+  if (draft.instrument && typeof draft.instrument === 'string' && !acceptsInstrument(draft.instrument)) {
     unsupported.push(`Unsupported instrument: ${draft.instrument}`);
+  }
+  if (Array.isArray(draft.instruments)) {
+    for (const entry of draft.instruments) {
+      if (typeof entry === 'string' && !acceptsInstrument(entry)) unsupported.push(`Unsupported instrument: ${entry}`);
+    }
   }
   return unsupported;
 }
@@ -199,14 +209,19 @@ export function extractExplicitMinimumRR(message: string): number | undefined {
 export function normalizeStrategyCopilotReply(
   value: unknown,
   previous: StrategyCopilotDraft = emptyStrategyCopilotDraft(),
-  context: { userMessage?: string } = {},
+  context: { userMessage?: string; supportedInstruments?: readonly string[] } = {},
 ): StrategyCopilotReply {
   if (!value || typeof value !== 'object') throw new Error('Copilot response is not an object.');
   const response = value as Record<string, unknown>;
   const rawDraft = response.strategyDraft;
   if (!rawDraft || typeof rawDraft !== 'object') throw new Error('Copilot response has no strategy draft.');
 
-  const unsupported = rejectUnsupportedStrategyCopilotFields(rawDraft as Record<string, unknown>);
+  const supported = new Set((context.supportedInstruments ?? SUPPORTED_INSTRUMENT_SYMBOLS).map(canonicalSymbol));
+  const normalizeAllowedInstrument = (value: string): string | null => {
+    const symbol = canonicalSymbol(value);
+    return supported.has(symbol) ? symbol : null;
+  };
+  const unsupported = rejectUnsupportedStrategyCopilotFields(rawDraft as Record<string, unknown>, [...supported]);
 
   const draft = rawDraft as Record<string, unknown>;
   const rawRules = Array.isArray(draft.rules) ? draft.rules : [];
@@ -254,9 +269,14 @@ export function normalizeStrategyCopilotReply(
   const rr = explicitlyChangesRR ? explicitRR : typeof previous.minimumRR === 'number' ? previous.minimumRR : validRR;
 
   const rawLogicTree = draft.logicTree && typeof draft.logicTree === 'object' ? (draft.logicTree as Record<string, unknown>) : null;
+  const normalizedInstruments = Array.isArray(draft.instruments)
+    ? draft.instruments.flatMap((item) => typeof item === 'string' ? [normalizeAllowedInstrument(item)].filter((symbol): symbol is string => Boolean(symbol)) : [])
+    : [];
+  const normalizedInstrument = typeof draft.instrument === 'string' ? normalizeAllowedInstrument(draft.instrument) : null;
   const next: StrategyCopilotDraft = {
     name: typeof draft.name === 'string' ? draft.name : previous.name,
-    instrument: typeof draft.instrument === 'string' && instruments.has(draft.instrument) ? draft.instrument : previous.instrument,
+    instrument: normalizedInstrument ?? normalizedInstruments[0] ?? previous.instrument,
+    instruments: normalizedInstruments.length ? [...new Set(normalizedInstruments)] : previous.instruments,
     sessions: selectedSessions,
     timeframes: selectedTimeframes,
     rules,
@@ -289,10 +309,11 @@ export const strategyCopilotSchema = {
     strategyDraft: {
       type: 'object',
       additionalProperties: false,
-      required: ['name', 'instrument', 'sessions', 'timeframes', 'rules', 'logicTree', 'riskPercent', 'minimumRR', 'direction', 'notes'],
+      required: ['name', 'instrument', 'instruments', 'sessions', 'timeframes', 'rules', 'logicTree', 'riskPercent', 'minimumRR', 'direction', 'notes'],
       properties: {
         name: { type: ['string', 'null'] },
         instrument: { type: ['string', 'null'] },
+        instruments: { type: 'array', items: { type: 'string' } },
         sessions: { type: 'array', items: { type: 'string' } },
         timeframes: { type: 'array', items: { type: 'string' } },
         rules: {
@@ -330,7 +351,7 @@ export const strategyCopilotSchema = {
 } as const;
 
 export function buildStrategyCopilotInstructions() {
-  return `You are Strategy Copilot. Interpret user language into a structured drafting object only. Never authorize, evaluate, recommend, or execute a trade. Use only the V2 catalog rule IDs and methodology IDs supplied below. Preserve the existing draft unless the user explicitly changes it. When the user directly answers an unresolved question, remove that question from unresolvedQuestions and do not repeat it. DESCRIPTIVE rules must remain OPTIONAL and never mandatory. If a user requests something unsupported, explain that it is unsupported instead of inventing a rule or detector. Risk percentage, minimum RR, maximum drawdown, and other risk controls cannot be silently changed by AI. Catalog: ${JSON.stringify({ methodologies: [...METHODOLOGY_LIBRARY].map((library) => ({ id: library.id, label: library.label, rules: library.rules.map((rule) => ({ key: rule.key, label: rule.label, capability: rule.capability, description: rule.description })) })), supportedInstruments: [...instruments], allowedDetectors: [...detectorIds] })}.`;
+  return `You are Strategy Copilot. Interpret user language into a structured drafting object only. Never authorize, evaluate, recommend, or execute a trade. Use canonical market symbols (for example AAPL, SPY, BTC/USD, EUR/USD, XAU/USD); every symbol will be validated against Trade Police's provider-synchronized catalog before it can be saved. Never invent a ticker when the user has not identified an asset clearly. Use only the V2 catalog rule IDs and methodology IDs supplied below. Preserve the existing draft unless the user explicitly changes it. When the user directly answers an unresolved question, remove that question from unresolvedQuestions and do not repeat it. DESCRIPTIVE rules must remain OPTIONAL and never mandatory. If a user requests something unsupported, explain that it is unsupported instead of inventing a rule or detector. Risk percentage, minimum RR, maximum drawdown, and other risk controls cannot be silently changed by AI. Catalog: ${JSON.stringify({ methodologies: [...METHODOLOGY_LIBRARY].map((library) => ({ id: library.id, label: library.label, rules: library.rules.map((rule) => ({ key: rule.key, label: rule.label, capability: rule.capability, description: rule.description })) })), instrumentClasses: ['FOREX','METALS','STOCKS','ETFS','CRYPTO','INDEX','FUTURES','COMMODITIES'], allowedDetectors: [...detectorIds] })}.`;
 }
 
 export function buildCanonicalRuleSelectionListFromText(rawMessage: string, currentDraft: StrategyCopilotDraft = emptyStrategyCopilotDraft()): RuleSelection[] {
@@ -365,7 +386,10 @@ export function buildCanonicalRuleSelectionListFromText(rawMessage: string, curr
   }
 
   if (lower.includes('liquidity sweep') || lower.includes('liquidity')) addRule('liquidity-sweep', 'ALL', 'REQUIRED');
+  if (lower.includes('displacement')) addRule('displacement', 'ALL', 'REQUIRED', 'M15');
   if (lower.includes('choch')) addRule('choch', 'ALL', 'REQUIRED');
+  if (lower.includes('bos') || lower.includes('break of structure')) addRule('bos', 'ALL', 'REQUIRED');
+  if (lower.includes('retest')) addRule('retest', 'ALL', 'REQUIRED', 'M15');
   if (lower.includes('order block') || lower.includes('ob')) addRule('order-block', 'ANY', 'OPTIONAL');
   if (lower.includes('fair value gap') || lower.includes('fvg')) addRule('fair-value-gap', 'ANY', 'OPTIONAL');
   if (lower.includes('support')) addRule('support-zone', 'ANY', 'OPTIONAL');
@@ -414,18 +438,13 @@ export function extractStructuredDraftFromText(rawMessage: string, currentDraft:
     nextDraft.sessions = [...sessions];
   }
 
-  const instrumentGuess = /eurusd|euro\s*\/\s*usd|euro usd|euro-usd/i.test(rawMessage)
-    ? 'EURUSD'
-    : /gbpusd|pound\s*\/\s*usd|pound usd|pound-usd/i.test(rawMessage)
-      ? 'GBPUSD'
-      : /usdjpy|dollar\s*\/\s*jpy|dollar jpy|dollar-jpy/i.test(rawMessage)
-        ? 'USDJPY'
-        : /gold|xauusd/i.test(rawMessage)
-          ? 'XAUUSD'
-          : /silver|xagusd/i.test(rawMessage)
-            ? 'XAGUSD'
-            : currentDraft.instrument;
-  if (instrumentGuess) nextDraft.instrument = instrumentGuess;
+  const instrumentGuesses = extractSupportedInstrumentSymbols(rawMessage);
+  if (/\bgold\b/i.test(rawMessage) && !instrumentGuesses.includes('XAUUSD')) instrumentGuesses.push('XAUUSD');
+  if (/\bsilver\b/i.test(rawMessage) && !instrumentGuesses.includes('XAGUSD')) instrumentGuesses.push('XAGUSD');
+  if (instrumentGuesses.length) {
+    nextDraft.instrument = instrumentGuesses[0];
+    nextDraft.instruments = instrumentGuesses;
+  }
 
   const rules = buildCanonicalRuleSelectionListFromText(rawMessage, currentDraft);
   const anyRequested = /either|or\s+one|one of|either one|or\s+fvg|or\s+order block|don'?t\s+need\s+both|not\s+both|only\s+one/i.test(rawMessage);

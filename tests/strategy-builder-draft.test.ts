@@ -47,7 +47,7 @@ test('removed instrument is absent from saved payload', () => {
     { instrument: 'XAUUSD', method: 'POINTS', maximumValue: 300 },
     { instrument: 'GBPUSD', method: 'PIPS', maximumValue: 25 },
   ]);
-  assert.deepEqual(buildPayloadInstruments(profile.instruments), [{ symbol: 'GBPUSD', market_type: 'FOREX', provider_symbol: null, sort_order: 0, enabled: true }]);
+  assert.deepEqual(buildPayloadInstruments(profile.instruments), [{ symbol: 'GBPUSD', market_type: 'FOREX', provider_symbol: 'GBP/USD', sort_order: 0, enabled: true }]);
   assert.deepEqual(buildPayloadStopLimits(profile.instruments, stopLimits), [{ instrument: 'GBPUSD', method: 'PIPS', minimum_value: 0, preferred_value: 25, maximum_value: 25, atr_multiplier: null }]);
 });
 

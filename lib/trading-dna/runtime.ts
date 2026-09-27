@@ -3,6 +3,7 @@ import { confirmationState } from '../manual-confirmations.ts';
 import { composerTreeFromStrategyRules, summarizeComposerCondition, type ComposerCondition, type ComposerGroup } from './composer.ts';
 import { TRADING_DNA_RULES } from './registry.ts';
 import type { TradingDnaEvaluationType, TradingDnaOperator } from './types.ts';
+import { resolveActiveStrategyDnaRuleId } from '../active-strategy-evidence.ts';
 
 export type RuntimeStatus='PASS'|'FAIL'|'PENDING';
 export type RuntimeFact={value:unknown;reason:string;source?:'AUTOMATIC'|'MANUAL'|'EXTERNAL'};
@@ -39,7 +40,7 @@ function conditionFact(condition:ComposerCondition,context:TradingDnaRuntimeCont
   const manualKey=condition.legacyRule?.ruleKey;
   const manual=manualKey?context.manualConfirmations?.find(item=>item.evidenceKey===manualKey):undefined;
   if(manual)return {value:confirmationState(manual),reason:`User confirmation is ${confirmationState(manual).toLowerCase()}.`};
-  return unwrap(context.facts[condition.id]??context.facts[condition.ruleId]);
+  return unwrap(context.facts[condition.id]??context.facts[condition.ruleId]??(manualKey?context.facts[manualKey]:undefined));
 }
 
 export function evaluateTradingDnaRuntime(rules:StrategyProfile['rules'],context:TradingDnaRuntimeContext,now=()=>new Date().toISOString()):TradingDnaEvidenceReport{
@@ -71,7 +72,7 @@ export function buildTradingDnaRuntimeContext(input:TradeInput,profile:StrategyP
     'session.asia':{value:session==='asia',reason:`The selected session is ${input.session}.`},
     'external.high-impact-news':{value:!input.highImpactNews,reason:input.highImpactNews?'High-impact news conflicts with this trade.':'No high-impact news conflict was declared.'},
   };
-  for(const rule of profile.rules??[]){if(rule.ruleKey.startsWith('dna.v1.'))continue;const legacy:Record<string,string>={h4TrendAligned:'structure.trend-alignment',h1TrendAligned:'structure.trend-alignment',bosConfirmed:'structure.bos',chochConfirmed:'structure.choch',liquiditySweep:'smart-money.liquidity-sweep',orderBlock:'smart-money.order-block',fairValueGap:'smart-money.fair-value-gap',retestConfirmed:'price-action.retest'};const id=legacy[rule.ruleKey];if(id&&facts[id]===undefined)facts[id]=(input as unknown as Record<string,unknown>)[rule.ruleKey]}
+  for(const rule of profile.rules??[]){if(rule.ruleKey.startsWith('dna.v1.'))continue;const id=resolveActiveStrategyDnaRuleId(rule.ruleKey);if(id&&facts[id]===undefined)facts[id]=(input as unknown as Record<string,unknown>)[rule.ruleKey]}
   return {facts,manualConfirmations:input.manualConfirmations};
 }
 

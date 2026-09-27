@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { twelveDataSymbolFor } from '@/lib/instrument-registry';
+import { providerSymbol as fallbackProviderSymbol } from '@/lib/market-data';
 
 import { historicalFrames, historicalWarmupBars, strategyFromSnapshot } from '@/lib/server/backtest-executor';
 import { buildHistoricalRulePlan, type HistoricalRulePlan } from '@/lib/backtesting/historical-rule-plan';
@@ -50,7 +50,7 @@ function retryableProviderError(message: string) {
   return /api credit|credits|current minute|rate limit|too many requests|429/i.test(message);
 }
 
-async function fetchChunk(instrument: string, timeframe: string, startMs: number, endMs: number) {
+async function fetchChunk(instrument: string, providerSymbol: string, timeframe: string, startMs: number, endMs: number) {
   const apiKey = process.env.TWELVE_DATA_API_KEY;
   if (!apiKey) throw new Error('TWELVE_DATA_API_KEY is not configured.');
 
@@ -59,7 +59,7 @@ async function fetchChunk(instrument: string, timeframe: string, startMs: number
 
   const url = new URL('https://api.twelvedata.com/time_series');
   const params = {
-    symbol: twelveDataSymbolFor(instrument),
+    symbol: providerSymbol,
     interval,
     timezone: 'UTC',
     start_date: isoWithoutZone(startMs),
@@ -240,7 +240,10 @@ export async function prepareHistoricalBacktestData(
 
       try {
         const requestKey=`backtest:${run.id}:${timeframe}:${chunkStart}:${chunkEnd}`;
-        const rows = await withTwelveDataCredits({requestKey,operation:'backtest.historical',priority:'BACKGROUND',credits:1},()=>fetchChunk(run.instrument,timeframe,chunkStart,chunkEnd));
+        const frozenProviderSymbol = typeof run.metadata?.providerSymbol === 'string' && run.metadata.providerSymbol.trim()
+          ? run.metadata.providerSymbol.trim()
+          : fallbackProviderSymbol(run.instrument);
+        const rows = await withTwelveDataCredits({requestKey,operation:'backtest.historical',priority:'BACKGROUND',credits:1},()=>fetchChunk(run.instrument,frozenProviderSymbol,timeframe,chunkStart,chunkEnd));
         requestsUsed += 1;
         await saveCandles(admin, rows);
 

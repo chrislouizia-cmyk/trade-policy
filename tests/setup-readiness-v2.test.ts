@@ -153,3 +153,86 @@ test('confirmed mandatory Order Block passes while optional Order Block never bl
   assert.equal(optional.conditions[0].status,'FAIL');
   assert.equal(optional.status,'PASS');
 });
+
+const productionRule=(ruleKey:string,mandatory:boolean,evaluationMode:StrategyRule['evaluationMode']='AUTOMATIC',weight=10):StrategyRule=>({ruleKey,label:ruleKey,enabled:true,mandatory,weight,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode});
+const passingEvidence={
+  h1TrendAligned:assessment(true),
+  liquiditySweep:assessment(true),
+  chochConfirmed:assessment(true),
+  bosConfirmed:assessment(true),
+  retestConfirmed:assessment(true),
+  orderBlock:assessment(false),
+  fairValueGap:assessment(false),
+};
+
+test('Gold Liquidity Sweep production rule keys reach READY without rewriting the saved strategy',()=>{
+  const rules=[
+    productionRule('trend-alignment',true),
+    productionRule('liquidity-sweep',true),
+    productionRule('choch',true),
+    productionRule('bos',true),
+    productionRule('engulfing',false,'MANUAL'),
+    productionRule('doji',false,'MANUAL'),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+  ];
+  const result=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(result.readiness.state,'READY');
+  assert.equal(result.readiness.percentage,100);
+  assert.deepEqual(result.readiness.required,{passed:4,failed:0,pending:0});
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys,[]);
+});
+
+test('Gold Liquidity Sweep v1 production rule keys normalize CHoCH and preserve a real sweep failure',()=>{
+  const rules=[
+    productionRule('liquidity-sweep',true),
+    productionRule('choch',true),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+  ];
+  const ready=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(ready.readiness.state,'READY');
+  assert.deepEqual(ready.readiness.required,{passed:2,failed:0,pending:0});
+  const blocked=evaluateLiveTradingDna(profile(rules),{...passingEvidence,liquiditySweep:assessment(false,'No qualifying sweep was detected.')});
+  assert.equal(blocked.readiness.state,'NOT_READY');
+  assert.equal(blocked.readiness.required.failed,1);
+  assert.match(blocked.readiness.blockers[0].reason,/No qualifying sweep/);
+});
+
+test('GBPUSD London Pullback keeps support and resistance as exact manual gates',()=>{
+  const rules=[
+    productionRule('trend-alignment',true),
+    productionRule('support-zone',true,'MANUAL'),
+    productionRule('resistance-zone',true,'MANUAL'),
+    productionRule('choch',true),
+    productionRule('bos',true),
+    productionRule('retest',true),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+    productionRule('pivot',false,'MANUAL'),
+    productionRule('engulfing',false,'MANUAL'),
+    productionRule('liquidity-sweep',false),
+  ];
+  const live=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(live.readiness.state,'WAITING_FOR_CONFIRMATION');
+  assert.deepEqual(live.readiness.required,{passed:4,failed:0,pending:2});
+  assert.deepEqual(live.readiness.diagnostics?.unmatchedStrategyRuleKeys,[]);
+  assert.doesNotMatch(live.readiness.diagnostics?.reason??'',/ZERO_REQUIRED_RULES/);
+
+  const context=buildLiveTradingDnaContext(passingEvidence);
+  const confirmed=evaluateTradingDnaRuntime(rules,{...context,manualConfirmations:[
+    {evidenceKey:'support-zone',state:'CONFIRMED'},
+    {evidenceKey:'resistance-zone',state:'CONFIRMED'},
+  ]});
+  const readiness=calculateLiveSetupReadiness(confirmed);
+  assert.equal(readiness.state,'READY');
+  assert.deepEqual(readiness.required,{passed:6,failed:0,pending:0});
+});
+
+test('missing automatic evidence remains PENDING and never becomes a synthetic PASS',()=>{
+  const result=evaluateLiveTradingDna(profile([productionRule('unknown-required-detector',true)]),passingEvidence);
+  assert.equal(result.report.conditions[0].status,'PENDING');
+  assert.equal(result.readiness.state,'WAITING_FOR_CONFIRMATION');
+  assert.equal(result.readiness.percentage,0);
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys,['unknown-required-detector']);
+});

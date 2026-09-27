@@ -68,6 +68,26 @@ function eventOperatorPasses(rule: CanonicalHistoricalRule, detected: boolean): 
   throw new Error(`Historical operator ${rule.operator} is invalid for event detector ${rule.detectorId}.`);
 }
 
+function displacement(rule: CanonicalHistoricalRule, candles: NormalizedCandle[]): HistoricalRuleEvaluation {
+  const atrPeriod = Math.max(2, numberParameter(rule, 'atrPeriod', 14));
+  if (candles.length < atrPeriod + 1) return result(rule, false, [], { atrPeriod }, true);
+  const latest = candles.at(-1)!;
+  const history = candles.slice(-(atrPeriod + 1));
+  const trueRanges = history.slice(1).map((candle, index) => {
+    const previousClose = history[index]!.close;
+    return Math.max(candle.high - candle.low, Math.abs(candle.high - previousClose), Math.abs(candle.low - previousClose));
+  });
+  const atr = average(trueRanges);
+  const body = Math.abs(latest.close - latest.open);
+  const range = Math.max(latest.high - latest.low, Number.EPSILON);
+  const atrMultiple = numberParameter(rule, 'atrMultiple', 1.1);
+  const bodyRangeRatio = numberParameter(rule, 'bodyRangeRatio', 0.65);
+  const direction = latest.close > latest.open ? 'BULLISH' : latest.close < latest.open ? 'BEARISH' : 'FLAT';
+  const detected = body > atr * atrMultiple && body / range > bodyRangeRatio && directionMatches(rule.direction, direction);
+  const passed = eventOperatorPasses(rule, detected);
+  return result(rule, passed, passed ? [{ candle: latest.closedAt, body, range, atr, direction }] : [], { atrPeriod, atrMultiple, bodyRangeRatio, body, range, atr, direction });
+}
+
 function lifecycleOperatorPasses(rule: CanonicalHistoricalRule, active: boolean, newlyConfirmed: boolean): boolean {
   if (rule.operator === 'ACTIVE_EXISTS') return active;
   if (rule.operator === 'ACTIVE_MISSING') return !active;
@@ -401,6 +421,7 @@ function evaluate(rule: CanonicalHistoricalRule, series: Record<string, Candle[]
   const candles = normalized(series[rule.timeframe] ?? [], rule.timeframe);
   if (!candles.length) return result(rule, false, [], { timeframe: rule.timeframe }, true);
   if (['market-structure.swing', 'market-structure.bos', 'market-structure.choch', 'market-structure.liquidity-sweep'].includes(rule.detectorId)) return structural(rule, candles);
+  if (rule.detectorId === 'price-action.displacement') return displacement(rule, candles);
   if (rule.detectorId === 'market-structure.state' || rule.detectorId === 'market-structure.level') return structureStateOrLevel(rule, candles);
   if (rule.detectorId === 'price-action.range-break') return range(rule, candles, false);
   if (rule.detectorId === 'price-action.breakout-confirmation') return range(rule, candles, true);

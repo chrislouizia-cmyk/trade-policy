@@ -33,7 +33,8 @@ import {
   persistedStrategyFromCurrentReview,
   type CanonicalReviewConfirmation,
 } from '@/lib/strategy-creation-review';
-import { SUPPORTED_INSTRUMENT_SYMBOLS } from '@/lib/instrument-registry';
+import InstrumentSelector, { type CatalogInstrument } from '@/components/InstrumentSelector';
+import { SESSION_LABELS, sessionOptionsForMarketTypes, type MarketType } from '@/lib/instrument-catalog';
 import { useLocale } from '@/components/i18n/LocaleProvider';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
 import {
@@ -78,6 +79,8 @@ export default function StrategyBuilderV2({
   onApply,
   onCancel,
   onStateChange,
+  catalog,
+  onInstrumentResolved,
 }: {
   profile: StrategyProfile;
   initialState?: StrategyBuilderV2State;
@@ -85,6 +88,8 @@ export default function StrategyBuilderV2({
   onApply: (persisted: V2Persisted) => Promise<boolean> | boolean;
   onCancel: () => void;
   onStateChange?: (state: StrategyBuilderV2State) => void;
+  catalog: CatalogInstrument[];
+  onInstrumentResolved?: (instrument: CatalogInstrument) => void;
 }) {
   const { locale } = useLocale();
   const [copilotSessionId] = useState(() => crypto.randomUUID());
@@ -152,6 +157,13 @@ export default function StrategyBuilderV2({
   );
 
   const selectedRulesText = formatRuleSummary(canonicalRuleSelections);
+  const visibleSessionCodes = useMemo(() => {
+    const selectedMarketTypes = selectedInstruments
+      .map((symbol) => catalog.find((item) => item.symbol === symbol)?.marketType)
+      .filter((value): value is MarketType => Boolean(value));
+    const contextual = sessionOptionsForMarketTypes(selectedMarketTypes.length ? selectedMarketTypes : ['FOREX']);
+    return [...new Set([...contextual, ...sessions])];
+  }, [catalog, selectedInstruments, sessions]);
 
   function initializeVisualMode() {
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setVisualConfirmation(null);
@@ -407,18 +419,7 @@ export default function StrategyBuilderV2({
               </div>
               <div className="field-block">
                 <p className="muted">{w('Markets')}</p>
-                <div className="chip-list">
-                  {SUPPORTED_INSTRUMENT_SYMBOLS.map((instrument) => (
-                    <button
-                      key={instrument}
-                      type="button"
-                      className={`chip ${selectedInstruments.includes(instrument) ? 'selected' : ''}`}
-                      onClick={() => setSelectedInstruments((current) => current.includes(instrument) ? current.filter((value) => value !== instrument) : [...current, instrument])}
-                    >
-                      {instrument}
-                    </button>
-                  ))}
-                </div>
+                <InstrumentSelector catalog={catalog} selected={selectedInstruments} onChange={setSelectedInstruments} onInstrumentResolved={onInstrumentResolved} />
               </div>
               <div className="button-row"><button type="button" onClick={onCancel}>{w('Back')}</button><button type="button" className="primary" onClick={() => setStep(2)}>{w('Continue')}</button></div>
             </div>
@@ -430,14 +431,14 @@ export default function StrategyBuilderV2({
               <div className="field-block">
                 <p className="muted">{w('Sessions')}</p>
                 <div className="chip-list">
-                  {[['LONDON','London'],['NEW_YORK','New York'],['SYDNEY','Sydney'],['TOKYO','Tokyo']].map(([session, label]) => (
+                  {visibleSessionCodes.map((session) => (
                     <button
                       key={session}
                       type="button"
                       className={`chip ${sessions.includes(session) ? 'selected' : ''}`}
                       onClick={() => setSessions((current) => current.includes(session) ? current.filter((value) => value !== session) : [...current, session])}
                     >
-                      {w(label)}
+                      {w(SESSION_LABELS[session] ?? session.replaceAll('_', ' '))}
                     </button>
                   ))}
                 </div>

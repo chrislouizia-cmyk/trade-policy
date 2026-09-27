@@ -3,6 +3,7 @@ import {strategyTimeframeLayers,strategyTimeframes} from './strategy-timeframes.
 import {evaluateLiveTradingDna, type LiveSetupReadiness} from './trading-dna/live-readiness.ts';
 import type {TradingDnaEvidenceReport} from './trading-dna/runtime.ts';
 import { buildDetectorDisplayItems } from './decision-presentation/detector-display.ts';
+import { normalizeActiveStrategyEvidenceKey, normalizeStrategyRuleToken } from './active-strategy-evidence.ts';
 
 export type Candle={datetime:string;open:number;high:number;low:number;close:number;volume?:number};
 export type AnalysisStatus='DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
@@ -20,8 +21,8 @@ export class MarketAnalysisError extends Error {
 
 export const DETECTOR_EVIDENCE_IDS=['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','fairValueGap','retestConfirmed','displacement','premiumDiscount','rejectionCandle','volumeConfirmation','volatilityRequirement'] as const;
 export const UNREACHABLE_EVIDENCE_IDS=['orderBlock','sessionRequirement','newsFilter','correlationFilter','spreadFilter'] as const;
-const aliases:Record<string,string>={support_resistance:'structurePattern',SUPPORT_RESISTANCE:'structurePattern',market_structure:'structurePattern',MARKET_STRUCTURE:'structurePattern',BREAK_OF_STRUCTURE:'bosConfirmed',fvg:'fairValueGap',FAIR_VALUE_GAP:'fairValueGap',breakout_close:'bosConfirmed',CLOSE_BEYOND_LEVEL:'bosConfirmed',trend_alignment:'h4TrendAligned',HTF_TREND_ALIGNMENT:'h4TrendAligned',liquidity_sweep:'liquiditySweep',LIQUIDITY_GRAB:'liquiditySweep'};
-export function normalizeEvidenceId(id:string){return aliases[id]??id;}
+const analysisAliases:Record<string,string>={displacement:'displacement',premiumdiscount:'premiumDiscount',rejectioncandle:'rejectionCandle',volumeconfirmation:'volumeConfirmation',volatilityrequirement:'volatilityRequirement'};
+export function normalizeEvidenceId(id:string){return normalizeActiveStrategyEvidenceKey(id)??analysisAliases[normalizeStrategyRuleToken(id)]??id;}
 const avg=(v:number[])=>v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
 const round=(n:number,d=5)=>Number(n.toFixed(d));
 function atr(c:Candle[],p=14){const xs=c.slice(-p-1);const tr=xs.slice(1).map((x,i)=>Math.max(x.high-x.low,Math.abs(x.high-xs[i].close),Math.abs(x.low-xs[i].close)));return avg(tr);}

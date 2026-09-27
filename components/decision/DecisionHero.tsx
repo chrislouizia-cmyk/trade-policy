@@ -27,6 +27,9 @@ type Props={
   readinessPercent?:number|null;
   violationsCount?:number;
   pendingCount?:number;
+  technicalCandidateFound?:boolean;
+  manualPendingCount?:number;
+  ruleBlockerCount?:number;
   setupType?:string|null;
   decisionStatus?:string;
   experienceGuidance?:string;
@@ -52,7 +55,7 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
   return 'Check again';
 }
 
-export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
+export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,technicalCandidateFound=false,manualPendingCount=0,ruleBlockerCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
   const {locale}=useLocale();
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
   if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
@@ -75,7 +78,11 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
       <dl className="decision-panel-metrics">
         <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>
         <div><dt>Setup evidence</dt><dd>{explanation.confirmedRequiredCount} / {explanation.totalRequiredCount}</dd></div>
+        <div><dt>Technical candidate</dt><dd>{technicalCandidateFound ? 'FOUND' : 'NOT READY'}</dd></div>
+        <div><dt>Manual confirmations</dt><dd>{manualPendingCount ? `${manualPendingCount} PENDING` : 'COMPLETE'}</dd></div>
+        <div><dt>Rule blockers</dt><dd>{ruleBlockerCount}</dd></div>
         <div><dt>Setup pending</dt><dd>{pendingCount}</dd></div>
+        <div><dt>Other evidence pending</dt><dd>{Math.max(0,pendingCount-manualPendingCount)}</dd></div>
         <div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>
         <div><dt>Final blocks</dt><dd>{finalized ? violationsCount : '—'}</dd></div>
       </dl>

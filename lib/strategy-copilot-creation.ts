@@ -15,6 +15,7 @@ import {
   type ValueProvenance,
 } from './strategy-creation-contract.ts';
 import type { StrategyBuilderV2State } from './strategy-builder-v2-persistence.ts';
+import { extractSupportedInstrumentSymbols, extractUnsupportedInstrumentSymbols } from './instrument-registry.ts';
 import {
   extractExplicitMinimumRR,
   extractExplicitRiskPercent,
@@ -43,6 +44,7 @@ const INSTRUMENT_ALIASES: Record<string, RegExp> = {
   XAGUSD: /\b(?:xagusd|silver)\b/i,
   EURUSD: /\b(?:eurusd|euro\s*(?:\/|-)?\s*usd)\b/i,
   GBPUSD: /\b(?:gbpusd|pound\s*(?:\/|-)?\s*usd)\b/i,
+  GBPJPY: /\b(?:gbpjpy|pound\s*(?:\/|-)?\s*jpy)\b/i,
   USDJPY: /\b(?:usdjpy|dollar\s*(?:\/|-)?\s*jpy)\b/i,
   AUDUSD: /\baudusd\b/i,
   USDCAD: /\busdcad\b/i,
@@ -54,6 +56,7 @@ const INSTRUMENT_ALIASES: Record<string, RegExp> = {
 const RULE_ALIASES: Record<string, RegExp> = {
   'liquidity-sweep': /\b(?:liquidity sweep|liquidity)\b/i,
   choch: /\bchoch\b/i,
+  displacement: /\bdisplacement\b/i,
   bos: /\b(?:bos|break of structure)\b/i,
   retest: /\bretest\b/i,
   'order-block': /\b(?:order block|ob)\b/i,
@@ -80,7 +83,7 @@ function escaped(value: string): string {
 function roleTimeframe(message: string, role: 'context' | 'execution'): string | undefined {
   const rolePattern = role === 'context'
     ? '(?:context|macro|higher(?:[- ]timeframe)?|htf)'
-    : '(?:execution|entry|trigger)';
+    : '(?:execution|entry|primary\\s+confirmation)';
   const timeframe = '\\b(M1|M5|M15|M30|H1|H4|D1|W1)\\b';
   const beforeRole = message.match(new RegExp(`${timeframe}\\s+(?:as|for)\\s+(?:the\\s+)?${rolePattern}`, 'i'));
   if (beforeRole?.[1]) return beforeRole[1].toUpperCase();
@@ -93,7 +96,9 @@ function resolveTimeframeRoles(message: string, draft: StrategyCopilotDraft, pre
   const explicitExecution = roleTimeframe(message, 'execution');
   const values = [...new Set(draft.timeframes.filter((value) => TIMEFRAME_RANK[value]))];
   const ordered = values.slice().sort((left, right) => TIMEFRAME_RANK[left] - TIMEFRAME_RANK[right]);
-  const inferredExecution = ordered[0];
+  const refinement = message.match(/\b(M1|M5|M15|M30|H1|H4|D1|W1)\b[^.\n]{0,35}\b(?:refinement|precision)\b|\b(?:refinement|precision)\b[^.\n]{0,35}\b(M1|M5|M15|M30|H1|H4|D1|W1)\b/i);
+  const refinementTimeframe = (refinement?.[1] ?? refinement?.[2])?.toUpperCase();
+  const inferredExecution = ordered.find((value) => value !== refinementTimeframe) ?? ordered[0];
   const inferredContext = ordered.length > 1 ? ordered.at(-1) : undefined;
   return {
     contextTimeframe: explicitContext ?? inferredContext ?? previous?.values.contextTimeframe,
@@ -132,7 +137,11 @@ function fieldProvenance(
   previous?: CanonicalCreationDraft,
 ): ValueProvenance {
   if (field === 'name') return draft.name && nameWasExplicit(message, draft.name) ? 'EXPLICIT' : 'INFERRED';
-  if (field === 'instruments') return draft.instrument && INSTRUMENT_ALIASES[draft.instrument]?.test(message) ? 'EXPLICIT' : 'INFERRED';
+  if (field === 'instruments') {
+    const parsed = extractSupportedInstrumentSymbols(message);
+    const selected = draft.instruments?.length ? draft.instruments : draft.instrument ? [draft.instrument] : [];
+    return selected.length > 0 && selected.every((symbol) => parsed.includes(symbol) || INSTRUMENT_ALIASES[symbol]?.test(message)) ? 'EXPLICIT' : 'INFERRED';
+  }
   if (field === 'sessions') return sessionsWereExplicit(message, draft.sessions.map((value) => SESSION_CODES[value] ?? value)) ? 'EXPLICIT' : 'INFERRED';
   if (field === 'contextTimeframe') return timeframes.contextExplicit ? 'EXPLICIT' : 'INFERRED';
   if (field === 'executionTimeframe') return timeframes.executionExplicit ? 'EXPLICIT' : 'INFERRED';
@@ -150,10 +159,18 @@ function canonicalValues(reply: StrategyCopilotReply, message: string, previous?
   const usableName = draft.name && draft.name !== 'Draft from description' ? draft.name : previous?.values.name;
   const explicitRiskPercent = extractExplicitRiskPercent(message);
   const explicitMinimumRR = extractExplicitMinimumRR(message);
+  const mentionedInstruments = extractSupportedInstrumentSymbols(message);
+  const selectedInstruments = mentionedInstruments.length
+    ? mentionedInstruments
+    : draft.instruments?.length
+      ? draft.instruments
+      : draft.instrument
+        ? [draft.instrument]
+        : previous?.values.instruments;
 
   return {
     ...(usableName ? { name: usableName } : {}),
-    ...(draft.instrument ? { instruments: [draft.instrument] } : previous ? { instruments: previous.values.instruments } : {}),
+    ...(selectedInstruments?.length ? { instruments: [...selectedInstruments] } : {}),
     ...(draft.sessions.length ? { sessions: draft.sessions.map((value) => SESSION_CODES[value] ?? value) } : previous ? { sessions: previous.values.sessions } : {}),
     ...(timeframes.contextTimeframe ? { contextTimeframe: timeframes.contextTimeframe } : {}),
     ...(timeframes.executionTimeframe ? { executionTimeframe: timeframes.executionTimeframe } : {}),
@@ -207,6 +224,7 @@ function unresolvedInputs(message: string, reply: StrategyCopilotReply): Canonic
   const canonicalFieldQuestion = /\b(?:name|call|instrument|symbol|market|session|context|macro|timeframe|entry|execution|rule|condition|confirmation|filter|informational|risk|reward|rr)\b/i;
   const values: CanonicalUnresolvedInput[] = [
     ...parsed.unknownConcepts.map((text) => ({ kind: 'UNSUPPORTED_CONCEPT' as const, text, source: 'COPILOT' as const })),
+    ...extractUnsupportedInstrumentSymbols(message).map((symbol) => ({ kind:'UNSUPPORTED_CONCEPT' as const, text:`Unsupported instrument: ${symbol}`, source:'COPILOT' as const })),
     ...reply.unresolvedQuestions.flatMap((text) => {
       if (isCopilotClarificationAnswered(message, text)) return [];
       const unsupported = /unsupported|not (?:in|part of) the (?:supported|rule) catalog/i.test(text);
