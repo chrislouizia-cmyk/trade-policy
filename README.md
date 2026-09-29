@@ -66,7 +66,7 @@ TWELVE_DATA_INTERNAL_TEST_ENABLED=false
 TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED=false
 ```
 
-Create a Twelve Data API key, add it to `.env.local`, and restart `npm run dev`. Set `TWELVE_DATA_INTERNAL_TEST_ENABLED=true` only for a closed internal testing environment; access is additionally limited to accepted active staff accounts. Keep `TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED=false` until client-facing display rights are contractually confirmed.
+Create a Twelve Data API key, add it to `.env.local`, and restart `npm run dev`. Set `TWELVE_DATA_INTERNAL_TEST_ENABLED=true` only for a closed internal testing environment; access is additionally limited to accepted active staff accounts or explicitly allowlisted internal market testers. The tester entitlement does not grant HQ access. Keep `TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED=false` until client-facing display rights are contractually confirmed.
 
 ### Additional Supabase migration
 

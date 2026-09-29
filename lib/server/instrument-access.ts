@@ -3,14 +3,12 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InstrumentAccessContext } from '@/lib/instrument-catalog';
 
-export function internalInstrumentAccessFromRole(
-  staffRole: unknown,
+export function internalInstrumentAccessFromAuthorization(
+  authorized: unknown,
   internalTestingEnabled = process.env.TWELVE_DATA_INTERNAL_TEST_ENABLED === 'true',
 ): InstrumentAccessContext {
   return {
-    internalTestAuthorized: internalTestingEnabled
-      && typeof staffRole === 'string'
-      && staffRole.trim().length > 0,
+    internalTestAuthorized: internalTestingEnabled && authorized === true,
   };
 }
 
@@ -18,10 +16,10 @@ export async function resolveInstrumentAccessContext(client: SupabaseClient): Pr
   if (process.env.TWELVE_DATA_INTERNAL_TEST_ENABLED !== 'true') {
     return { internalTestAuthorized: false };
   }
-  const { data, error } = await client.rpc('current_staff_role');
+  const { data, error } = await client.rpc('has_internal_market_test_access');
   if (error) {
-    console.error('[INTERNAL_MARKET_ACCESS_CHECK_FAILED]', { message: error.message ?? 'Unknown staff lookup error' });
+    console.error('[INTERNAL_MARKET_ACCESS_CHECK_FAILED]', { message: error.message ?? 'Unknown entitlement lookup error' });
     return { internalTestAuthorized: false };
   }
-  return internalInstrumentAccessFromRole(data, true);
+  return internalInstrumentAccessFromAuthorization(data, true);
 }
