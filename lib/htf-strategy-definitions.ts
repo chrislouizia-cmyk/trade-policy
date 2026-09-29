@@ -2,8 +2,10 @@ import type { StopLimit, StrategyProfile } from '../types/trade.ts';
 import { METHODOLOGY_LIBRARY, createPersistedV2RuleTree, type RuleSelection } from './strategy-builder-v2.ts';
 import { v2StateToPersistedStrategy, type V2Persisted } from './strategy-builder-v2-persistence.ts';
 
-export const GBPUSD_HTF_STRATEGY_NAME = 'GBPUSD HTF Liquidity & Structure v1';
+export const FOREX_HTF_STRATEGY_NAME = 'Forex HTF Liquidity & Structure v1';
 export const GOLD_HTF_STRATEGY_NAME = 'Gold HTF Liquidity Expansion v1';
+export const FOREX_HTF_INSTRUMENTS = ['GBPUSD','EURUSD','GBPJPY','USDJPY'] as const;
+export type HtfInstrument = (typeof FOREX_HTF_INSTRUMENTS)[number] | 'XAUUSD';
 
 const definitions = new Map(METHODOLOGY_LIBRARY.flatMap((methodology) => methodology.rules).map((rule) => [rule.key, rule]));
 
@@ -31,26 +33,28 @@ export function htfLiquidityRuleSelections():RuleSelection[] {
   ];
 }
 
-export function htfStopLimits(instrument:'GBPUSD'|'GBPJPY'|'XAUUSD'):StopLimit[] {
+export function htfStopLimits(instrument:HtfInstrument):StopLimit[] {
   if(instrument==='XAUUSD')return [{instrument,method:'POINTS',minimumValue:1200,preferredValue:2400,maximumValue:3600}];
   if(instrument==='GBPJPY')return [{instrument,method:'PIPS',minimumValue:15,preferredValue:35,maximumValue:60}];
   return [{instrument,method:'PIPS',minimumValue:10,preferredValue:30,maximumValue:50}];
 }
 
-export function buildHtfLiquidityStrategy(baseProfile:StrategyProfile,instrument:'GBPUSD'|'GBPJPY'|'XAUUSD'):V2Persisted {
+export function buildHtfLiquidityStrategy(baseProfile:StrategyProfile,instruments:readonly HtfInstrument[]):V2Persisted {
+  if(instruments.length===0)throw new Error('An HTF strategy requires at least one instrument.');
   const rules=htfLiquidityRuleSelections();
-  const stopLimits=htfStopLimits(instrument);
+  const stopLimits=instruments.flatMap(htfStopLimits);
+  const isGold=instruments.length===1&&instruments[0]==='XAUUSD';
   const profile:StrategyProfile={
     ...structuredClone(baseProfile),
-    name:instrument==='XAUUSD'?GOLD_HTF_STRATEGY_NAME:instrument==='GBPUSD'?GBPUSD_HTF_STRATEGY_NAME:baseProfile.name,
-    instruments:[instrument],marketTypes:[instrument==='XAUUSD'?'METALS':'FOREX'],
+    name:isGold?GOLD_HTF_STRATEGY_NAME:FOREX_HTF_STRATEGY_NAME,
+    instruments:[...instruments],marketTypes:[isGold?'METALS':'FOREX'],
     macroTimeframe:'D1',trendTimeframe:'H4',confirmationTimeframe:'H1',entryTimeframe:'M15',triggerTimeframe:'M5',
     minimumRR:2,preferredRR:Math.max(3,Number(baseProfile.preferredRR??3)),maximumRiskPercent:.5,
     requireTrendAlignment:false,
     stopLimitSettings:stopLimits,stopLimits:Object.fromEntries(stopLimits.map((limit)=>[limit.instrument,limit.maximumValue])),
   };
   const persisted=v2StateToPersistedStrategy(profile,{
-    name:profile.name,instruments:[instrument],sessions:[...(profile.allowedSessions??[])],contextTimeframe:'D1',executionTimeframe:'M15',
+    name:profile.name,instruments:[...instruments],sessions:[...(profile.allowedSessions??[])],contextTimeframe:'D1',executionTimeframe:'M15',
     methodologyIds:['smc','ict','supply-demand','price-action','trend-following'],ruleSelections:rules,ruleTree:createPersistedV2RuleTree(rules),
     riskPercent:.5,minimumRR:2,stopLogic:{kind:'STOP_LIMITS',limits:stopLimits},direction:'BOTH',
   });

@@ -3,12 +3,12 @@ import test from 'node:test';
 
 import { buildHistoricalRulePlan } from '../lib/backtesting/historical-rule-plan.ts';
 import { evaluateBacktestRiskGeometry } from '../lib/backtesting/risk-geometry.ts';
-import { buildHtfLiquidityStrategy, GOLD_HTF_STRATEGY_NAME } from '../lib/htf-strategy-definitions.ts';
+import { buildHtfLiquidityStrategy, FOREX_HTF_INSTRUMENTS, FOREX_HTF_STRATEGY_NAME, GOLD_HTF_STRATEGY_NAME } from '../lib/htf-strategy-definitions.ts';
 import { buildLiveTradingDnaContext, calculateLiveSetupReadiness } from '../lib/trading-dna/live-readiness.ts';
 import { evaluateTradingDnaRuntime } from '../lib/trading-dna/runtime.ts';
 import { DEFAULT_STRATEGY_PROFILE } from '../types/trade.ts';
 
-const gbp=()=>buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'existing',instruments:['GBPUSD'],allowedSessions:['LONDON','NEW_YORK']},'GBPUSD');
+const gbp=()=>buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'existing',instruments:['GBPUSD'],allowedSessions:['LONDON','NEW_YORK']},FOREX_HTF_INSTRUMENTS);
 
 test('current GBPUSD HTF normalization persists the intended rules and removes duplicate/no-op rules',()=>{
   const persisted=gbp();
@@ -67,9 +67,11 @@ test('stop geometry and minimum RR are deterministic for GBPUSD, GBPJPY, and Gol
   assert.equal(evaluateBacktestRiskGeometry(gbpProfile,'GBPUSD',1.3,1.298,1.304).passed,true);
   assert.equal(evaluateBacktestRiskGeometry(gbpProfile,'GBPUSD',1.3,1.294,1.312).reason,'STOP_ABOVE_MAXIMUM');
   assert.equal(evaluateBacktestRiskGeometry(gbpProfile,'GBPUSD',1.3,1.298,1.303).reason,'RR_BELOW_MINIMUM');
-  const jpy=buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'JPY',allowedSessions:['LONDON']},'GBPJPY').profile;
+  assert.equal(gbp().profile.name,FOREX_HTF_STRATEGY_NAME);
+  assert.deepEqual(gbp().profile.instruments,[...FOREX_HTF_INSTRUMENTS]);
+  const jpy=buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'JPY',allowedSessions:['LONDON']},['GBPJPY']).profile;
   assert.equal(evaluateBacktestRiskGeometry(jpy,'GBPJPY',190,189.8,190.4).passed,true);
-  const gold=buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'Gold',allowedSessions:['LONDON']},'XAUUSD').profile;
+  const gold=buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'Gold',allowedSessions:['LONDON']},['XAUUSD']).profile;
   assert.equal(gold.name,GOLD_HTF_STRATEGY_NAME);
   assert.equal(evaluateBacktestRiskGeometry(gold,'XAUUSD',2500,2488,2524).passed,true);
   assert.equal(evaluateBacktestRiskGeometry(gold,'XAUUSD',2500,2495,2510).reason,'STOP_BELOW_MINIMUM');
