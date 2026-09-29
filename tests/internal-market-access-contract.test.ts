@@ -4,12 +4,20 @@ import test from 'node:test';
 
 const read = (path: string) => fs.readFileSync(path, 'utf8');
 
-test('internal market access is entitlement-derived and controlled by an explicit server flag', () => {
+test('internal market access is entitlement-derived with an explicit emergency kill switch', () => {
   const access = read('lib/server/instrument-access.ts');
-  assert.match(access, /TWELVE_DATA_INTERNAL_TEST_ENABLED/);
+  assert.match(access, /TWELVE_DATA_INTERNAL_TEST_DISABLED/);
+  assert.match(access, /disabledValue !== 'true'/);
   assert.match(access, /has_internal_market_test_access/);
   assert.match(access, /authorized === true/);
+  assert.doesNotMatch(access, /TWELVE_DATA_INTERNAL_TEST_ENABLED/);
   assert.doesNotMatch(access, /user_metadata|raw_user_meta_data/);
+});
+
+test('catalog sync uses the same internal-testing switch as request authorization', () => {
+  const sync = read('lib/server/instrument-catalog-sync.ts');
+  assert.match(sync, /isInternalMarketTestingEnabled/);
+  assert.doesNotMatch(sync, /TWELVE_DATA_INTERNAL_TEST_ENABLED === 'true'/);
 });
 
 test('client test entitlement is isolated from staff access and protected server-side', () => {

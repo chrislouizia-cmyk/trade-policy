@@ -6,6 +6,7 @@ import {
   twelveDataReferenceRows,
   type TwelveDataReferenceMarket,
 } from '@/lib/twelve-data-reference';
+import { isInternalMarketTestingEnabled } from '@/lib/server/instrument-access';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const UPSERT_BATCH_SIZE = 500;
@@ -35,7 +36,7 @@ export async function syncTwelveDataInstrumentMarket(market: TwelveDataReference
   const verifiedAt = new Date().toISOString();
   const rows = twelveDataReferenceRows(market, payload, verifiedAt, {
     externalDisplayLicensed: process.env.TWELVE_DATA_EXTERNAL_DISPLAY_ENABLED === 'true',
-    internalTestingEnabled: process.env.TWELVE_DATA_INTERNAL_TEST_ENABLED === 'true',
+    internalTestingEnabled: isInternalMarketTestingEnabled(),
   });
   if (!rows.length) throw new Error(`Twelve Data ${market} reference sync returned no usable instruments.`);
 

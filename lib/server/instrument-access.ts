@@ -3,9 +3,20 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InstrumentAccessContext } from '@/lib/instrument-catalog';
 
+/**
+ * Internal market testing is entitlement-first. The environment variable is
+ * an emergency kill switch: setting it to `false` disables provider access,
+ * while an absent variable does not silently lock out approved testers.
+ */
+export function isInternalMarketTestingEnabled(
+  disabledValue = process.env.TWELVE_DATA_INTERNAL_TEST_DISABLED,
+): boolean {
+  return disabledValue !== 'true';
+}
+
 export function internalInstrumentAccessFromAuthorization(
   authorized: unknown,
-  internalTestingEnabled = process.env.TWELVE_DATA_INTERNAL_TEST_ENABLED === 'true',
+  internalTestingEnabled = isInternalMarketTestingEnabled(),
 ): InstrumentAccessContext {
   return {
     internalTestAuthorized: internalTestingEnabled && authorized === true,
@@ -13,7 +24,7 @@ export function internalInstrumentAccessFromAuthorization(
 }
 
 export async function resolveInstrumentAccessContext(client: SupabaseClient): Promise<InstrumentAccessContext> {
-  if (process.env.TWELVE_DATA_INTERNAL_TEST_ENABLED !== 'true') {
+  if (!isInternalMarketTestingEnabled()) {
     return { internalTestAuthorized: false };
   }
   const { data, error } = await client.rpc('has_internal_market_test_access');
