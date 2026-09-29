@@ -17,6 +17,7 @@ function selection(key:string, requirement:RuleSelection['requirement'], timefra
 
 export function htfLiquidityRuleSelections():RuleSelection[] {
   return [
+    selection('trend-alignment','REQUIRED','H1'),
     selection('liquidity-sweep','REQUIRED','H1'),
     selection('displacement','REQUIRED','M15'),
     selection('choch','REQUIRED','M15'),
@@ -26,7 +27,6 @@ export function htfLiquidityRuleSelections():RuleSelection[] {
     selection('order-block','OPTIONAL','M15','ANY'),
     selection('engulfing','OPTIONAL','M5','ANY'),
     selection('premium-discount','OPTIONAL','H4','ANY'),
-    selection('trend-alignment','OPTIONAL','H4','ANY'),
     selection('session-open','OPTIONAL','M15','ANY'),
     selection('pullback-entry','OPTIONAL','M5','ANY'),
     selection('liquidity-run','OPTIONAL','H1','ANY'),
@@ -50,7 +50,7 @@ export function buildHtfLiquidityStrategy(baseProfile:StrategyProfile,instrument
     instruments:[...instruments],marketTypes:[isGold?'METALS':'FOREX'],
     macroTimeframe:'D1',trendTimeframe:'H4',confirmationTimeframe:'H1',entryTimeframe:'M15',triggerTimeframe:'M5',
     minimumRR:2,preferredRR:Math.max(3,Number(baseProfile.preferredRR??3)),maximumRiskPercent:.5,
-    requireTrendAlignment:false,
+    requireTrendAlignment:true,
     stopLimitSettings:stopLimits,stopLimits:Object.fromEntries(stopLimits.map((limit)=>[limit.instrument,limit.maximumValue])),
   };
   const persisted=v2StateToPersistedStrategy(profile,{

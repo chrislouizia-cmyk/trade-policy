@@ -13,13 +13,14 @@ const gbp=()=>buildHtfLiquidityStrategy({...DEFAULT_STRATEGY_PROFILE,name:'exist
 test('current GBPUSD HTF normalization persists the intended rules and removes duplicate/no-op rules',()=>{
   const persisted=gbp();
   const byKey=new Map(persisted.rules.map((rule)=>[rule.ruleKey,rule]));
-  for(const key of ['liquidity-sweep','displacement','choch','bos','retest']){
+  for(const key of ['trend-alignment','liquidity-sweep','displacement','choch','bos','retest']){
     assert.equal(byKey.get(key)?.mandatory,true,key);
     assert.equal(byKey.get(key)?.evaluationMode,'AUTOMATIC',key);
   }
   assert.equal(byKey.has('market-structure-shift'),false);
   assert.equal(byKey.has('custom-rule'),false);
-  for(const key of ['fair-value-gap','order-block','engulfing','premium-discount','trend-alignment','session-open','pullback-entry','liquidity-run'])assert.equal(byKey.get(key)?.mandatory,false,key);
+  for(const key of ['fair-value-gap','order-block','engulfing','premium-discount','session-open','pullback-entry','liquidity-run'])assert.equal(byKey.get(key)?.mandatory,false,key);
+  assert.equal(persisted.profile.requireTrendAlignment,true);
 });
 
 test('D1 H4 H1 M15 M5 roles persist beneath the summary',()=>{
@@ -28,6 +29,7 @@ test('D1 H4 H1 M15 M5 roles persist beneath the summary',()=>{
     persisted.profile.macroTimeframe,persisted.profile.trendTimeframe,persisted.profile.confirmationTimeframe,persisted.profile.entryTimeframe,persisted.profile.triggerTimeframe,
   ],['D1','H4','H1','M15','M5']);
   const roles=Object.fromEntries(persisted.rules.map((rule)=>[rule.ruleKey,rule.timeframeRole]));
+  assert.equal(roles['trend-alignment'],'CONFIRMATION');
   assert.equal(roles['liquidity-sweep'],'CONFIRMATION');
   assert.equal(roles.displacement,'ENTRY');
   assert.equal(roles.engulfing,'TRIGGER');
@@ -47,11 +49,29 @@ test('a failed required displacement is a hard gate and optional confluence cann
   assert.equal(readiness.required.failed,1);
 });
 
+test('failed HTF context is a hard gate even when every optional rule passes',()=>{
+  const persisted=gbp();
+  const context=buildLiveTradingDnaContext({
+    h4TrendAligned:{value:true,confidence:100,reason:'H4 pass'},h1TrendAligned:{value:false,confidence:0,reason:'H1 conflict'},
+    liquiditySweep:{value:true,confidence:100,reason:'pass'},displacement:{value:true,confidence:100,reason:'pass'},chochConfirmed:{value:true,confidence:100,reason:'pass'},bosConfirmed:{value:true,confidence:100,reason:'pass'},retestConfirmed:{value:true,confidence:100,reason:'pass'},
+    fairValueGap:{value:true,confidence:100,reason:'optional pass'},premiumDiscount:{value:true,confidence:100,reason:'optional pass'},
+  });
+  const report=evaluateTradingDnaRuntime(persisted.rules,context,()=> '2026-09-27T00:00:00.000Z');
+  const readiness=calculateLiveSetupReadiness(report);
+  assert.equal(report.conditions.find((item)=>item.ruleId==='structure.trend-alignment')?.required,true);
+  assert.equal(readiness.state,'NOT_READY');
+  assert.equal(readiness.required.failed,1);
+});
+
 test('historical plan and frozen JSON shape preserve displacement and corrected timeframe roles',()=>{
   const persisted=gbp();
   const plan=buildHistoricalRulePlan(persisted.profile);
   assert.equal(plan.unsupportedRequiredRules.length,0);
   const displacement=plan.rules.find((rule)=>rule.originalRuleKey==='displacement');
+  const htfContext=plan.rules.find((rule)=>rule.originalRuleKey==='trend-alignment');
+  assert.equal(htfContext?.detectorId,'market-structure.trend-alignment');
+  assert.equal(htfContext?.required,true);
+  assert.deepEqual(htfContext?.timeframes,['H4','H1']);
   assert.equal(displacement?.detectorId,'price-action.displacement');
   assert.equal(displacement?.required,true);
   assert.equal(displacement?.timeframe,'M15');
