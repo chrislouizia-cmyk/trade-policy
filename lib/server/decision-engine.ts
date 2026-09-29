@@ -3,8 +3,9 @@ import 'server-only';
 import type { EvidenceKey, FinalRiskBlock, StrategyProfile, TradeInput, TradeResult } from '@/types/trade';
 import type { DailyTradeContext } from '@/lib/server/daily-trade-context';
 import { normalizeStrategyPolicy } from '@/lib/strategy-policy';
-import { evaluateRequiredRules, ruleLabel } from '@/lib/manual-confirmations';
+import { ruleLabel } from '@/lib/manual-confirmations';
 import { isStopDistanceWithinMaximum, meetsMinimumRiskReward, normalizedRiskReward } from '@/lib/trade-risk';
+import { resolveFinalRiskBaseVerdict } from '@/lib/final-risk-verdict';
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
@@ -158,13 +159,9 @@ export function validateTradeWithStrategy(
   }
   const rules=profile.rules??[];
   const ruleByKey=new Map(rules.map(rule=>[rule.ruleKey,rule]));
-  let mandatoryPending=false;
   policy.requiredConfirmations.forEach((key) => {
     if(!ruleByKey.has(key)&&!input[key])vetoes.push(`${ruleLabel(key,labels[key])} is mandatory.`);
   });
-  const requiredRules=evaluateRequiredRules(rules,input.manualConfirmations??[],input as unknown as Record<string,unknown>);
-  for(const rule of requiredRules.filter(rule=>rule.state==='FAILED'))vetoes.push(rule.mode==='MANUAL'?`${rule.label} failed manual confirmation.`:`${rule.label} is mandatory.`);
-  mandatoryPending=requiredRules.some(rule=>rule.state==='NOT_EVALUATED');
   if (!meetsMinimumRiskReward(rr,policy.minimumRR)) {
     vetoes.push(`RR is ${round(rr)}; strategy minimum is ${policy.minimumRR}.`);
   }
@@ -211,18 +208,14 @@ export function validateTradeWithStrategy(
   const confidenceBelow=!confidenceMissing&&input.setupConfidence!<policy.confidenceThreshold;
   if(confidenceMissing)vetoes.push('Live strategy confidence is required before authorization.');
   if(confidenceBelow)observations.push(`Confidence ${input.setupConfidence}% is below the required ${policy.confidenceThreshold}% threshold.`);
-  const baseVerdict =
-    vetoes.length > 0
-      ? 'REJECTED'
-      : mandatoryPending
-        ? 'WAIT'
-      : confidenceBelow
-        ? 'WAIT'
-      : score >= profile.authorizationScore
-        ? 'AUTHORIZED'
-        : score >= profile.waitScore
-          ? 'WAIT'
-          : 'REJECTED';
+  const baseVerdict = resolveFinalRiskBaseVerdict({
+    hasVetoes: vetoes.length > 0,
+    confidenceBelow,
+    tradingDnaOwnsRuleGating: rules.some((rule) => rule.enabled && rule.mandatory),
+    score,
+    authorizationScore: profile.authorizationScore,
+    waitScore: profile.waitScore,
+  });
 
   let greenDayExceptionApplied = false;
   let dailyMessage = '';

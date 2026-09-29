@@ -9,6 +9,7 @@ import {loadDailyTradeContext} from '@/lib/server/daily-trade-context';
 import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
 import {withTwelveDataCredits,ProviderCreditLimitError,ProviderRequestReplayError} from '@/lib/server/provider-credit-coordinator';
+import {applyTradingDnaRuntime} from '@/lib/trading-dna/runtime';
 
 export const runtime='nodejs';export const maxDuration=60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
@@ -51,7 +52,8 @@ export async function POST(request:Request){
     const evidence=Object.fromEntries((Object.entries(analysis.evidence) as [EvidenceKey,{value:boolean}][]).map(([key,value])=>[key,value.value]));
     const validationInput={instrument:trade.instrument,direction:trade.direction,entry:entry!,stopLoss:stopLoss!,takeProfit:takeProfit!,accountBalance:finite(trade.balance_at_entry)??1,riskPercent:riskPercent!,tradesToday:0,session,highImpactNews:Boolean(newsValue),...evidence,setupType:analysis.setupType,setupConfidence:analysis.liveAnalysisConfidence} as TradeInput;
     const dailyContext=await loadDailyTradeContext({supabase,userId:user.id,strategy,instrument:trade.instrument,accountId:trade.account_id,timezone:'UTC'});
-    const validation=validateTradeWithStrategy(validationInput,strategy,dailyContext);
+    const baseValidation=validateTradeWithStrategy(validationInput,strategy,dailyContext);
+    const validation=applyTradingDnaRuntime(baseValidation,analysis.tradingDnaReport);
     const riskDistance=Math.abs(entry!-stopLoss!);const currentR=riskDistance?((trade.direction==='BUY'?currentPrice-entry!:entry!-currentPrice)/riskDistance):0;
     const invalidated=trade.direction==='BUY'?currentPrice<=stopLoss!:currentPrice>=stopLoss!;const targetHit=trade.direction==='BUY'?currentPrice>=takeProfit!:currentPrice<=takeProfit!;const aligned=analysis.suggestedDirection===trade.direction;
     let status:GuidanceStatus='HOLD',nextAction='Keep the original plan and do not widen risk.';
