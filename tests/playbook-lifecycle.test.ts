@@ -4,7 +4,8 @@ import test from 'node:test';
 
 const builder = readFileSync(new URL('../components/StrategyBuilder.tsx', import.meta.url), 'utf8');
 const route = readFileSync(new URL('../app/api/strategies/delete/route.ts', import.meta.url), 'utf8');
-const migration = readFileSync(new URL('../supabase/migrations/107_repair_strategy_hard_delete.sql', import.meta.url), 'utf8');
+const schemaRepair = readFileSync(new URL('../supabase/migrations/107_repair_strategy_hard_delete.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/20260929153000_finalize_strategy_delete_contract.sql', import.meta.url), 'utf8');
 
 test('strategy lifecycle keeps archive separate from permanent delete', () => {
   for (const action of ['Edit', 'Duplicate', 'Archive', 'Restore', 'Delete strategy']) {
@@ -82,14 +83,16 @@ test('Validate discards analysis when its strategy is deleted', () => {
 });
 
 test('backtests survive source strategy deletion through their immutable snapshot', () => {
-  assert.match(migration, /alter column strategy_profile_id drop not null/);
-  assert.match(migration, /backtest_runs_strategy_profile_id_fkey/);
-  assert.match(migration, /on delete set null/);
+  assert.match(schemaRepair, /alter column strategy_profile_id drop not null/);
+  assert.match(schemaRepair, /backtest_runs_strategy_profile_id_fkey/);
+  assert.match(schemaRepair, /on delete set null/);
   assert.match(migration, /update public\.backtest_runs/);
 });
 
-test('immutable Marketplace releases block source deletion instead of being silently corrupted', () => {
+test('immutable Marketplace releases survive source deletion and discovery is archived', () => {
   assert.match(migration, /marketplace_strategy_releases/);
-  assert.match(migration, /Marketplace release/);
+  assert.match(migration, /SOURCE_STRATEGY_DELETED/);
+  assert.match(migration, /review_status = 'ARCHIVED'/);
+  assert.match(migration, /preservedMarketplaceReleases/);
   assert.doesNotMatch(migration, /delete from public\.marketplace_strategy_releases/);
 });
