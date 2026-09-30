@@ -23,7 +23,19 @@ test('chart fullscreen owns the dynamic viewport without vertical overflow',()=>
 test('account settings use existing identity fields and evidence-backed observed metrics',()=>{
   const account=read('app/account/page.tsx');
   assert.match(account,/experience_level,trader_type/);
+  assert.match(account,/from\('active_trades'\)/);
+  assert.doesNotMatch(account,/from\('trade_records'\).*taken_against_verdict/);
+  assert.match(account,/isTradeLifecycleSimulationRecord/);
   assert.match(account,/buildObservedTraderProfile/);
   assert.match(account,/TraderProfileOverview/);
-  assert.match(account,/account-language-row/);
+  assert.match(account,/account-language-embedded/);
+  assert.match(account,/NEXT_PUBLIC_DISCORD_INVITE_URL/);
+});
+
+test('route changes use a branded loading surface instead of the browser gray canvas',()=>{
+  const loading=read('app/loading.tsx');
+  const css=read('app/trade-police.css');
+  assert.match(loading,/route-loading-shell/);
+  assert.match(loading,/trade-police-logo\.png/);
+  assert.match(css,/\.route-loading-shell/);
 });

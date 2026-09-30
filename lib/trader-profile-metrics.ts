@@ -1,10 +1,9 @@
 export type TraderProfileTrade = {
-  source?: string | null;
   status?: string | null;
   outcome?: string | null;
   risk_percent?: number | string | null;
   taken_against_verdict?: boolean | null;
-  created_at?: string | null;
+  opened_at?: string | null;
   closed_at?: string | null;
   post_analysis?: {
     executionQuality?: string | null;
@@ -39,11 +38,11 @@ function observedType(averageHoldMinutes:number|null):string|null{
 }
 
 export function buildObservedTraderProfile(trades:readonly TraderProfileTrade[],maximumRiskPercent:number|null):ObservedTraderProfile{
-  const closed=trades.filter(trade=>trade.source==='EXECUTED'&&trade.status==='CLOSED');
+  const closed=trades.filter(trade=>trade.status==='CLOSED'&&Boolean(trade.closed_at));
   const sampleSize=closed.length;
   const confidence=sampleSize<5?'INSUFFICIENT':sampleSize<20?'EARLY':'ESTABLISHED';
   const durations=closed.flatMap(trade=>{
-    const opened=trade.created_at?Date.parse(trade.created_at):Number.NaN;
+    const opened=trade.opened_at?Date.parse(trade.opened_at):Number.NaN;
     const closedAt=trade.closed_at?Date.parse(trade.closed_at):Number.NaN;
     return Number.isFinite(opened)&&Number.isFinite(closedAt)&&closedAt>=opened?[(closedAt-opened)/60_000]:[];
   });
