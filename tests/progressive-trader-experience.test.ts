@@ -20,6 +20,14 @@ test('chart fullscreen owns the dynamic viewport without vertical overflow',()=>
   assert.match(css,/grid-template-rows:auto auto minmax\(0,1fr\)/);
 });
 
+test('the standard Check chart keeps its original readable chart height',()=>{
+  const panel=read('components/LiveMarketPanel.tsx');
+  const css=read('app/trade-police.css');
+  assert.match(panel,/<section className="card live-panel">/);
+  assert.doesNotMatch(panel,/--market-workspace-height/);
+  assert.match(css,/\.market-chart-stage\{[^}]*height:clamp\(320px,39vw,430px\)/);
+});
+
 test('account settings use existing identity fields and evidence-backed observed metrics',()=>{
   const account=read('app/account/page.tsx');
   assert.match(account,/experience_level,trader_type/);
@@ -43,14 +51,4 @@ test('route changes retain the current workspace while prefetched navigation res
   assert.match(navigation,/prefetch/);
   assert.match(mobileNavigation,/prefetch/);
   assert.doesNotMatch(css,/\.route-loading-shell/);
-});
-
-test('the first market chart measures and owns the actual remaining viewport',()=>{
-  const panel=read('components/LiveMarketPanel.tsx');
-  const css=read('app/trade-police.css');
-  assert.match(panel,/market-first-viewport/);
-  assert.match(panel,/getBoundingClientRect\(\)\.top/);
-  assert.match(panel,/--market-workspace-height/);
-  assert.match(css,/\.market-first-viewport \.market-chart-stage/);
-  assert.match(css,/height:var\(--market-workspace-height/);
 });

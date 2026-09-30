@@ -2435,13 +2435,6 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 @media(max-width:900px){.decision-focused-header .context-switchers{grid-template-columns:repeat(2,minmax(0,1fr))!important}.validate-page-flow>.live-panel .live-head{grid-template-columns:1fr}.strategy-trade-activity .last-trades-grid{grid-template-columns:1fr}.strategy-trade-activity .trade-history-rows{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
 /* Progressive workspace polish: keep navigation continuous, fit Check, and make Settings linear. */
-@media(min-width:768px){
-  .validate-page-flow>.live-panel.market-first-viewport{display:flex;flex-direction:column;height:var(--market-workspace-height,calc(100dvh - 220px));min-height:440px;overflow:hidden}
-  .validate-page-flow>.live-panel.market-first-viewport>.market-chart-composition{flex:1;min-height:0}
-  .validate-page-flow>.live-panel.market-first-viewport .market-chart-stage{height:100%;min-height:0}
-  .validate-page-flow>.live-panel.market-first-viewport:has(.analysis-error){height:auto;overflow:visible}
-  .validate-page-flow>.live-panel.market-first-viewport:has(.analysis-error) .market-chart-stage{height:clamp(320px,42vw,520px)}
-}
 .account-destination-panel{overflow:hidden;padding:0;background:radial-gradient(circle at 100% 0,rgba(122,162,255,.065),transparent 34%),linear-gradient(150deg,rgba(17,23,33,.97),rgba(8,12,18,.99))}
 .account-destination-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.07)}
 .account-destination-panel>header h2,.account-destination-panel>header p{margin:0}
