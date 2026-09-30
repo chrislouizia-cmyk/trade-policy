@@ -102,7 +102,7 @@ function applyDefaultTradeFormValues(
   setValue('session', strategy.allowedSessions[0] ?? 'LONDON');
 }
 
-export default function TradeValidator({userId,displayName,initialStrategy,initialStrategyRevisionId,initialSelectionMode}:{userId:string;displayName:string;initialStrategy:StrategyProfile;initialStrategyRevisionId:string;initialSelectionMode:'ACTIVE'|'REQUESTED'}) {
+export default function TradeValidator({userId,displayName,experienceLevel,initialStrategy,initialStrategyRevisionId,initialSelectionMode}:{userId:string;displayName:string;experienceLevel:string|null;initialStrategy:StrategyProfile;initialStrategyRevisionId:string;initialSelectionMode:'ACTIVE'|'REQUESTED'}) {
   const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
   const [result,setResult]=useState<ValidationResult|null>(null);
   const [analysis,setAnalysis]=useState<ChartAnalysis|null>(null);
@@ -625,6 +625,7 @@ export default function TradeValidator({userId,displayName,initialStrategy,initi
     violationsCount={result ? violatedCount : analysis?.setupReadiness?.required.failed ?? 0}
     decisionStatus={validateExperience.label}
     experienceGuidance={validateExperience.guidance}
+    experienceLevel={experienceLevel}
     finalized={Boolean(result)}
     finalRiskCheckAvailable={!result && isValidAnalysis}
     finalRiskCheckBusy={loading}

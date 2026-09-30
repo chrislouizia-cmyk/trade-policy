@@ -33,6 +33,7 @@ type Props={
   setupType?:string|null;
   decisionStatus?:string;
   experienceGuidance?:string;
+  experienceLevel?:string|null;
   finalized?:boolean;
   finalRiskCheckAvailable?:boolean;
   finalRiskCheckBusy?:boolean;
@@ -72,7 +73,7 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
   return 'Check again';
 }
 
-export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,technicalCandidateFound=false,manualPendingCount=0,ruleBlockerCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
+export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,technicalCandidateFound=false,manualPendingCount=0,ruleBlockerCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,experienceLevel,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
   const {locale}=useLocale();
   const c=decisionCopy[locale];
   if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">TRADE POLICE</p><h1 className="decision-hero-verdict"><span className="info">{c.checking}</span></h1><p className="decision-hero-instruction">Trade Police is checking the market against the rules you saved.</p></section>;
@@ -84,6 +85,11 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
   const analysis={provider:explanation.dataStatus.provider,latestCandleTimestamp:explanation.dataStatus.lastVerifiedCandleAt,calculatedAt:explanation.dataStatus.calculationCompletedAt};
   const resolvedPrimaryLabel=primaryActionLabel ?? actionLabel(explanation, displayVerdict);
   const resolvedPrimaryHint=primaryActionHint ?? (displayVerdict==='READY'?'Creates an Active Trade from this decision.':displayVerdict==='WAIT'?'Records the trade as an override and links it to the decision.':displayVerdict==='BLOCKED'?'The decision is blocked until the required conditions are cleared.':'Choose the next step for this decision.');
+  const requiredPercentage=explanation.totalRequiredCount>0?Math.round((explanation.confirmedRequiredCount/explanation.totalRequiredCount)*100):0;
+  const confirmedRequired=explanation.items.filter(item=>item.required&&item.state==='CONFIRMED');
+  const incompleteRequired=explanation.items.filter(item=>item.required&&item.state!=='CONFIRMED');
+  const supportingRules=explanation.items.filter(item=>!item.required);
+  const advancedByDefault=experienceLevel==='Advanced'||experienceLevel==='Professional';
   return <section className={`card decision-hero decision-explanation-hero state-${displayVerdict.toLowerCase()}`} aria-labelledby="decision-hero-title" aria-live="polite">
     <span className="sr-only">SHOULD I RISK MY MONEY RIGHT NOW? Mandatory rules still control the final decision. {narrative?.recommendation?'A final-check explanation is available.':''}</span><span className="sr-only">Readiness</span><span className="sr-only">Required readiness</span>
     <div className="decision-system-state"><span aria-hidden="true">{icon[explanation.verdict]}</span><strong>{c.systemState}: {displayVerdict.replaceAll('_',' ')}</strong><small>{explanation.dataStatus.provider}</small></div>
@@ -92,9 +98,13 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
       <p className="brand" data-validate-status>NEXT STEP · {decisionStatus}</p>
       <div className="decision-hero-verdict-column"><h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Current decision: </span>{displayDecision}</h1></div>
       <div className="decision-hero-explanation-column"><h2>{instruction}</h2><p className="decision-primary-reason">{explanation.primaryReason}</p></div>
-      {readinessAllowed&&<p className="required-rule-count"><strong>Setup evidence: {explanation.confirmedRequiredCount} of {explanation.totalRequiredCount}</strong> required rules confirmed</p>}
+      {readinessAllowed&&<div className="decision-rule-progress" aria-label={`${explanation.confirmedRequiredCount} of ${explanation.totalRequiredCount} required rules confirmed`}>
+        <div className="decision-rule-progress-copy"><strong>{explanation.confirmedRequiredCount} of {explanation.totalRequiredCount} required rules</strong><span>{requiredPercentage}% confirmed</span></div>
+        <div className="decision-rule-progress-track" aria-hidden="true"><span style={{width:`${requiredPercentage}%`}} /></div>
+        {incompleteRequired.length?<ul className="decision-rule-preview">{incompleteRequired.slice(0,3).map(item=><li key={item.id}><span className={`decision-rule-state state-${item.state.toLowerCase()}`}>{item.state==='BLOCKED'?'Failed':item.state==='NOT_AVAILABLE'?'Unavailable':'Waiting'}</span><strong>{item.title}</strong><small>{item.plainLanguageDescription}</small></li>)}</ul>:<p className="decision-rule-complete">All required setup rules are confirmed.</p>}
+      </div>}
       <div className="decision-next-action"><span>What happens next</span><strong>{explanation.nextAction}</strong></div>
-      <details className="decision-technical-details">
+      <details className="decision-technical-details" open={advancedByDefault}>
         <summary>{c.details}</summary>
         <dl className="decision-panel-metrics">
           <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>
@@ -107,6 +117,11 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
           <div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>
           <div><dt>Final blocks</dt><dd>{finalized ? violationsCount : '—'}</dd></div>
         </dl>
+        <div className="decision-rule-groups">
+          <section><h3>Required · confirmed</h3>{confirmedRequired.length?<ul>{confirmedRequired.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.plainLanguageDescription}</span></li>)}</ul>:<p>No required rule is confirmed yet.</p>}</section>
+          <section><h3>Required · needs attention</h3>{incompleteRequired.length?<ul>{incompleteRequired.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.plainLanguageDescription}</span>{item.nextAction&&!item.nextAction.includes('cannot determine')?<small>{item.nextAction}</small>:null}</li>)}</ul>:<p>No required rule is pending or failed.</p>}</section>
+          <section><h3>Supporting evidence</h3>{supportingRules.length?<ul>{supportingRules.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.state.replaceAll('_',' ')}</span></li>)}</ul>:<p>No optional evidence is configured.</p>}</section>
+        </div>
       </details>
     </div>
     <div className="decision-hero-actions">

@@ -14,7 +14,7 @@ export default async function ValidatePage({ searchParams }: { searchParams: Pro
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/client/login?next=/validate');
-  const [displayName,locale] = await Promise.all([getUserDisplayName(supabase, user),getRequestLocale()]);
+  const [displayName,locale,{data:profile}] = await Promise.all([getUserDisplayName(supabase, user),getRequestLocale(),supabase.from('profiles').select('experience_level').eq('id',user.id).maybeSingle()]);
   const c=getScreenCopy(locale).decision;
   const strategyId = params.strategy?.trim();
   let strategy;
@@ -25,5 +25,5 @@ export default async function ValidatePage({ searchParams }: { searchParams: Pro
     const heading = error instanceof StrategyNotFoundError ? c.notFound : error instanceof NoActiveStrategyError ? c.noActive : c.needsConfiguration;
     return <AuthenticatedAppShell eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused showContext><div className="card empty-state"><h2>{heading}</h2><a className="button-link primary" href="/profile">{c.configure}</a></div></AuthenticatedAppShell>;
   }
-  return <AuthenticatedAppShell eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused showContext><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} initialSelectionMode={strategyId ? 'REQUESTED' : 'ACTIVE'} /></AuthenticatedAppShell>;
+  return <AuthenticatedAppShell eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id} decisionFocused showContext><TradeValidator userId={user.id} displayName={displayName} experienceLevel={profile?.experience_level??null} initialStrategy={strategy} initialStrategyRevisionId={strategyRevisionId(strategy)} initialSelectionMode={strategyId ? 'REQUESTED' : 'ACTIVE'} /></AuthenticatedAppShell>;
 }
