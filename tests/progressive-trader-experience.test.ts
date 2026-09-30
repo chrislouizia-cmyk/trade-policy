@@ -13,6 +13,18 @@ test('decision keeps the simple verdict and exposes deterministic rule progress'
   assert.match(hero,/experienceLevel==='Advanced'/);
 });
 
+test('expanded decision details stay compact and omit empty diagnostic groups',()=>{
+  const hero=read('components/decision/DecisionHero.tsx');
+  const css=read('app/trade-police.css');
+  assert.match(hero,/pendingCount>0\?<div><dt>Setup pending/);
+  assert.match(hero,/confirmedRequired\.length\?<section>/);
+  assert.doesNotMatch(hero,/No required rule is confirmed yet/);
+  assert.match(hero,/decision-detail-rule state-confirmed/);
+  assert.match(css,/decision-technical-details \.decision-panel-metrics\{grid-template-columns:repeat\(auto-fit,minmax\(150px,1fr\)\)/);
+  assert.match(css,/decision-rule-groups\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(280px,1fr\)\)/);
+  assert.match(css,/\.decision-panel-metrics dd\{overflow-wrap:normal;word-break:normal\}/);
+});
+
 test('chart fullscreen owns the dynamic viewport without vertical overflow',()=>{
   const css=read('app/trade-police.css');
   assert.match(css,/market-position-chart-shell:fullscreen/);

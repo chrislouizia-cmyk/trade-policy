@@ -74,7 +74,7 @@ test('setup readiness and final authorization use distinct presentation states',
   assert.doesNotMatch(hero, /\? 'APPROVED'/);
   assert.match(hero, /<dt>Setup evidence<\/dt>/);
   assert.match(hero, /<dt>Final risk controls<\/dt>/);
-  assert.match(hero, /finalized \? violationsCount : '—'/);
+  assert.match(hero, /finalized\?<div><dt>Final blocks<\/dt><dd>\{violationsCount\}<\/dd><\/div>:null/);
   assert.match(hero, /decision-technical-details/);
   assert.match(validator, /result\?\.evidenceReport\?\?analysis\?\.tradingDnaReport/);
   assert.match(validator, /result\?\.vetoes\.length\?\?0/);

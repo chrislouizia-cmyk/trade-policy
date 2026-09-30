@@ -89,6 +89,7 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
   const confirmedRequired=explanation.items.filter(item=>item.required&&item.state==='CONFIRMED');
   const incompleteRequired=explanation.items.filter(item=>item.required&&item.state!=='CONFIRMED');
   const supportingRules=explanation.items.filter(item=>!item.required);
+  const otherEvidencePending=Math.max(0,pendingCount-manualPendingCount);
   const advancedByDefault=experienceLevel==='Advanced'||experienceLevel==='Professional';
   return <section className={`card decision-hero decision-explanation-hero state-${displayVerdict.toLowerCase()}`} aria-labelledby="decision-hero-title" aria-live="polite">
     <span className="sr-only">SHOULD I RISK MY MONEY RIGHT NOW? Mandatory rules still control the final decision. {narrative?.recommendation?'A final-check explanation is available.':''}</span><span className="sr-only">Readiness</span><span className="sr-only">Required readiness</span>
@@ -112,15 +113,15 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
           <div><dt>Technical candidate</dt><dd>{technicalCandidateFound ? 'FOUND' : 'NOT READY'}</dd></div>
           <div><dt>Manual confirmations</dt><dd>{manualPendingCount ? `${manualPendingCount} PENDING` : 'COMPLETE'}</dd></div>
           <div><dt>Rule blockers</dt><dd>{ruleBlockerCount}</dd></div>
-          <div><dt>Setup pending</dt><dd>{pendingCount}</dd></div>
-          <div><dt>Other evidence pending</dt><dd>{Math.max(0,pendingCount-manualPendingCount)}</dd></div>
-          <div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>
-          <div><dt>Final blocks</dt><dd>{finalized ? violationsCount : '—'}</dd></div>
+          {pendingCount>0?<div><dt>Setup pending</dt><dd>{pendingCount}</dd></div>:null}
+          {otherEvidencePending>0?<div><dt>Other evidence pending</dt><dd>{otherEvidencePending}</dd></div>:null}
+          {finalRiskCheckAvailable||finalized?<div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>:null}
+          {finalized?<div><dt>Final blocks</dt><dd>{violationsCount}</dd></div>:null}
         </dl>
         <div className="decision-rule-groups">
-          <section><h3>Required · confirmed</h3>{confirmedRequired.length?<ul>{confirmedRequired.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.plainLanguageDescription}</span></li>)}</ul>:<p>No required rule is confirmed yet.</p>}</section>
-          <section><h3>Required · needs attention</h3>{incompleteRequired.length?<ul>{incompleteRequired.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.plainLanguageDescription}</span>{item.nextAction&&!item.nextAction.includes('cannot determine')?<small>{item.nextAction}</small>:null}</li>)}</ul>:<p>No required rule is pending or failed.</p>}</section>
-          <section><h3>Supporting evidence</h3>{supportingRules.length?<ul>{supportingRules.map(item=><li key={item.id}><strong>{item.title}</strong><span>{item.state.replaceAll('_',' ')}</span></li>)}</ul>:<p>No optional evidence is configured.</p>}</section>
+          {confirmedRequired.length?<section><h3><span>Required · confirmed</span><b>{confirmedRequired.length}</b></h3><ul>{confirmedRequired.map(item=><li className="decision-detail-rule state-confirmed" key={item.id}><div><strong>{item.title}</strong><span>Confirmed</span></div><p>{item.plainLanguageDescription}</p></li>)}</ul></section>:null}
+          <section><h3><span>Required · needs attention</span><b>{incompleteRequired.length}</b></h3>{incompleteRequired.length?<ul>{incompleteRequired.map(item=><li className={`decision-detail-rule state-${item.state.toLowerCase()}`} key={item.id}><div><strong>{item.title}</strong><span>{item.state==='BLOCKED'?'Failed':item.state==='NOT_AVAILABLE'?'Unavailable':'Waiting'}</span></div><p>{item.plainLanguageDescription}</p>{item.nextAction&&!item.nextAction.includes('cannot determine')?<small>{item.nextAction}</small>:null}</li>)}</ul>:<p>No required rule is pending or failed.</p>}</section>
+          <section><h3><span>Supporting evidence</span><b>{supportingRules.length}</b></h3>{supportingRules.length?<ul>{supportingRules.map(item=><li className={`decision-detail-rule state-${item.state.toLowerCase()}`} key={item.id}><div><strong>{item.title}</strong><span>{item.state.replaceAll('_',' ')}</span></div></li>)}</ul>:<p>No optional evidence is configured.</p>}</section>
         </div>
       </details>
     </div>
