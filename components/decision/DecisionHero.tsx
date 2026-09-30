@@ -44,6 +44,23 @@ type Props={
 
 const icon={READY:'✓',WAIT:'…',BLOCKED:'!',NO_SETUP:'○',MARKET_CLOSED:'○',DATA_UNAVAILABLE:'!',STRATEGY_INCOMPLETE:'!'} as const;
 
+const decisionCopy={
+  en:{checking:'CHECKING',unchecked:'START HERE',setupFound:'SETUP FOUND',takeIt:'TAKE IT',wait:'WAIT',blocked:"DON'T TAKE IT",noSetup:'NO SETUP',marketClosed:'MARKET CLOSED',dataUnavailable:'TRY AGAIN',strategyIncomplete:'FINISH SETUP',details:'See decision details',systemState:'System status'},
+  es:{checking:'REVISANDO',unchecked:'EMPIEZA AQUÍ',setupFound:'SETUP ENCONTRADO',takeIt:'TÓMALO',wait:'ESPERA',blocked:'NO LO TOMES',noSetup:'SIN SETUP',marketClosed:'MERCADO CERRADO',dataUnavailable:'INTENTA DE NUEVO',strategyIncomplete:'COMPLETA TU SETUP',details:'Ver detalles de la decisión',systemState:'Estado del sistema'},
+  fr:{checking:'VÉRIFICATION',unchecked:'COMMENCEZ ICI',setupFound:'SETUP TROUVÉ',takeIt:'PRENEZ-LE',wait:'ATTENDEZ',blocked:'NE LE PRENEZ PAS',noSetup:'AUCUN SETUP',marketClosed:'MARCHÉ FERMÉ',dataUnavailable:'RÉESSAYER',strategyIncomplete:'TERMINER LE SETUP',details:'Voir les détails de la décision',systemState:'État du système'},
+} as const;
+
+function humanDecision(verdict:string,finalized:boolean,copy:(typeof decisionCopy)[keyof typeof decisionCopy]){
+  if(verdict==='READY')return finalized?copy.takeIt:copy.setupFound;
+  if(verdict==='WAIT')return copy.wait;
+  if(verdict==='BLOCKED')return copy.blocked;
+  if(verdict==='NO_SETUP'||verdict==='NO SETUP')return copy.noSetup;
+  if(verdict==='MARKET_CLOSED')return copy.marketClosed;
+  if(verdict==='DATA_UNAVAILABLE')return copy.dataUnavailable;
+  if(verdict==='STRATEGY_INCOMPLETE')return copy.strategyIncomplete;
+  return verdict.replaceAll('_',' ');
+}
+
 function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeVerdict?:string|null):string{
   if(!explanation)return 'Check current market';
   const verdict = authoritativeVerdict ?? explanation.verdict;
@@ -57,10 +74,11 @@ function actionLabel(explanation:DecisionExplanationSummary|null, authoritativeV
 
 export default function DecisionHero({explanation,narrative,analyzing,authoritativeVerdict,primaryActionLabel,primaryActionHint,primaryActionDisabled=false,primaryActionTone='neutral',secondaryActionLabel,secondaryActionDisabled=false,showPrimaryAction=true,onPrimaryAction,onSecondaryAction,onViewReport,reportButtonRef,showReportButton=true,instrument,direction,readinessPercent,violationsCount=0,pendingCount=0,technicalCandidateFound=false,manualPendingCount=0,ruleBlockerCount=0,setupType,decisionStatus='Preliminary market decision',experienceGuidance,finalized=false,finalRiskCheckAvailable=false,finalRiskCheckBusy=false,finalRiskCheckDisabled=false,authorizationError,onMarkMissed,onViewHistory}:Props){
   const {locale}=useLocale();
-  if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">DECISION</p><h1 className="decision-hero-verdict"><span className="info">CHECKING</span></h1><p className="decision-hero-instruction">Trade Police is checking current market data against your required trading rules.</p></section>;
-  if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">DECISION</p><h1 className="decision-hero-verdict">NOT CHECKED</h1><p className="decision-hero-instruction">Check the current market to produce a decision from your saved trading rules.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
+  const c=decisionCopy[locale];
+  if(analyzing)return <section className="card decision-hero decision-hero-pending" aria-live="polite" aria-busy="true"><p className="brand">TRADE POLICE</p><h1 className="decision-hero-verdict"><span className="info">{c.checking}</span></h1><p className="decision-hero-instruction">Trade Police is checking the market against the rules you saved.</p></section>;
+  if(!explanation)return <section className="card decision-hero decision-hero-empty"><p className="brand">YOUR NEXT STEP</p><h1 className="decision-hero-verdict">{c.unchecked}</h1><p className="decision-hero-instruction">Check the market. Trade Police will tell you whether to continue, wait, or skip the trade.</p><button className="primary" type="button" onClick={onPrimaryAction}>Check current market</button></section>;
   const displayVerdict = authoritativeVerdict ?? explanation.verdict;
-  const displayDecision = displayVerdict === 'READY' ? 'READY' : displayVerdict.replaceAll('_',' ');
+  const displayDecision = humanDecision(displayVerdict,finalized,c);
   const instruction = experienceGuidance ?? (displayVerdict === 'WAIT' ? 'Do not risk your money yet.' : displayVerdict === 'BLOCKED' ? 'This setup conflicts with a mandatory trading rule.' : displayVerdict === 'READY' ? (finalized ? 'Final risk controls permit this trade.' : 'Setup evidence is complete. Run the final risk check before entering the trade.') : explanation.headline);
   const readinessAllowed=!['DATA_UNAVAILABLE','MARKET_CLOSED'].includes(displayVerdict);
   const analysis={provider:explanation.dataStatus.provider,latestCandleTimestamp:explanation.dataStatus.lastVerifiedCandleAt,calculatedAt:explanation.dataStatus.calculationCompletedAt};
@@ -68,25 +86,28 @@ export default function DecisionHero({explanation,narrative,analyzing,authoritat
   const resolvedPrimaryHint=primaryActionHint ?? (displayVerdict==='READY'?'Creates an Active Trade from this decision.':displayVerdict==='WAIT'?'Records the trade as an override and links it to the decision.':displayVerdict==='BLOCKED'?'The decision is blocked until the required conditions are cleared.':'Choose the next step for this decision.');
   return <section className={`card decision-hero decision-explanation-hero state-${displayVerdict.toLowerCase()}`} aria-labelledby="decision-hero-title" aria-live="polite">
     <span className="sr-only">SHOULD I RISK MY MONEY RIGHT NOW? Mandatory rules still control the final decision. {narrative?.recommendation?'A final-check explanation is available.':''}</span><span className="sr-only">Readiness</span><span className="sr-only">Required readiness</span>
-    <div className="decision-system-state"><span aria-hidden="true">{icon[explanation.verdict]}</span><strong>{explanation.dataStatus.freshness.replaceAll('_',' ')}</strong><small>{explanation.dataStatus.provider}</small></div>
+    <div className="decision-system-state"><span aria-hidden="true">{icon[explanation.verdict]}</span><strong>{c.systemState}: {displayVerdict.replaceAll('_',' ')}</strong><small>{explanation.dataStatus.provider}</small></div>
     <div className="decision-hero-primary">
       {instrument?<p className="decision-panel-instrument">{instrument}{direction?` · ${direction}`:''}{setupType?` · ${setupType}`:''}</p>:null}
       <p className="brand" data-validate-status>NEXT STEP · {decisionStatus}</p>
       <div className="decision-hero-verdict-column"><h1 id="decision-hero-title" className="decision-hero-verdict"><span className="sr-only">Current decision: </span>{displayDecision}</h1></div>
       <div className="decision-hero-explanation-column"><h2>{instruction}</h2><p className="decision-primary-reason">{explanation.primaryReason}</p></div>
       {readinessAllowed&&<p className="required-rule-count"><strong>Setup evidence: {explanation.confirmedRequiredCount} of {explanation.totalRequiredCount}</strong> required rules confirmed</p>}
-      <dl className="decision-panel-metrics">
-        <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>
-        <div><dt>Setup evidence</dt><dd>{explanation.confirmedRequiredCount} / {explanation.totalRequiredCount}</dd></div>
-        <div><dt>Technical candidate</dt><dd>{technicalCandidateFound ? 'FOUND' : 'NOT READY'}</dd></div>
-        <div><dt>Manual confirmations</dt><dd>{manualPendingCount ? `${manualPendingCount} PENDING` : 'COMPLETE'}</dd></div>
-        <div><dt>Rule blockers</dt><dd>{ruleBlockerCount}</dd></div>
-        <div><dt>Setup pending</dt><dd>{pendingCount}</dd></div>
-        <div><dt>Other evidence pending</dt><dd>{Math.max(0,pendingCount-manualPendingCount)}</dd></div>
-        <div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>
-        <div><dt>Final blocks</dt><dd>{finalized ? violationsCount : '—'}</dd></div>
-      </dl>
       <div className="decision-next-action"><span>What happens next</span><strong>{explanation.nextAction}</strong></div>
+      <details className="decision-technical-details">
+        <summary>{c.details}</summary>
+        <dl className="decision-panel-metrics">
+          <div><dt>Readiness</dt><dd>{readinessPercent == null ? '—' : `${readinessPercent}%`}</dd></div>
+          <div><dt>Setup evidence</dt><dd>{explanation.confirmedRequiredCount} / {explanation.totalRequiredCount}</dd></div>
+          <div><dt>Technical candidate</dt><dd>{technicalCandidateFound ? 'FOUND' : 'NOT READY'}</dd></div>
+          <div><dt>Manual confirmations</dt><dd>{manualPendingCount ? `${manualPendingCount} PENDING` : 'COMPLETE'}</dd></div>
+          <div><dt>Rule blockers</dt><dd>{ruleBlockerCount}</dd></div>
+          <div><dt>Setup pending</dt><dd>{pendingCount}</dd></div>
+          <div><dt>Other evidence pending</dt><dd>{Math.max(0,pendingCount-manualPendingCount)}</dd></div>
+          <div><dt>Final risk controls</dt><dd>{finalized ? (displayVerdict === 'READY' ? 'PASSED' : displayVerdict) : 'NOT RUN'}</dd></div>
+          <div><dt>Final blocks</dt><dd>{finalized ? violationsCount : '—'}</dd></div>
+        </dl>
+      </details>
     </div>
     <div className="decision-hero-actions">
       {primaryActionLabel === 'Take Anyway' ? <p className="decision-override-label">Override</p> : null}

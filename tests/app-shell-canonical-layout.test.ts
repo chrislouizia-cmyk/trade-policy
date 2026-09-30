@@ -36,12 +36,12 @@ test('dashboard welcome stays below the header to preserve geometry',()=>{
 
 test('desktop and iPad navigation keep every destination in one aligned row',()=>{
   assert.match(header,/<AppPrimaryNavigation activeTradeCount=\{activeTradeCount\} \/>/);
-  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history','nav.strategies','nav.analytics','nav.marketplace','nav.tradingAccounts','nav.account']) {
+  for(const key of ['nav.dashboard','nav.decision','nav.activeTrade','nav.history','nav.strategies','nav.analytics','nav.account']) {
     assert.match(primaryNav,new RegExp(`labelKey: '${key}'`));
   }
-  assert.ok(primaryNav.indexOf("labelKey: 'nav.analytics'") < primaryNav.indexOf("labelKey: 'nav.marketplace'"));
+  assert.doesNotMatch(primaryNav,/nav\.marketplace|nav\.tradingAccounts/);
   assert.doesNotMatch(primaryNav,/desktop-more-nav/);
-  assert.match(glassCss,/grid-template-columns: repeat\(9, minmax\(0, 1fr\)\) !important/);
+  assert.match(glassCss,/grid-template-columns: repeat\(7, minmax\(0, 1fr\)\) !important/);
   assert.match(glassCss,/grid-template-rows: minmax\(40px, auto\) !important/);
 });
 
@@ -103,28 +103,22 @@ test('the shared shell owns viewport height safe spacing and document layers',()
   assert.match(layout,/\{children\}<AppFooter \/>/);
 });
 
-test('mobile More preserves account access and a visible sign-out path',()=>{
-  for(const href of ['/profile','/analytics','/accounts','/account']) assert.match(mobile,new RegExp(`href: '${href}'`));
-  assert.match(mobile,/<SignOutButton \/>/);
-  assert.match(mobile,/event\.key === 'Escape'/);
-  assert.match(mobile,/closeButtonRef\.current\?\.focus\(\)/);
+test('mobile keeps the five core destinations visible and account access in the header',()=>{
+  for(const href of ['/dashboard','/validate','/active-trade','/history','/profile']) assert.match(mobile,new RegExp(`href: '${href}'`));
+  assert.match(header,/href="\/account" className="mobile-account-link"/);
+  assert.doesNotMatch(mobile,/mobile-more-sheet|nav\.more/);
 });
 
-test('mobile Liquid Glass dock keeps four stable actions and tracks the pointer',()=>{
+test('mobile Liquid Glass dock keeps five direct stable actions',()=>{
   assert.match(mobile,/labelKey: 'nav.decision'/);
   assert.match(mobile,/labelKey: 'nav.activeTrade'/);
   assert.match(mobile,/labelKey: 'nav.history'/);
-  assert.match(mobile,/<h2>\{t\('nav.more'\)\}<\/h2>/);
   const primaryItems=mobile.match(/const primaryItems = \[([\s\S]*?)\] as const/)?.[1]??'';
-  assert.doesNotMatch(primaryItems,/nav\.history/);
+  assert.match(primaryItems,/nav\.history/);
+  assert.match(primaryItems,/nav\.strategies/);
   assert.doesNotMatch(mobile,/mobile-nav-secondary/);
-  assert.match(mobile,/mobile-liquid-selection/);
-  assert.match(mobile,/onPointerDown=\{handlePointerDown\}/);
-  assert.match(mobile,/onPointerMove=\{handlePointerMove\}/);
-  assert.match(mobile,/document\.elementFromPoint/);
-  assert.match(glassCss,/grid-template-columns: repeat\(4, minmax\(0, 1fr\)\) !important/);
-  assert.match(glassCss,/transform: translateX\(calc\(var\(--liquid-index\)/);
-  assert.match(glassCss,/touch-action: none/);
+  assert.match(glassCss,/grid-template-columns: repeat\(5, minmax\(0, 1fr\)\) !important/);
+  assert.match(glassCss,/touch-action: manipulation/);
 });
 
 test('mobile dock hides page content below its closed visual base',()=>{
@@ -218,9 +212,8 @@ test('active trade is forced to one contained column on customer mobile',()=>{
   assert.match(mobileCss,/\.monitor-layout > \*/);
 });
 
-test('feedback leaves the viewport and remains available from More',()=>{
-  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.feedback-fab\s*\{[\s\S]*display: none !important/);
-  assert.match(mobile,/trade-police:feedback-open/);
-  assert.match(mobile,/Send feedback/);
+test('feedback remains reachable above the mobile dock',()=>{
+  assert.match(mobileCss,/body:has\(\.mobile-bottom-nav\) \.feedback-fab\s*\{[\s\S]*display: grid !important/);
+  assert.match(mobileCss,/\.feedback-fab::before/);
   assert.match(feedback,/addEventListener\('trade-police:feedback-open'/);
 });

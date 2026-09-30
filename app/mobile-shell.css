@@ -973,9 +973,24 @@
     background: rgba(255,255,255,.035);
   }
 
-  /* Floating feedback cannot sit on top of mobile primary navigation. */
+  /* Keep help reachable without adding another primary navigation destination. */
   body:has(.mobile-bottom-nav) .feedback-fab {
-    display: none !important;
+    display: grid !important;
+    place-items: center;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 22px);
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 0;
+  }
+
+  body:has(.mobile-bottom-nav) .feedback-fab::before {
+    content: '?';
+    font-size: 17px;
+    font-weight: 900;
   }
 }
 

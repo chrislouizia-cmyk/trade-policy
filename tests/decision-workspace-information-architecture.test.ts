@@ -61,19 +61,21 @@ test('one decision card owns preliminary, final and risk-check states directly b
   assert.ok(decisionIndex > chartIndex, 'the decision content must render after the chart in the component structure');
   assert.match(hero, /Run Final Risk Check/);
   assert.match(hero, /form="final-risk-check"/);
-  assert.match(hero, /displayVerdict === 'READY' \? 'READY'/);
+  assert.match(hero, /finalized\?copy\.takeIt:copy\.setupFound/);
   assert.doesNotMatch(validator, /authorization-inline-result|AUTHORIZATION RESULT/);
   assert.equal((validator.match(/<DecisionHero/g) ?? []).length, 1);
 });
 
 test('setup readiness and final authorization use distinct presentation states', () => {
-  assert.match(hero, /displayVerdict === 'READY' \? 'READY'/);
+  assert.match(hero, /setupFound:'SETUP FOUND'/);
+  assert.match(hero, /takeIt:'TAKE IT'/);
   assert.match(hero, /Setup evidence is complete\. Run the final risk check before entering the trade\./);
   assert.match(hero, /finalized \? 'Final risk controls permit this trade\.'/);
   assert.doesNotMatch(hero, /\? 'APPROVED'/);
   assert.match(hero, /<dt>Setup evidence<\/dt>/);
   assert.match(hero, /<dt>Final risk controls<\/dt>/);
   assert.match(hero, /finalized \? violationsCount : '—'/);
+  assert.match(hero, /decision-technical-details/);
   assert.match(validator, /result\?\.evidenceReport\?\?analysis\?\.tradingDnaReport/);
   assert.match(validator, /result\?\.vetoes\.length\?\?0/);
   assert.match(css, /\.decision-explanation-hero \.decision-hero-verdict\{[^}]*min-width:190px[^}]*white-space:nowrap[^}]*word-break:normal[^}]*overflow-wrap:normal/);

@@ -4,11 +4,24 @@ import type { Locale } from '@/lib/i18n/config';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
 import DecisionStateGuide from '@/components/DecisionStateGuide';
 
-type Props = { displayName:string; account:any; strategy:any; openTrades:number; todayPnl:number; wins:number; losses:number; discipline:number|null; closedTradesToday:number; hasTrade:boolean; locale:Locale };
+type Props = {
+  displayName:string;
+  account:{name:string;currency:string;current_balance:number|string}|null;
+  strategy:{name:string}|null;
+  openTrades:number;
+  todayPnl:number;
+  wins:number;
+  losses:number;
+  discipline:number|null;
+  closedTradesToday:number;
+  hasTrade:boolean;
+  locale:Locale;
+};
 
 export default function Dashboard(p: Props) {
   const w=(text:string)=>workspaceText(p.locale,text);
   const setupComplete=Boolean(p.account&&p.strategy&&p.hasTrade);
+  const hasOpenTrade=p.openTrades>0;
   return <div className="stack dashboard-shell">
     <section className="dashboard-welcome">
       <span className="eyebrow">{w('YOUR TRADING WORKSPACE')}</span>
@@ -17,13 +30,12 @@ export default function Dashboard(p: Props) {
     </section>
     <section className="dashboard-hero card command-center-hero">
       <div className="dashboard-hero-copy">
-        <div className="dashboard-hero-meta"><span className="status-pill info">{w('Live workspace')}</span></div>
-        <span className="eyebrow">{w('TRADE POLICE COMMAND CENTER')}</span>
-        <h1>{w('Make the next decision with your rules in view.')}</h1>
-        <p>{w('Check current market evidence, run the final risk check, and understand exactly why the result passed or stopped.')}</p>
-        <small>{w('Every trade remains under review until the evidence is clear.')}</small>
+        <span className="eyebrow">{w('YOUR NEXT STEP')}</span>
+        <h1>{hasOpenTrade?w('Review the trade you already took.'):w('Ready to check your next trade?')}</h1>
+        <p>{hasOpenTrade?w('See whether your open trade still follows the plan.'):w('Choose a market and Trade Police will check it against your strategy.')}</p>
+        <small>{w('You will get one clear answer: setup found, wait, or do not take it.')}</small>
       </div>
-      <div className="dashboard-hero-actions"><a className="button-link primary dashboard-primary-action" href="/validate">{w('Check a setup')}</a><a className="button-link secondary dashboard-secondary-action" href="/active-trade">{w('Review active trade')}</a></div>
+      <div className="dashboard-hero-actions"><a className="button-link primary dashboard-primary-action" href={hasOpenTrade?'/active-trade':'/validate'}>{hasOpenTrade?w('Review active trade'):w('Check a trade')}</a>{hasOpenTrade?<a className="button-link secondary dashboard-secondary-action" href="/validate">{w('Check another trade')}</a>:null}</div>
     </section>
 
     <div className="grid grid-4 metric-grid compact-dashboard-grid">
@@ -43,15 +55,7 @@ export default function Dashboard(p: Props) {
       <DecisionStateGuide locale={p.locale}/>
     </details>
 
-    <div className="card quick-actions">
-      <div className="section-title"><div><span className="eyebrow">{w('NEXT MOVE')}</span><h2>{w('Workspace actions')}</h2></div></div>
-      <div className="button-row"><a className="button-link secondary" href="/validate">{w('Check a setup')}</a><a className="button-link secondary" href="/active-trade">{w('Review open trades')}</a><a className="button-link secondary" href="/profile">{w('Edit trading rules')}</a><a className="button-link secondary" href="/accounts">{w('Manage trading accounts')}</a><a className="button-link secondary" href="/analytics">{w('Review analytics')}</a></div>
-    </div>
-
-    <div className="card workspace-summary">
-      <div className="section-title"><div><span className="eyebrow">{w('CURRENT VIEW')}</span><h2>{w('Signal discipline')}</h2></div></div>
-      <div className="dashboard-footnotes"><div><strong>{w('Consistency over volume')}</strong><p className="muted">{w('The dashboard now keeps the focus on the active account, the strategy in control, and the next decision that needs attention.')}</p></div><div><strong>{w('Operational notes')}</strong><ul><li>{w('Strategy switching updates the rules and instruments immediately.')}</li><li>{w('Feedback is tracked so beta issues can be resolved faster.')}</li><li>{w('Mobile strategy and analytics views remain available without crowding the workspace.')}</li></ul></div></div>
-    </div>
+    <nav className="dashboard-secondary-links" aria-label={w('More tools')}><a href="/profile">{w('Strategies')}</a><a href="/analytics">{w('Performance')}</a><a href="/account">{w('Account and settings')}</a></nav>
   </div>;
 }
 

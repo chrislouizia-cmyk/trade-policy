@@ -53,6 +53,9 @@ export default async function AppHeader({
 
           <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
             <TradePoliceShield />
+            <Link href="/account" className="mobile-account-link" aria-label={t('nav.account')} title={t('nav.account')}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.7-4 3-6 7-6s6.3 2 7 6"/></svg>
+            </Link>
             <KeyboardShortcuts />
             <SignOutButton />
           </div>

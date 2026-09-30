@@ -11,8 +11,6 @@ const navigationItems = [
   { href: '/history', labelKey: 'nav.history' },
   { href: '/profile', labelKey: 'nav.strategies' },
   { href: '/analytics', labelKey: 'nav.analytics' },
-  { href: '/marketplace', labelKey: 'nav.marketplace' },
-  { href: '/accounts', labelKey: 'nav.tradingAccounts' },
   { href: '/account', labelKey: 'nav.account' },
 ] as const;
 

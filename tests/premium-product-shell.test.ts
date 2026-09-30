@@ -19,8 +19,10 @@ test('decision states are explicit, contextual and multilingual',()=>{
   const guide=read('components/DecisionStateGuide.tsx');
   const hero=read('components/decision/DecisionHero.tsx');
   for(const state of ['READY','WAIT','BLOCKED']) assert.match(guide,new RegExp(state));
-  assert.match(guide,/No es una predicción ni una garantía de ganancia/);
-  assert.match(guide,/Ce n’est ni une prédiction ni une garantie de gain/);
+  assert.match(guide,/Ningún resultado predice ganancias/);
+  assert.match(guide,/Aucun résultat ne prédit un gain/);
+  assert.match(hero,/SETUP FOUND/);
+  assert.match(hero,/DON'T TAKE IT/);
   assert.match(hero,/What does this state mean/);
   assert.match(hero,/DecisionStateGuide/);
 });
