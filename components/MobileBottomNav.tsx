@@ -57,6 +57,7 @@ export default function MobileBottomNav({ activeTradeCount = 0 }: MobileBottomNa
             <Link
               key={item.href}
               href={item.href}
+              prefetch
               className={active ? 'active' : ''}
               aria-current={active ? 'page' : undefined}
             >

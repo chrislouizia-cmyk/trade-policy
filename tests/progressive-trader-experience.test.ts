@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {existsSync,readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const read=(path:string)=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
@@ -29,13 +29,24 @@ test('account settings use existing identity fields and evidence-backed observed
   assert.match(account,/buildObservedTraderProfile/);
   assert.match(account,/TraderProfileOverview/);
   assert.match(account,/account-language-embedded/);
+  assert.match(account,/account-destination-panel/);
   assert.match(account,/NEXT_PUBLIC_DISCORD_INVITE_URL/);
 });
 
-test('route changes use a branded loading surface instead of the browser gray canvas',()=>{
-  const loading=read('app/loading.tsx');
+test('route changes retain the current workspace while prefetched navigation resolves',()=>{
+  const navigation=read('components/AppPrimaryNavigation.tsx');
+  const mobileNavigation=read('components/MobileBottomNav.tsx');
   const css=read('app/trade-police.css');
-  assert.match(loading,/route-loading-shell/);
-  assert.match(loading,/trade-police-logo\.png/);
-  assert.match(css,/\.route-loading-shell/);
+  assert.equal(existsSync(new URL('../app/loading.tsx',import.meta.url)),false);
+  assert.match(navigation,/prefetch/);
+  assert.match(mobileNavigation,/prefetch/);
+  assert.doesNotMatch(css,/\.route-loading-shell/);
+});
+
+test('the first market chart adapts to the remaining desktop viewport',()=>{
+  const panel=read('components/LiveMarketPanel.tsx');
+  const css=read('app/trade-police.css');
+  assert.match(panel,/market-first-viewport/);
+  assert.match(css,/\.market-first-viewport \.market-chart-stage/);
+  assert.match(css,/calc\(100dvh - 365px\)/);
 });

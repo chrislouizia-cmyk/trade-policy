@@ -222,7 +222,7 @@ export default function LiveMarketPanel({
   const analyzedChartVisible=hasCompleteChartSeries&&chartDataKey!==null&&paintedChartKey!==null;
 
   return (
-    <section className="card live-panel">
+    <section className={`card live-panel ${analysisSource==='LIVE'?'has-live-decision':'market-first-viewport'}`}>
       <div className="live-head">
         <div>
           <p className="brand">STEP 1 · CHECK CURRENT MARKET</p>

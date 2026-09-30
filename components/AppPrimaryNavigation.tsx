@@ -28,7 +28,7 @@ export default function AppPrimaryNavigation({ activeTradeCount = 0 }: { activeT
       {navigationItems.map((item) => {
         const active = isRouteActive(pathname, item.href);
         return (
-          <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
+          <Link key={item.href} href={item.href} prefetch className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
             {t(item.labelKey)}
             {item.href === '/active-trade' && activeTradeCount > 0 ? <span className="nav-badge">{activeTradeCount}</span> : null}
           </Link>
