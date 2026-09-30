@@ -28,7 +28,9 @@ test('account settings use existing identity fields and evidence-backed observed
   assert.match(account,/isTradeLifecycleSimulationRecord/);
   assert.match(account,/buildObservedTraderProfile/);
   assert.match(account,/TraderProfileOverview/);
-  assert.match(account,/account-language-embedded/);
+  assert.match(account,/account-overview-layout/);
+  assert.match(account,/account-preference-layout/);
+  assert.match(account,/account-language-panel/);
   assert.match(account,/account-destination-panel/);
   assert.match(account,/NEXT_PUBLIC_DISCORD_INVITE_URL/);
 });
@@ -43,10 +45,12 @@ test('route changes retain the current workspace while prefetched navigation res
   assert.doesNotMatch(css,/\.route-loading-shell/);
 });
 
-test('the first market chart adapts to the remaining desktop viewport',()=>{
+test('the first market chart measures and owns the actual remaining viewport',()=>{
   const panel=read('components/LiveMarketPanel.tsx');
   const css=read('app/trade-police.css');
   assert.match(panel,/market-first-viewport/);
+  assert.match(panel,/getBoundingClientRect\(\)\.top/);
+  assert.match(panel,/--market-workspace-height/);
   assert.match(css,/\.market-first-viewport \.market-chart-stage/);
-  assert.match(css,/calc\(100dvh - 365px\)/);
+  assert.match(css,/height:var\(--market-workspace-height/);
 });

@@ -69,6 +69,32 @@ export default function LiveMarketPanel({
   const analysisContextRef = useRef('');
   const retryTimerRef = useRef<number | null>(null);
   const snapshotControllerRef=useRef<AbortController|null>(null);
+  const panelRef=useRef<HTMLElement|null>(null);
+
+  useEffect(()=>{
+    const panel=panelRef.current;
+    if(!panel)return;
+    let frame=0;
+    const fitWorkspace=()=>{
+      window.cancelAnimationFrame(frame);
+      frame=window.requestAnimationFrame(()=>{
+        const top=panel.getBoundingClientRect().top;
+        const bottomClearance=window.innerWidth<=767?88:14;
+        const available=Math.max(440,Math.floor(window.innerHeight-top-bottomClearance));
+        panel.style.setProperty('--market-workspace-height',`${available}px`);
+      });
+    };
+    fitWorkspace();
+    window.addEventListener('resize',fitWorkspace);
+    const header=document.querySelector('.decision-focused-header');
+    const observer=typeof ResizeObserver==='undefined'?null:new ResizeObserver(fitWorkspace);
+    if(header)observer?.observe(header);
+    return ()=>{
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize',fitWorkspace);
+      observer?.disconnect();
+    };
+  },[]);
 
   useEffect(()=>{
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -222,7 +248,7 @@ export default function LiveMarketPanel({
   const analyzedChartVisible=hasCompleteChartSeries&&chartDataKey!==null&&paintedChartKey!==null;
 
   return (
-    <section className={`card live-panel ${analysisSource==='LIVE'?'has-live-decision':'market-first-viewport'}`}>
+    <section ref={panelRef} className={`card live-panel ${analysisSource==='LIVE'?'has-live-decision':'market-first-viewport'}`}>
       <div className="live-head">
         <div>
           <p className="brand">STEP 1 · CHECK CURRENT MARKET</p>

@@ -2435,8 +2435,12 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 @media(max-width:900px){.decision-focused-header .context-switchers{grid-template-columns:repeat(2,minmax(0,1fr))!important}.validate-page-flow>.live-panel .live-head{grid-template-columns:1fr}.strategy-trade-activity .last-trades-grid{grid-template-columns:1fr}.strategy-trade-activity .trade-history-rows{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
 /* Progressive workspace polish: keep navigation continuous, fit Check, and make Settings linear. */
-@media(min-width:901px){
-  .validate-page-flow>.live-panel.market-first-viewport .market-chart-stage{height:clamp(260px,calc(100dvh - 365px),430px)}
+@media(min-width:768px){
+  .validate-page-flow>.live-panel.market-first-viewport{display:flex;flex-direction:column;height:var(--market-workspace-height,calc(100dvh - 220px));min-height:440px;overflow:hidden}
+  .validate-page-flow>.live-panel.market-first-viewport>.market-chart-composition{flex:1;min-height:0}
+  .validate-page-flow>.live-panel.market-first-viewport .market-chart-stage{height:100%;min-height:0}
+  .validate-page-flow>.live-panel.market-first-viewport:has(.analysis-error){height:auto;overflow:visible}
+  .validate-page-flow>.live-panel.market-first-viewport:has(.analysis-error) .market-chart-stage{height:clamp(320px,42vw,520px)}
 }
 .account-destination-panel{overflow:hidden;padding:0;background:radial-gradient(circle at 100% 0,rgba(122,162,255,.065),transparent 34%),linear-gradient(150deg,rgba(17,23,33,.97),rgba(8,12,18,.99))}
 .account-destination-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.07)}
@@ -2457,6 +2461,28 @@ button,.button-link{transition:transform .16s ease,border-color .16s ease,backgr
 @media(max-width:800px){
   .account-destination-panel>header{align-items:flex-start;flex-direction:column}
   .account-destination-row{grid-template-columns:38px minmax(0,1fr) auto;padding-inline:14px}
+}
+
+.account-overview-layout,.account-preference-layout{display:grid;grid-template-columns:minmax(0,1.42fr) minmax(270px,.58fr);gap:14px;align-items:stretch}
+.account-overview-layout>.trader-profile-overview{min-width:0;height:100%;padding:18px}
+.account-overview-layout .trader-profile-content{grid-template-columns:minmax(170px,.48fr) minmax(0,1.52fr);gap:14px}
+.account-overview-layout .trader-profile-radar svg{width:min(100%,210px)}
+.account-overview-layout .trader-profile-metrics{gap:5px}
+.account-overview-layout .trader-profile-metrics div{padding:8px 7px}
+.account-plan-panel{position:relative;isolation:isolate;min-width:0}
+.account-plan-panel>*:not(.account-plan-brand){position:relative;z-index:1}
+.account-plan-brand{position:absolute;right:-22px;top:-22px;z-index:0;width:132px;height:132px;object-fit:contain;opacity:.055;filter:grayscale(1) brightness(1.8);pointer-events:none}
+.account-language-panel{min-width:0}
+.account-language-panel .language-preference-card{height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:9px;margin:0;padding:20px;background:radial-gradient(circle at 100% 0,rgba(122,162,255,.08),transparent 38%),linear-gradient(150deg,rgba(17,23,33,.97),rgba(8,12,18,.99))}
+.account-language-panel .language-preference-card h2,.account-language-panel .language-preference-card p{margin:0}
+.account-language-panel .language-preference-card label{margin-top:auto}
+.account-language-panel .language-preference-card select{width:100%}
+@media(max-width:950px){
+  .account-overview-layout,.account-preference-layout{grid-template-columns:1fr}
+  .account-overview-layout .trader-profile-content{grid-template-columns:minmax(190px,.6fr) minmax(0,1.4fr)}
+}
+@media(max-width:620px){
+  .account-overview-layout .trader-profile-content{grid-template-columns:1fr}
 }
 @media(max-width:620px){.decision-focused-header .app-brand-row{flex-direction:row!important;align-items:center!important}.decision-focused-header .app-user{width:auto}.decision-focused-header .shield-status,.decision-focused-header .keyboard-shortcuts{display:none}.decision-focused-header .context-switchers{grid-template-columns:1fr!important}.strategy-trade-activity>header{align-items:flex-start}.strategy-trade-activity .trade-history-rows{grid-template-columns:1fr}.strategy-trade-activity .trade-history-row{grid-template-columns:minmax(0,1fr) auto;align-items:center}}
 

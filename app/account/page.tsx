@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
 import AuthenticatedAppShell from '@/components/AuthenticatedAppShell';
@@ -43,21 +44,24 @@ export default async function AccountPage() {
   const discordInviteUrl=process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim()||null;
   return <AuthenticatedAppShell eyebrow={t('account.eyebrow')} displayName={displayName} description={t('account.description')} userId={user.id}>
     <div className="account-settings-flow">
-      <TraderProfileOverview declaredType={profile?.trader_type??null} experienceLevel={profile?.experience_level??null} observed={observed} historyAvailable={!closedTradeResult.error}/>
-      <div className="account-premium-layout">
-        <section className="card account-preferences-panel">
-          <header className="account-panel-heading"><div><p className="eyebrow">PERSONAL SETTINGS</p><h2>Your trading identity</h2></div><span>Private to your account</span></header>
-          <div className="account-email-row"><div><span>Signed-in email</span><strong>{user.email}</strong></div><small>{t('account.authenticated')}</small></div>
-          <TraderIdentitySettings userId={user.id} experienceLevel={profile?.experience_level??null} traderType={profile?.trader_type??null}/>
-          <div className="account-security-row"><div><span>Security</span><small>Update the password used to protect this account.</small></div><Link className="button-link secondary" href="/reset-password">{t('account.changePassword')}</Link></div>
-          <div className="account-language-embedded"><LanguagePreference userId={user.id} initialPreference={preference}/></div>
-        </section>
+      <div className="account-overview-layout">
+        <TraderProfileOverview declaredType={profile?.trader_type??null} experienceLevel={profile?.experience_level??null} observed={observed} historyAvailable={!closedTradeResult.error}/>
         <aside className="card billing-summary account-plan-panel">
+          <Image className="account-plan-brand" src="/brand/trade-police-mark.png" width={120} height={120} alt="" aria-hidden="true"/>
           <div><p className="eyebrow">{t('account.planBilling')}</p><h2>{state.plan}</h2><span className="status-pill positive">{state.status.toUpperCase()}</span></div>
           <dl><div><dt>{t('account.usage')}</dt><dd>{state.usage}{limit === null ? ` · ${t('account.unlimited')}` : ` / ${limit}`}</dd></div>{date?<div><dt>{state.cancelAtPeriodEnd ? t('account.accessEnds') : t('account.renews')}</dt><dd>{date}</dd></div>:null}</dl>
           {state.paymentFailed && <p className="error">{t('account.paymentFailed')}</p>}
           <div className="account-plan-actions">{state.stripeCustomerId && billingEnabled() ? <BillingActions mode="portal"/> : state.plan === 'FREE' && billingEnabled() ? <BillingActions mode="checkout"/> : null}<Link className="button-link secondary" href="/pricing">{t('account.comparePlans')}</Link></div>
         </aside>
+      </div>
+      <div className="account-preference-layout">
+        <section className="card account-preferences-panel">
+          <header className="account-panel-heading"><div><p className="eyebrow">PERSONAL SETTINGS</p><h2>Your trading identity</h2></div><span>Private to your account</span></header>
+          <div className="account-email-row"><div><span>Signed-in email</span><strong>{user.email}</strong></div><small>{t('account.authenticated')}</small></div>
+          <TraderIdentitySettings userId={user.id} experienceLevel={profile?.experience_level??null} traderType={profile?.trader_type??null}/>
+          <div className="account-security-row"><div><span>Security</span><small>Update the password used to protect this account.</small></div><Link className="button-link secondary" href="/reset-password">{t('account.changePassword')}</Link></div>
+        </section>
+        <aside className="account-language-panel"><LanguagePreference userId={user.id} initialPreference={preference}/></aside>
       </div>
       <section className="card account-destination-panel" aria-label="Account tools">
         <header><div><p className="eyebrow">CONNECTED SERVICES</p><h2>Everything else, one tap away.</h2></div><span>Account workspace</span></header>
