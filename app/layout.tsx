@@ -4,6 +4,8 @@ import './hq-premium.css';
 import './mobile-shell.css';
 import './liquid-glass.css';
 import './customer-brand.css';
+import './hq-brand.css';
+import './adaptive-experience.css';
 import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';
 import LocaleProvider from '@/components/i18n/LocaleProvider';

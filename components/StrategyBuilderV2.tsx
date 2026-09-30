@@ -590,7 +590,7 @@ export default function StrategyBuilderV2({
       )}
 
       {path === 'copilot' && (
-        <div className="strategy-v2-panel">
+        <div className="strategy-v2-panel strategy-copilot-panel">
           <p className="eyebrow">{w('DESCRIBE YOUR STRATEGY')}</p>
           <h3>{w('How do you trade?')}</h3>
           <p className="muted">{w('Explain it in your own words. Trade Police will organize it and ask only for details that are still needed.')}</p>
@@ -635,9 +635,9 @@ export default function StrategyBuilderV2({
               }
             }}>{w(copilotBusy ? 'Understanding your strategy…' : 'Help me structure it')}</button>
           </div>
-          <div className="copilot-log">
+          <div className="copilot-log" role="log" aria-live="polite" aria-label={w('Strategy conversation')}>
             {copilotConversation.map((entry, index) => (
-              <div key={`${entry.heading}-${index}`} className="copilot-message">
+              <div key={`${entry.heading}-${index}`} className={`copilot-message ${entry.heading === 'Trade Police' ? 'from-trade-police' : 'from-trader'}`}>
                 <strong>{w(entry.heading)}</strong>
                 <p>{w(entry.text)}</p>
               </div>
