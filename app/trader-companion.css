@@ -1,0 +1,65 @@
+.trader-companion {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 85;
+  width: min(420px, calc(100vw - 24px));
+  max-height: 78dvh;
+  overflow: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px;
+  box-shadow: 0 12px 40px #0005;
+}
+.companion-toggle {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+}
+.companion-content {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+.companion-log {
+  display: grid;
+  gap: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.companion-log article {
+  border: 1px solid var(--border, #334155);
+  border-radius: 12px;
+  padding: 14px;
+}
+.companion-log p {
+  white-space: pre-wrap;
+}
+.companion-log .from-trader {
+  margin-left: 24px;
+}
+.companion-content form {
+  display: grid;
+  gap: 12px;
+}
+.companion-content textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.companion-content details {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .trader-companion {
+    right: 12px;
+    bottom: calc(
+      var(--mobile-bottom-nav-height, 72px) + env(safe-area-inset-bottom) + 12px
+    );
+    max-height: 70dvh;
+  }
+  .companion-log {
+    max-height: 240px;
+  }
+}

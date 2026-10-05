@@ -1,5 +1,6 @@
 'use client';
 
+import { publishCompanionContext } from '@/lib/companion-events';
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
@@ -137,6 +138,8 @@ export default function TradeValidator({userId,displayName,experienceLevel,initi
   const [sessionHistory,setSessionHistory]=useState<{time:string;headline:string;detail:string}[]>([]);
   const [lastAnalysisInput,setLastAnalysisInput]=useState<Record<string,unknown>|null>(null);
   const [feedbackAnalysisId,setFeedbackAnalysisId]=useState<string|null>(null);
+  useEffect(()=>{publishCompanionContext({context:{...(strategy.id?{strategyId:strategy.id}:{}),...(feedbackAnalysisId?{analysisId:feedbackAnalysisId}:{}),...(result?.reportSourceId?{decisionSourceId:result.reportSourceId}:{})},reason:result?.reportSourceId?'DECISION':feedbackAnalysisId?'ANALYSIS':'CHANGE',instrument:selectedInstrument});},[strategy.id,feedbackAnalysisId,result?.reportSourceId,selectedInstrument]);
+
   const reasoningButtonRef=useRef<HTMLButtonElement>(null);
   const reasoningCloseRef=useRef<HTMLButtonElement>(null);
   const tradeActionModalRef=useRef<HTMLElement>(null);

@@ -1,5 +1,6 @@
 'use client';
 
+import { publishCompanionContext } from '@/lib/companion-events';
 import { type ReactNode, useEffect, useState, useRef } from 'react';
 import TradingViewChart from './TradingViewChart';
 import TradingViewReferenceChart from './TradingViewReferenceChart';
@@ -66,6 +67,7 @@ export default function LiveMarketPanel({
   const [paintedChartKey,setPaintedChartKey]=useState<string|null>(null);
   const availableTimeframes = supportedMarketTimeframesForStrategy(strategy);
   const [chartTimeframe, setChartTimeframe] = useState(strategy.entryTimeframe || availableTimeframes[0] || 'H1');
+  useEffect(()=>{publishCompanionContext({context:strategy.id?{strategyId:strategy.id}:{},reason:'CHANGE',instrument:selectedInstrument,timeframe:chartTimeframe});},[strategy.id,selectedInstrument,chartTimeframe]);
   const analysisContextRef = useRef('');
   const retryTimerRef = useRef<number | null>(null);
   const snapshotControllerRef=useRef<AbortController|null>(null);

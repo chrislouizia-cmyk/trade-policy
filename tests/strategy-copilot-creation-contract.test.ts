@@ -308,7 +308,9 @@ test('the route persists next session state and the builder no longer uses a sha
   const route = readFileSync(new URL('../app/api/strategy-copilot/route.ts', import.meta.url), 'utf8');
   const builder = readFileSync(new URL('../components/StrategyBuilderV2.tsx', import.meta.url), 'utf8');
 
-  assert.match(route, /upsertStrategyCopilotSession/);
+  assert.match(route, /from\('strategy_copilot_sessions'\)/);
+  assert.match(route, /eq\('version',currentSession.version\)/);
+  assert.doesNotMatch(route, /ensureStrategyCopilotSession|upsertStrategyCopilotSession/);
   assert.doesNotMatch(builder, /sessionId:\s*['"]strategy-builder-v2['"]/);
   assert.doesNotMatch(builder, /selectedInstruments\[0\]\s*\?\?\s*['"]XAUUSD['"]/);
   assert.match(route, /assessCanonicalCreationDraft|mapCopilotReplyToCanonicalCreation/);

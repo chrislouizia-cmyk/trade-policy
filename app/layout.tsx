@@ -6,6 +6,8 @@ import './liquid-glass.css';
 import './customer-brand.css';
 import './hq-brand.css';
 import './adaptive-experience.css';
+import './trader-companion.css';
+import TraderCompanion from '@/components/TraderCompanion';
 import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';
 import LocaleProvider from '@/components/i18n/LocaleProvider';
@@ -33,5 +35,5 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getRequestLocale();
-  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><div className="app-document-content">{children}<AppFooter /></div></LocaleProvider></body></html>;
+  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><div className="app-document-content">{children}<TraderCompanion/><AppFooter /></div></LocaleProvider></body></html>;
 }

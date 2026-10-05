@@ -1,5 +1,6 @@
 'use client';
 
+import { publishCompanionContext } from '@/lib/companion-events';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -441,6 +442,7 @@ export default function StrategyDetailPage({ strategy, rules, sessions, initialR
       setReportError('The run completed, but its persisted result is not available yet. Refresh in a moment.');
     } else {
       setReportResult(result as BacktestResultRow);
+      publishCompanionContext({context:{backtestId:run.id},reason:'BACKTEST',instrument:run.instrument??undefined});
       setReportTrades((trades ?? []) as BacktestTradeRow[]);
     }
 setReportLoading(false);

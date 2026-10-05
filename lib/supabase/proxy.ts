@@ -82,6 +82,8 @@ export async function updateSession(
     '/hq/login',
     '/forgot-password',
     '/reset-password',
+    // This JSON endpoint performs its own mandatory authentication and origin checks.
+    '/api/trader-companion',
   ]);
 
   const isPublic =

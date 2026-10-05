@@ -1,3 +1,4 @@
+import { refreshTraderLearning } from '@/lib/server/trader-context';
 import { NextResponse } from 'next/server';
 import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
@@ -55,8 +56,9 @@ export async function POST(request: Request) {
       outcome: canonicalTrade.outcome,
     });
 
+    const learning = await refreshTraderLearning(supabase,user.id);
     return NextResponse.json(
-      { result: data, lifecycle: lifecycleCheck, canonicalTrade },
+      { learning, result: data, lifecycle: lifecycleCheck, canonicalTrade },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

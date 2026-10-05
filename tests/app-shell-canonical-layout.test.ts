@@ -100,7 +100,7 @@ test('the shared shell owns viewport height safe spacing and document layers',()
   assert.match(mobileCss,/\.mobile-more-backdrop[\s\S]*z-index: 100/);
   assert.match(mobileCss,/\.mobile-bottom-nav[\s\S]*z-index: 80/);
   assert.match(mobileCss,/\.authenticated-app-shell[\s\S]*padding-bottom: calc\(var\(--mobile-bottom-nav-height\)/);
-  assert.match(layout,/\{children\}<AppFooter \/>/);
+  assert.match(layout,/\{children\}<TraderCompanion\/><AppFooter \/>/);
 });
 
 test('mobile keeps the five core destinations visible and account access in the header',()=>{

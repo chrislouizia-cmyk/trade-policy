@@ -1,3 +1,4 @@
+import { refreshTraderLearning } from '@/lib/server/trader-context';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
@@ -54,7 +55,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
     }
 
+    const learning = await refreshTraderLearning(supabase,user.id);
     return NextResponse.json({
+      learning,
       result: response.data,
       route: 'close_trade_v2',
     }, { headers: { 'Cache-Control': 'no-store' } });

@@ -92,7 +92,7 @@ export default function StrategyBuilderV2({
   onInstrumentResolved?: (instrument: CatalogInstrument) => void;
 }) {
   const { locale } = useLocale();
-  const [copilotSessionId] = useState(() => crypto.randomUUID());
+  const [copilotSessionId,setCopilotSessionId] = useState(() => crypto.randomUUID());
   const w = (text:string) => workspaceText(locale,text);
   const [path, setPath] = useState<CreationPath>(()=>mode==='EDIT'?'visual':'copilot');
   const [step, setStep] = useState<StepKey>(1);
@@ -127,6 +127,17 @@ export default function StrategyBuilderV2({
   const [visualConfirmation, setVisualConfirmation] = useState<CanonicalReviewConfirmation | null>(null);
   const [saving, setSaving] = useState(false);
   const [ruleMenuOpen, setRuleMenuOpen] = useState<string | null>(null);
+  const [copilotRestoring,setCopilotRestoring]=useState(true);
+  useEffect(()=>{
+    const controller=new AbortController();queueMicrotask(()=>{setCopilotRestoring(true);setCopilotSessionId(crypto.randomUUID());setCopilotDraft(emptyStrategyCopilotDraft());setCanonicalCopilotDraft(createCanonicalCreationDraft({intent:mode,...(mode==='EDIT'&&profile.id?{strategyId:profile.id}:{})}));setCopilotReviewVisible(false);setCopilotConversation([{heading:'Trade Police',text:'Tell me how you trade. I’ll organize it so you can review and refine it.'}]);});
+    void fetch(`/api/strategy-copilot?intent=${mode}${mode==='EDIT'&&profile.id?`&strategyId=${profile.id}`:''}`,{cache:'no-store',signal:controller.signal}).then(async response=>{
+      if(!response.ok)return;const {session}=await response.json();if(!session||controller.signal.aborted)return;
+      setCopilotSessionId(session.id);setCopilotDraft(session.draft);if(session.canonical_draft)setCanonicalCopilotDraft(session.canonical_draft);
+      setCopilotConversation(session.messages.map((item:{role:string;text:string})=>({heading:item.role==='user'?'You':'Trade Police',text:item.text})));setCopilotReviewVisible(true);
+    }).catch(()=>{}).finally(()=>{if(!controller.signal.aborted)setCopilotRestoring(false)});
+    return()=>controller.abort();
+  },[mode,profile.id]);
+
 
   const allLibraries = METHODOLOGY_LIBRARY;
   const selectedLibraries = useMemo(
@@ -169,7 +180,7 @@ export default function StrategyBuilderV2({
     setSelectedMethodologyIds([...defaultMethodologies]); setSelectedInstruments([]); setSessions([]); setContextTimeframe('H1'); setExecutionTimeframe('M15'); setSelectedRuleSelections(createDefaultRuleSelection()); setRiskPercent(0.5); setMinimumRR(3); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setVisualConfirmation(null);
   }
   function initializeCopilotMode() {
-    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotDraft(emptyStrategyCopilotDraft()); setCanonicalCopilotDraft(createCanonicalCreationDraft({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}) })); setCopilotReviewVisible(false); setCopilotConfirmation(null); setCopilotRefinementInput('');
+    setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setContextTimeframe(''); setExecutionTimeframe(''); setSelectedRuleSelections([]); setRiskPercent(0); setMinimumRR(0); setStopLogic(''); setTargetLogic(''); setDirection('BOTH'); setStrategyName(''); setCopilotInput(''); setCopilotSessionId(crypto.randomUUID()); setCopilotDraft(emptyStrategyCopilotDraft()); setCanonicalCopilotDraft(createCanonicalCreationDraft({ intent: mode, ...(mode === 'EDIT' && profile.id ? { strategyId: profile.id } : {}) })); setCopilotReviewVisible(false); setCopilotConfirmation(null); setCopilotRefinementInput('');
   }
   function initializeMethodologyMode() { setSelectedMethodologyIds([]); setSelectedInstruments([]); setSessions([]); setSelectedRuleSelections([]); setStopLogic(''); setTargetLogic(''); setVisualConfirmation(null); }
   function initializeBlankMode() { initializeCopilotMode(); }
@@ -596,7 +607,7 @@ export default function StrategyBuilderV2({
           <p className="muted">{w('Explain it in your own words. Trade Police will organize it and ask only for details that are still needed.')}</p>
           <label>{w('Your trading approach')}<textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} rows={6} placeholder={w('Describe what you trade, when you trade, what confirms an entry, and how you manage risk.')} /></label>
           <div className="button-row">
-            <button type="button" className="primary" disabled={copilotBusy || !copilotInput.trim()} onClick={async () => {
+            <button type="button" className="primary" disabled={copilotRestoring || copilotBusy || !copilotInput.trim()} onClick={async () => {
               if (!copilotInput.trim()) return;
               setCopilotBusy(true);
               setCopilotConversation((current) => [...current, { heading: 'You', text: copilotInput }]);
@@ -715,7 +726,7 @@ export default function StrategyBuilderV2({
               <p className="muted">{w('Tell Trade Police what to change. You do not need to find a setting or start over.')}</p>
               <textarea value={copilotRefinementInput} onChange={(event) => setCopilotRefinementInput(event.target.value)} rows={4} placeholder={w('Example: Risk 0.75%, remove New York, or make BOS required.')} />
               <div className="button-row">
-                <button type="button" className="primary" disabled={copilotBusy || !copilotRefinementInput.trim()} onClick={async () => {
+                <button type="button" className="primary" disabled={copilotRestoring || copilotBusy || !copilotRefinementInput.trim()} onClick={async () => {
                   if (!copilotRefinementInput.trim()) return;
                   setCopilotBusy(true);
                   try {
@@ -816,7 +827,7 @@ export default function StrategyBuilderV2({
 
               <div className="button-row">
                 <button type="button" onClick={onCancel}>{w('Cancel')}</button>
-                <button type="button" className="primary" disabled={copilotBusy || saving || !copilotReviewCurrent} onClick={() => {
+                <button type="button" className="primary" disabled={copilotRestoring || copilotBusy || saving || !copilotReviewCurrent} onClick={() => {
                   if (!copilotReviewCurrent) return;
                   void buildCopilotApply();
                 }}>{w(saving ? 'Saving…' : copilotReview?.operation === 'UPDATE' ? 'Save changes' : copilotReview?.activationIntent === 'ACTIVATE' ? 'Save and activate' : 'Save strategy')}</button>
