@@ -19,7 +19,15 @@ export default async function AnalyticsPage(){
  const [accountResult, tradeResult, intelligence]=await Promise.all([
   s.from('trading_accounts').select('name,currency,initial_balance,current_balance').eq('is_active',true).eq('is_archived',false).maybeSingle(),
   s.from('active_trades').select('id,result_r,realized_pnl,outcome,taken_against_verdict,strategy_name_at_entry,instrument,opened_at,closed_at,direction,risk_percent,initial_rr,setup_type,override_reason,strategy_snapshot,source_report_id,activation_mode,status').eq('user_id',user.id).eq('status','CLOSED').order('closed_at'),
-  loadTraderContext(s,user.id).then(value=>value.summary).catch(()=>null)
+  loadTraderContext(s,user.id).then(value=>value.summary).catch((error:unknown)=>{
+   const detail=error&&typeof error==='object'?error as {code?:unknown;message?:unknown}:{};
+   console.error('[TRADER_INTELLIGENCE_ANALYTICS_LOAD_FAILED]',{
+    userId:user.id,
+    code:String(detail.code??'UNKNOWN'),
+    message:String(detail.message??error),
+   });
+   return null;
+  })
  ]);
  const account=accountResult.data;
  const data=tradeResult.data??[];

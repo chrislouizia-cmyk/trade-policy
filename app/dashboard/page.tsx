@@ -21,7 +21,17 @@ export default async function DashboardPage() {
     client.from("active_trades").select("id", { count: "exact" }).eq("status", "OPEN"),
     client.from("active_trades").select("realized_pnl,outcome,taken_against_verdict,closed_at").eq("status", "CLOSED").gte("closed_at", new Date(new Date().setHours(0, 0, 0, 0)).toISOString()),
     client.from('market_scans').select('id',{count:'exact',head:true}),
-    loadTraderContext(client, user.id).then((value) => value.summary).catch(() => null),
+    loadTraderContext(client, user.id).then((value) => value.summary).catch((error: unknown) => {
+      const detail = error && typeof error === "object"
+        ? error as { code?: unknown; message?: unknown }
+        : {};
+      console.error("[TRADER_INTELLIGENCE_DASHBOARD_LOAD_FAILED]", {
+        userId: user.id,
+        code: String(detail.code ?? "UNKNOWN"),
+        message: String(detail.message ?? error),
+      });
+      return null;
+    }),
   ]);
   const rows = closed ?? [];
   const todayPnl = rows.reduce((sum, trade) => sum + Number(trade.realized_pnl ?? 0), 0);
@@ -33,4 +43,3 @@ export default async function DashboardPage() {
     <Dashboard locale={locale} displayName={displayName} account={account} strategy={strategy} openTrades={open?.length ?? 0} todayPnl={todayPnl} wins={wins} losses={losses} discipline={rows.length ? Math.round((disciplined / rows.length) * 100) : null} closedTradesToday={rows.length} hasTrade={(analysisCount??0)>0} intelligence={intelligence}/>
   </AuthenticatedAppShell>;
 }
-
