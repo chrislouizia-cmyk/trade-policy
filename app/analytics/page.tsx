@@ -6,6 +6,8 @@ import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import { getTradeLifecycleSimulationLabel, isTradeLifecycleSimulationRecord } from '@/lib/server/trade-lifecycle-v2';
 import {getRequestLocale} from '@/lib/i18n/server';
 import {getScreenCopy} from '@/lib/i18n/screen-copy';
+import {loadTraderContext} from '@/lib/server/trader-context';
+import PoliceIntelligence from '@/components/PoliceIntelligence';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -14,9 +16,10 @@ export default async function AnalyticsPage(){
  const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)redirect('/client/login?next=/analytics');
  const [displayName,locale]=await Promise.all([getUserDisplayName(s,user),getRequestLocale()]);
  const c=getScreenCopy(locale).analytics;
- const [accountResult, tradeResult]=await Promise.all([
+ const [accountResult, tradeResult, intelligence]=await Promise.all([
   s.from('trading_accounts').select('name,currency,initial_balance,current_balance').eq('is_active',true).eq('is_archived',false).maybeSingle(),
-  s.from('active_trades').select('id,result_r,realized_pnl,outcome,taken_against_verdict,strategy_name_at_entry,instrument,opened_at,closed_at,direction,risk_percent,initial_rr,setup_type,override_reason,strategy_snapshot,source_report_id,activation_mode,status').eq('user_id',user.id).eq('status','CLOSED').order('closed_at')
+  s.from('active_trades').select('id,result_r,realized_pnl,outcome,taken_against_verdict,strategy_name_at_entry,instrument,opened_at,closed_at,direction,risk_percent,initial_rr,setup_type,override_reason,strategy_snapshot,source_report_id,activation_mode,status').eq('user_id',user.id).eq('status','CLOSED').order('closed_at'),
+  loadTraderContext(s,user.id).then(value=>value.summary).catch(()=>null)
  ]);
  const account=accountResult.data;
  const data=tradeResult.data??[];
@@ -51,5 +54,5 @@ export default async function AnalyticsPage(){
   const simulationMode=String(strategy_snapshot.simulationMode ?? strategy_snapshot.testSource ?? strategy_snapshot.internalTestMode ?? 'INTERNAL_LIFECYCLE_SMOKE_TEST');
   return {id:x.id,label:getTradeLifecycleSimulationLabel(x),pnl:Number(x.realized_pnl??0),r:Number(x.result_r??0),instrument:x.instrument??'Unknown',strategy:x.strategy_name_at_entry??'Unknown',outcome:x.outcome??'UNKNOWN',closedAt:x.closed_at,recordType:'SIMULATION / INTERNAL TEST',simulationMode, strategy_snapshot};
  });
- return <AuthenticatedAppShell eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id}>{simulationTrades.length>0?<section className="card analytics-verification-card" style={{marginBottom:'1.5rem'}}><div className="section-title"><div><span className="eyebrow">SIMULATION / INTERNAL TEST</span><h2>{c.verificationOnly}</h2><p className="muted">{c.verificationHint}</p></div></div><div className="historical-card-list">{simulationTrades.map(trade=><article className="historical-card" key={trade.id}><div><time dateTime={trade.closedAt}>{new Date(trade.closedAt).toLocaleString(locale)}</time><strong>{trade.instrument}</strong><span>{trade.strategy}</span></div><div><span className="badge blocked">{trade.label}</span><p>{trade.outcome}</p></div><dl><div><dt>R</dt><dd>{trade.r.toFixed(2)}R</dd></div><div><dt>{c.mode}</dt><dd>{trade.simulationMode}</dd></div></dl></article>)}</div></section>:null}<AnalyticsDashboard account={{name:account?.name??c.activeAccount,currency:account?.currency??'USD',startingBalance:Number(account?.initial_balance??0),currentBalance:Number(account?.current_balance??0)}} trades={liveTrades}/></AuthenticatedAppShell>;
+ return <AuthenticatedAppShell eyebrow={c.eyebrow} displayName={displayName} description={c.description} userId={user.id}>{intelligence?<PoliceIntelligence summary={intelligence} locale={locale} full/>:null}{simulationTrades.length>0?<section className="card analytics-verification-card" style={{marginBottom:'1.5rem'}}><div className="section-title"><div><span className="eyebrow">SIMULATION / INTERNAL TEST</span><h2>{c.verificationOnly}</h2><p className="muted">{c.verificationHint}</p></div></div><div className="historical-card-list">{simulationTrades.map(trade=><article className="historical-card" key={trade.id}><div><time dateTime={trade.closedAt}>{new Date(trade.closedAt).toLocaleString(locale)}</time><strong>{trade.instrument}</strong><span>{trade.strategy}</span></div><div><span className="badge blocked">{trade.label}</span><p>{trade.outcome}</p></div><dl><div><dt>R</dt><dd>{trade.r.toFixed(2)}R</dd></div><div><dt>{c.mode}</dt><dd>{trade.simulationMode}</dd></div></dl></article>)}</div></section>:null}<AnalyticsDashboard account={{name:account?.name??c.activeAccount,currency:account?.currency??'USD',startingBalance:Number(account?.initial_balance??0),currentBalance:Number(account?.current_balance??0)}} trades={liveTrades}/></AuthenticatedAppShell>;
 }

@@ -3,6 +3,8 @@ import PrivateBetaCard from '@/components/PrivateBetaCard';
 import type { Locale } from '@/lib/i18n/config';
 import { workspaceText } from '@/lib/i18n/workspace-copy';
 import DecisionStateGuide from '@/components/DecisionStateGuide';
+import PoliceIntelligence from '@/components/PoliceIntelligence';
+import type { LearningSummary } from '@/lib/trader-learning';
 
 type Props = {
   displayName:string;
@@ -16,6 +18,7 @@ type Props = {
   closedTradesToday:number;
   hasTrade:boolean;
   locale:Locale;
+  intelligence:LearningSummary|null;
 };
 
 export default function Dashboard(p: Props) {
@@ -37,6 +40,8 @@ export default function Dashboard(p: Props) {
       </div>
       <div className="dashboard-hero-actions"><a className="button-link primary dashboard-primary-action" href={hasOpenTrade?'/active-trade':'/validate'}>{hasOpenTrade?w('Review active trade'):w('Check a trade')}</a>{hasOpenTrade?<a className="button-link secondary dashboard-secondary-action" href="/validate">{w('Check another trade')}</a>:null}</div>
     </section>
+
+    {p.intelligence&&<PoliceIntelligence summary={p.intelligence} locale={p.locale}/>}
 
     <div className="grid grid-4 metric-grid compact-dashboard-grid">
       <Card label={w('Active account')} value={p.account?p.account.name:w('Not configured')} sub={p.account?`${p.account.currency} ${Number(p.account.current_balance).toLocaleString(p.locale)}`:w('Create an account to calculate risk')} href="/accounts"/>

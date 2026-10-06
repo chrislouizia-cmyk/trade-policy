@@ -17,56 +17,80 @@ export type TraderContextSelection = {
   decisionSourceId?: string;
 };
 export async function loadTraderContext(
-  client: Client,
+  _client: Client,
   userId: string,
   selection: TraderContextSelection = {},
 ) {
-  const [profile, trades, memories, feedback] = await Promise.all([
-    client
+  // Authentication happens at the route boundary. Server-only access avoids
+  // exposing internal feedback tables while every query remains user-scoped.
+  const dataClient = createAdminClient();
+  const [profile, trades, memories, feedback, decisions, intelligenceProfile] = await Promise.all([
+    dataClient
       .from("profiles")
       .select("display_name,experience_level,trader_type,preferred_locale")
       .eq("id", userId)
       .maybeSingle(),
-    client
-      .from("trade_records")
+    dataClient
+      .from("active_trades")
       .select(
-        "id,user_id,source,status,instrument,session,strategy_profile_id,outcome,result_r,closed_at,post_analysis,rule_snapshot",
+        "id,user_id,status,instrument,strategy_profile_id,strategy_name_at_entry,outcome,result_r,opened_at,closed_at,taken_against_verdict,strategy_snapshot",
       )
       .eq("user_id", userId)
       .eq("status", "CLOSED")
       .order("closed_at", { ascending: false })
       .limit(300),
-    client
+    dataClient
       .from("trader_memories")
       .select("id,category,content,created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(30),
-    client
+    dataClient
       .from("contextual_analysis_feedback")
       .select("id,analysis_id,response,category,comment")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20),
+    dataClient
+      .from("decision_reports")
+      .select(
+        "id,user_id,verdict,instrument,timeframe,strategy_id,strategy_name,readiness_percent,created_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    dataClient
+      .from("trader_intelligence_profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle(),
   ]);
-  for (const result of [profile, trades, memories, feedback])
+  for (const result of [profile, trades, memories, feedback, decisions])
     if (result.error) throw result.error;
-  const records = (trades.data ?? []) as LearningTrade[];
-  const executions = records.length
-    ? await client
-        .from("active_trades")
-        .select("trade_record_id,strategy_snapshot,taken_against_verdict")
-        .eq("user_id", userId)
-        .in(
-          "trade_record_id",
-          records.map((row) => row.id),
-        )
-    : { data: [], error: null };
-  if (executions.error) throw executions.error;
+  if (intelligenceProfile.error && intelligenceProfile.error.code !== "PGRST116")
+    throw intelligenceProfile.error;
+  const records = (trades.data ?? []).map((row) => ({
+    ...row,
+    source: "EXECUTED",
+    post_analysis: null,
+    rule_snapshot: row.strategy_snapshot,
+  })) as LearningTrade[];
+  const executions = (trades.data ?? []).map((row) => ({
+    trade_record_id: row.id,
+    strategy_snapshot: row.strategy_snapshot,
+    taken_against_verdict: row.taken_against_verdict,
+    opened_at: row.opened_at,
+    strategy_name_at_entry: row.strategy_name_at_entry,
+  })) as LearningExecution[];
   const summary = buildTraderLearning(
     userId,
     records,
-    (executions.data ?? []) as LearningExecution[],
+    executions,
+    new Date(),
+    {
+      timezone: intelligenceProfile.data?.timezone,
+      decisions: decisions.data ?? [],
+    },
   );
   const fingerprint = createHash("sha256")
     .update(JSON.stringify({ ...summary, generatedAt: undefined }))
@@ -110,7 +134,7 @@ export async function loadTraderContext(
   });
   const selected: Record<string, unknown> = {};
   if (selection.decisionSourceId) {
-    const { data, error } = await client
+    const { data, error } = await dataClient
       .from("decision_report_sources")
       .select("id,snapshot_json,created_at")
       .eq("id", selection.decisionSourceId)
@@ -127,7 +151,7 @@ export async function loadTraderContext(
     });
   }
   if (selection.strategyId) {
-    const { data, error } = await client
+    const { data, error } = await dataClient
       .from("strategy_profiles")
       .select(
         "id,name,trading_style,maximum_risk_percent,minimum_rr,personal_rules",
@@ -137,7 +161,7 @@ export async function loadTraderContext(
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("CONTEXT_NOT_FOUND");
-    const rules = await client
+    const rules = await dataClient
       .from("strategy_rules")
       .select("rule_key,label,enabled,mandatory,evaluation_mode,configuration")
       .eq("strategy_id", data.id)
@@ -152,7 +176,7 @@ export async function loadTraderContext(
     });
   }
   if (selection.analysisId) {
-    const { data, error } = await client
+    const { data, error } = await dataClient
       .from("market_scans")
       .select(
         "id,instrument,analysis,created_at,server_created,strategy_profile_id",
@@ -185,7 +209,7 @@ export async function loadTraderContext(
     });
   }
   if (selection.tradeId) {
-    const { data, error } = await client
+    const { data, error } = await dataClient
       .from("active_trades")
       .select(
         "id,instrument,status,direction,entry,stop_loss,take_profit,taken_against_verdict,original_verdict,last_verdict,last_verdict_reason,current_price,current_r,last_analyzed_at,opened_at,initial_analysis,last_analysis,strategy_snapshot",
@@ -203,7 +227,7 @@ export async function loadTraderContext(
     });
   }
   if (selection.backtestId) {
-    const { data, error } = await client
+    const { data, error } = await dataClient
       .from("backtest_runs")
       .select(
         "id,status,instrument,period_start,period_end,strategy_profile_id,execution_timeframe,metadata",
@@ -213,7 +237,7 @@ export async function loadTraderContext(
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("CONTEXT_NOT_FOUND");
-    const result = await client
+    const result = await dataClient
       .from("backtest_results")
       .select(
         "net_return_percent,total_trades,win_rate,expectancy_r,max_drawdown_percent",

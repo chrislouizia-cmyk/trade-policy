@@ -110,6 +110,46 @@ test("small samples remain descriptive and overrides have recorded evidence with
     /not an inferred emotion/,
   );
 });
+test("automatic intelligence learns hour, weekday, behavior and coaching from recorded evidence", () => {
+  const positive = Array.from({ length: 5 }, (_, index) =>
+    trade(`win-${index}`, {
+      opened_at: `2026-10-05T09:${String(index).padStart(2, "0")}:00Z`,
+      result_r: 1,
+    }),
+  );
+  const negative = Array.from({ length: 5 }, (_, index) =>
+    trade(`loss-${index}`, {
+      opened_at: `2026-10-06T15:${String(index).padStart(2, "0")}:00Z`,
+      result_r: -1,
+    }),
+  );
+  const summary = buildTraderLearning(
+    "alice",
+    [...positive, ...negative],
+    [],
+    new Date("2026-10-07T00:00:00Z"),
+    {
+      timezone: "America/Monterrey",
+      decisions: [
+        {
+          id: "decision-1",
+          user_id: "alice",
+          verdict: "READY",
+          instrument: "XAUUSD",
+          timeframe: "M15",
+          created_at: "2026-10-05T12:00:00Z",
+        },
+      ],
+    },
+  );
+  assert.equal(summary.version, "2");
+  assert.equal(summary.timezone, "America/Monterrey");
+  assert.equal(summary.behavior.decisions, 1);
+  assert.equal(summary.behavior.readyRate, 100);
+  assert.ok(summary.dimensions.some((item) => item.dimension === "hour"));
+  assert.ok(summary.dimensions.some((item) => item.dimension === "weekday"));
+  assert.ok(summary.recommendations.some((item) => item.id.startsWith("review:hour:")));
+});
 const facts = [
   {
     id: "history:all",

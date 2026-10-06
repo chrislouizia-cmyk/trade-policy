@@ -11,6 +11,10 @@ export type LearningTrade = {
   outcome?: string | null;
   result_r?: number | string | null;
   closed_at?: string | null;
+  opened_at?: string | null;
+  strategy_name_at_entry?: string | null;
+  taken_against_verdict?: boolean | null;
+  strategy_snapshot?: Record<string, unknown> | null;
   post_analysis?: Record<string, unknown> | null;
   rule_snapshot?: Record<string, unknown> | null;
 };
@@ -20,6 +24,46 @@ export type LearningExecution = {
   simulation_mode?: string | null;
   source?: string | null;
   taken_against_verdict?: boolean | null;
+  opened_at?: string | null;
+  strategy_name_at_entry?: string | null;
+};
+export type LearningDecision = {
+  id: string;
+  user_id: string;
+  verdict?: string | null;
+  instrument?: string | null;
+  timeframe?: string | null;
+  strategy_id?: string | null;
+  strategy_name?: string | null;
+  readiness_percent?: number | string | null;
+  created_at: string;
+};
+export type LearningBehavior = {
+  decisions: number;
+  readyDecisions: number;
+  readyRate: number | null;
+  activeDays: number;
+  mostCheckedInstrument: string | null;
+  mostUsedTimeframe: string | null;
+};
+export type LearningDimension = {
+  dimension: "hour" | "weekday" | "instrument" | "session" | "strategy" | "discipline";
+  key: string;
+  label: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  averageR: number;
+  totalR: number;
+  evidenceIds: string[];
+};
+export type LearningRecommendation = {
+  id: string;
+  priority: "HIGH" | "MEDIUM" | "FOUNDATION";
+  title: string;
+  detail: string;
+  evidenceIds: string[];
 };
 export type LearningFinding = {
   id: string;
@@ -29,12 +73,16 @@ export type LearningFinding = {
   sampleSize: number;
 };
 export type LearningSummary = {
-  version: "1";
+  version: "2";
   closedTrades: number;
   excludedTrades: number;
   averageR: number | null;
   findings: LearningFinding[];
   evidenceIds: string[];
+  timezone: string;
+  dimensions: LearningDimension[];
+  recommendations: LearningRecommendation[];
+  behavior: LearningBehavior;
   generatedAt: string;
 };
 
@@ -44,7 +92,9 @@ export function buildTraderLearning(
   trades: LearningTrade[],
   executions: LearningExecution[],
   now = new Date(),
+  options: { timezone?: string; decisions?: LearningDecision[] } = {},
 ): LearningSummary {
+  const timezone = validTimezone(options.timezone);
   const executionByRecord = new Map(
     executions
       .filter((row) => row.trade_record_id)
@@ -87,6 +137,9 @@ export function buildTraderLearning(
       (rows.reduce((sum, row) => sum + Number(row.result_r), 0) / rows.length) *
         1000,
     ) / 1000;
+  const sumR = (rows: LearningTrade[]) =>
+    Math.round(rows.reduce((sum, row) => sum + Number(row.result_r), 0) * 1000) /
+    1000;
   const findings: LearningFinding[] = [];
   if (valid.length)
     findings.push({
@@ -128,15 +181,226 @@ export function buildTraderLearning(
       evidenceIds: overrides.map((row) => row.id),
       sampleSize: overrides.length,
     });
+  const dimensions: LearningDimension[] = [];
+  const addDimension = (
+    dimension: LearningDimension["dimension"],
+    groups: Map<string, { label: string; rows: LearningTrade[] }>,
+  ) => {
+    for (const [key, group] of groups) {
+      if (group.rows.length < 3) continue;
+      const rows = group.rows;
+      const wins = rows.filter((row) => Number(row.result_r) > 0).length;
+      const losses = rows.filter((row) => Number(row.result_r) < 0).length;
+      dimensions.push({
+        dimension,
+        key,
+        label: group.label,
+        trades: rows.length,
+        wins,
+        losses,
+        winRate: Math.round((wins / rows.length) * 1000) / 10,
+        averageR: average(rows),
+        totalR: sumR(rows),
+        evidenceIds: rows.map((row) => row.id),
+      });
+    }
+  };
+  const group = (
+    rows: LearningTrade[],
+    getKey: (row: LearningTrade) => { key: string; label: string } | null,
+  ) => {
+    const groups = new Map<string, { label: string; rows: LearningTrade[] }>();
+    for (const row of rows) {
+      const value = getKey(row);
+      if (!value) continue;
+      const current = groups.get(value.key) ?? { label: value.label, rows: [] };
+      current.rows.push(row);
+      groups.set(value.key, current);
+    }
+    return groups;
+  };
+  addDimension(
+    "hour",
+    group(valid, (row) => {
+      const value = row.opened_at ?? executionByRecord.get(row.id)?.opened_at;
+      if (!value) return null;
+      const hour = datePart(value, timezone, "hour");
+      return hour === null
+        ? null
+        : { key: hour.padStart(2, "0"), label: `${hour.padStart(2, "0")}:00–${hour.padStart(2, "0")}:59` };
+    }),
+  );
+  addDimension(
+    "weekday",
+    group(valid, (row) => {
+      const value = row.opened_at ?? executionByRecord.get(row.id)?.opened_at;
+      if (!value) return null;
+      const weekday = datePart(value, timezone, "weekday");
+      return weekday ? { key: weekday.toLowerCase(), label: weekday } : null;
+    }),
+  );
+  addDimension(
+    "instrument",
+    group(valid, (row) => row.instrument ? { key: row.instrument, label: row.instrument } : null),
+  );
+  addDimension(
+    "session",
+    group(valid, (row) => row.session ? { key: row.session, label: row.session.replaceAll("_", " ") } : null),
+  );
+  addDimension(
+    "strategy",
+    group(valid, (row) => {
+      const execution = executionByRecord.get(row.id);
+      const label = row.strategy_name_at_entry ?? execution?.strategy_name_at_entry ?? row.strategy_profile_id;
+      return label ? { key: row.strategy_profile_id ?? label, label } : null;
+    }),
+  );
+  addDimension(
+    "discipline",
+    group(valid, (row) => {
+      const overridden = row.taken_against_verdict === true ||
+        executionByRecord.get(row.id)?.taken_against_verdict === true;
+      return {
+        key: overridden ? "OVERRIDE" : "FOLLOWED_VERDICT",
+        label: overridden ? "Taken against verdict" : "Followed verdict",
+      };
+    }),
+  );
+  const ownDecisions = (options.decisions ?? []).filter(
+    (row) => row.user_id === userId,
+  );
+  const readyDecisions = ownDecisions.filter((row) =>
+    ["READY", "AUTHORIZED", "PASS"].includes(String(row.verdict).toUpperCase()),
+  ).length;
+  const activeDays = new Set(
+    ownDecisions.map((row) => localDateKey(row.created_at, timezone)).filter(Boolean),
+  ).size;
+  const mostFrequent = (values: Array<string | null | undefined>) => {
+    const counts = new Map<string, number>();
+    for (const value of values)
+      if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+  const behavior: LearningBehavior = {
+    decisions: ownDecisions.length,
+    readyDecisions,
+    readyRate: ownDecisions.length
+      ? Math.round((readyDecisions / ownDecisions.length) * 1000) / 10
+      : null,
+    activeDays,
+    mostCheckedInstrument: mostFrequent(ownDecisions.map((row) => row.instrument)),
+    mostUsedTimeframe: mostFrequent(ownDecisions.map((row) => row.timeframe)),
+  };
+  const recommendations = buildRecommendations(valid, dimensions);
   return {
-    version: "1",
+    version: "2",
     closedTrades: valid.length,
     excludedTrades: ownTrades.length - valid.length,
     averageR: valid.length ? average(valid) : null,
     findings: findings.slice(0, 25),
     evidenceIds: valid.map((row) => row.id),
+    timezone,
+    dimensions,
+    recommendations,
+    behavior,
     generatedAt: now.toISOString(),
   };
+}
+
+function validTimezone(value?: string) {
+  if (!value) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+function datePart(
+  value: string,
+  timezone: string,
+  part: "hour" | "weekday",
+) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    ...(part === "hour"
+      ? { hour: "2-digit", hourCycle: "h23" as const }
+      : { weekday: "long" as const }),
+  });
+  return formatter.formatToParts(date).find((item) => item.type === part)?.value ?? null;
+}
+
+function localDateKey(value: string, timezone: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function buildRecommendations(
+  trades: LearningTrade[],
+  dimensions: LearningDimension[],
+): LearningRecommendation[] {
+  if (trades.length < 5)
+    return [{
+      id: "foundation:sample",
+      priority: "FOUNDATION",
+      title: "Build the evidence base",
+      detail: `Record ${5 - trades.length} more closed execution${5 - trades.length === 1 ? "" : "s"} before using personal patterns for coaching.`,
+      evidenceIds: trades.map((row) => row.id),
+    }];
+  const recommendations: LearningRecommendation[] = [];
+  const ranked = (dimension: LearningDimension["dimension"]) =>
+    dimensions
+      .filter((item) => item.dimension === dimension && item.trades >= 5)
+      .sort((a, b) => a.averageR - b.averageR);
+  for (const dimension of ["hour", "weekday", "strategy", "instrument"] as const) {
+    const rows = ranked(dimension);
+    const worst = rows[0];
+    const best = rows.at(-1);
+    if (worst && worst.averageR < 0)
+      recommendations.push({
+        id: `review:${dimension}:${worst.key}`,
+        priority: worst.averageR <= -0.5 ? "HIGH" : "MEDIUM",
+        title: `Review ${worst.label}`,
+        detail: `${worst.trades} recorded trades average ${worst.averageR}R. Review the journal evidence before trading this ${dimension} again; the sample describes history and does not prove causation.`,
+        evidenceIds: worst.evidenceIds,
+      });
+    if (best && best.averageR > 0 && best.key !== worst?.key)
+      recommendations.push({
+        id: `protect:${dimension}:${best.key}`,
+        priority: "MEDIUM",
+        title: `Protect what works in ${best.label}`,
+        detail: `${best.trades} recorded trades average +${best.averageR}R. Compare its rule adherence with weaker samples before proposing any strategy change.`,
+        evidenceIds: best.evidenceIds,
+      });
+  }
+  const followed = dimensions.find(
+    (item) => item.dimension === "discipline" && item.key === "FOLLOWED_VERDICT",
+  );
+  const overridden = dimensions.find(
+    (item) => item.dimension === "discipline" && item.key === "OVERRIDE",
+  );
+  if (
+    followed &&
+    overridden &&
+    overridden.averageR + 0.25 < followed.averageR
+  )
+    recommendations.unshift({
+      id: "discipline:override-gap",
+      priority: "HIGH",
+      title: "Pause before overriding the verdict",
+      detail: `Overrides average ${overridden.averageR}R versus ${followed.averageR}R when the verdict was followed. Require a written reason before the next override.`,
+      evidenceIds: [...overridden.evidenceIds, ...followed.evidenceIds],
+    });
+  return recommendations.slice(0, 6);
 }
 
 export type CompanionFact = {
