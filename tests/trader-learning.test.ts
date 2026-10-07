@@ -48,6 +48,11 @@ import {
   type LearningTrade,
 } from "../lib/trader-learning.ts";
 import { generateTraderCompanionWithProvider } from "../lib/trader-companion-engine.ts";
+import {
+  buildAnonymousContributions,
+  buildCollectivePatterns,
+  buildTraderInterventions,
+} from "../lib/trader-intelligence.ts";
 const trade = (
   id: string,
   extra: Partial<LearningTrade> = {},
@@ -149,6 +154,59 @@ test("automatic intelligence learns hour, weekday, behavior and coaching from re
   assert.ok(summary.dimensions.some((item) => item.dimension === "hour"));
   assert.ok(summary.dimensions.some((item) => item.dimension === "weekday"));
   assert.ok(summary.recommendations.some((item) => item.id.startsWith("review:hour:")));
+});
+test("personal intelligence intervenes on matching weak contexts without becoming authoritative", () => {
+  const losses = Array.from({ length: 8 }, (_, index) => trade(`loss-${index}`, {
+    opened_at: `2026-10-06T15:${String(index).padStart(2, "0")}:00Z`,
+    result_r: -1,
+    strategy_profile_id: "private-strategy",
+    strategy_name_at_entry: "Private strategy",
+  }));
+  const summary = buildTraderLearning("alice", losses, [], new Date("2026-10-07T00:00:00Z"));
+  const interventions = buildTraderInterventions(summary, {
+    stage: "PRE_TRADE",
+    at: new Date("2026-10-07T15:30:00Z"),
+    instrument: "XAUUSD",
+    strategyId: "private-strategy",
+  });
+  assert.ok(interventions.length > 0);
+  assert.equal(interventions[0].severity, "PAUSE");
+  assert.equal(interventions.every((item) => item.authoritative === false), true);
+  assert.match(interventions[0].detail, /does not change the strategy verdict/);
+});
+test("collective learning strips private strategy data and enforces privacy thresholds", () => {
+  const summary = buildTraderLearning(
+    "alice",
+    Array.from({ length: 5 }, (_, index) => trade(`trade-${index}`, {
+      strategy_profile_id: "secret-strategy-id",
+      strategy_name_at_entry: "Secret strategy name",
+    })),
+    [],
+  );
+  const anonymous = buildAnonymousContributions(summary);
+  assert.equal(anonymous.some((item) => item.dimension === ("strategy" as never)), false);
+  assert.doesNotMatch(JSON.stringify(anonymous), /secret-strategy/i);
+  const nineteen = Array.from({ length: 19 }, (_, index) => ({
+    contributor: `user-${index}`,
+    dimension: "instrument" as const,
+    bucket: "XAUUSD",
+    trades: 5,
+    wins: 3,
+    totalR: 2,
+  }));
+  assert.deepEqual(buildCollectivePatterns(nineteen), []);
+  const patterns = buildCollectivePatterns([...nineteen, {
+    contributor: "user-19",
+    dimension: "instrument",
+    bucket: "XAUUSD",
+    trades: 5,
+    wins: 3,
+    totalR: 2,
+  }]);
+  assert.equal(patterns.length, 1);
+  assert.equal(patterns[0].contributorCount, 20);
+  assert.equal("contributor" in patterns[0], false);
+  assert.equal("evidenceIds" in patterns[0], false);
 });
 const facts = [
   {

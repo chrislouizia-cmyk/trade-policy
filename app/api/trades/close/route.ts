@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { publicApiError } from '@/lib/server/public-error';
 import { createClient } from '@/lib/supabase/server';
 import { canCloseTrade } from '@/lib/server/trade-lifecycle';
+import { buildTraderInterventions } from '@/lib/trader-intelligence';
+import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +19,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid close information.' }, { status: 400 });
     }
 
-    const { data: existingTrade, error: tradeLookupError } = await supabase.from('active_trades').select('id,status').eq('id', tradeId).eq('user_id', user.id).maybeSingle();
+    const { data: existingTrade, error: tradeLookupError } = await supabase.from('active_trades').select('id,status,instrument,opened_at,strategy_profile_id,strategy_name_at_entry,taken_against_verdict,strategy_snapshot').eq('id', tradeId).eq('user_id', user.id).maybeSingle();
     if (tradeLookupError) throw tradeLookupError;
     if (!existingTrade) {
       return NextResponse.json({ error: 'The trade could not be found.' }, { status: 404 });
@@ -57,8 +59,12 @@ export async function POST(request: Request) {
     });
 
     const learning = await refreshTraderLearning(supabase,user.id);
+    const snapshot=await loadTraderLearningSnapshot(user.id);
+    const strategySnapshot=existingTrade.strategy_snapshot as {tradeContext?:{session?:string}}|null;
+    const personalInterventions=buildTraderInterventions(snapshot,{stage:'POST_TRADE',at:existingTrade.opened_at?new Date(existingTrade.opened_at):new Date(),instrument:existingTrade.instrument,session:strategySnapshot?.tradeContext?.session,strategyId:existingTrade.strategy_profile_id,strategyName:existingTrade.strategy_name_at_entry,takenAgainstVerdict:existingTrade.taken_against_verdict===true});
+    await recordTraderInterventions(user.id,personalInterventions,{stage:'POST_TRADE',tradeId:existingTrade.id,closedAt:canonicalTrade.closed_at});
     return NextResponse.json(
-      { learning, result: data, lifecycle: lifecycleCheck, canonicalTrade },
+      { learning, result: data, lifecycle: lifecycleCheck, canonicalTrade, personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions} },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

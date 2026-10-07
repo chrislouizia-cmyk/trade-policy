@@ -58,3 +58,13 @@
 @media(max-width:900px){.police-intelligence--compact{grid-template-columns:minmax(180px,.75fr) minmax(220px,1.25fr) auto}.police-intelligence-compact-meta{display:none}}
 @media(max-width:640px){.police-intelligence--compact{grid-template-columns:1fr auto;gap:12px;padding:15px 16px}.police-intelligence-compact-insight{grid-column:1/-1;grid-row:2;padding:10px 0 0;border-top:1px solid rgba(255,255,255,.07);border-left:0}.police-intelligence-link{grid-column:2;grid-row:1}.police-intelligence--brief{padding:20px 17px}.police-intelligence-head{display:grid;gap:12px}.police-intelligence-state{justify-self:start}.police-intelligence-patterns{grid-template-columns:1fr}.police-intelligence-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.police-intelligence-disclosure>summary{grid-template-columns:1fr auto}.police-intelligence-disclosure>summary small{display:none}.police-intelligence-details p{grid-template-columns:1fr auto}.police-intelligence-details small{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.police-intelligence-disclosure>summary i{transition:none}}
+.personal-intelligence-notice{display:grid;grid-template-columns:2rem minmax(0,1fr);gap:.75rem;margin-top:.75rem;padding:.8rem .9rem;border:1px solid rgba(94,234,212,.18);border-radius:14px;background:linear-gradient(135deg,rgba(13,28,38,.92),rgba(9,20,29,.78));box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
+.personal-intelligence-notice.severity-pause{border-color:rgba(251,191,36,.26)}
+.personal-intelligence-mark{display:grid;place-items:center;width:2rem;height:2rem;border:1px solid rgba(94,234,212,.3);border-radius:10px;color:#8ef4df;font-size:.65rem;font-weight:800;letter-spacing:.08em}
+.personal-intelligence-notice p{margin:.25rem 0;color:var(--muted,#94a3b8);line-height:1.45}
+.personal-intelligence-notice>div>strong{color:var(--text,#f8fafc)}
+.personal-intelligence-label{color:#72dfcb!important;font-size:.64rem;font-weight:800;letter-spacing:.1em}
+.personal-intelligence-notice small{display:block;margin-top:.45rem;color:var(--muted,#94a3b8);font-size:.68rem}
+.personal-intelligence-notice details{margin-top:.45rem}
+.personal-intelligence-notice summary{cursor:pointer;color:#93cabf;font-size:.72rem}
+.personal-intelligence-more{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(255,255,255,.06)}

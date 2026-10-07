@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { refreshTraderLearning } from "@/lib/server/trader-context";
+import { rebuildCollectivePatterns } from "@/lib/server/trader-intelligence-state";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -49,9 +50,16 @@ export async function GET(request: Request) {
     .from("trader_intelligence_events")
     .delete()
     .lt("occurred_at", new Date(Date.now() - 400 * 86_400_000).toISOString());
+  let collectivePatterns = 0;
+  try {
+    collectivePatterns = await rebuildCollectivePatterns(admin);
+  } catch {
+    console.warn("[TRADER_COLLECTIVE_REFRESH_FAILED]");
+  }
   return NextResponse.json({
     processed: candidates.data?.length ?? 0,
     refreshed,
     failed,
+    collectivePatterns,
   });
 }

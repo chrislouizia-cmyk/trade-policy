@@ -18,6 +18,8 @@ import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/s
 import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 import { recordReportFailure } from '@/lib/historical-decisions/operations';
 import { evaluateTradeAuthorizationEligibility } from '@/lib/trade-authorization';
+import { buildTraderInterventions } from '@/lib/trader-intelligence';
+import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return apiError('INVALID_TRADE','Some trade values are invalid.',400,parsed.error.flatten());
     }
+    const learningSnapshotPromise=loadTraderLearningSnapshot(user.id);
 
     const {data:scan,error:scanError}=await supabase.from('market_scans').select('id,user_id,strategy_profile_id,strategy_revision_id,instrument,analysis,server_created').eq('id',parsed.data.analysisId).eq('user_id',user.id).maybeSingle();
     if(scanError||!scan||!scan.server_created)return apiError('ANALYSIS_NOT_FOUND','The verified market analysis could not be found. Run the market check again.',409);
@@ -138,6 +141,20 @@ export async function POST(request: Request) {
       console.error('Validation error', {requestId,operation:'decision_report_sources.insert',...safeValidationError(failure)});
       throw failure;
     }
+    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{
+      stage:'PRE_TRADE',
+      instrument:parsed.data.instrument,
+      session:parsed.data.session,
+      strategyId:strategy.id,
+      strategyName:strategy.name,
+    });
+    await recordTraderInterventions(user.id,personalInterventions,{
+      stage:'PRE_TRADE',
+      sourceId:source.id,
+      analysisId:scan.id,
+      instrument:parsed.data.instrument,
+      strategyId:strategy.id,
+    });
 
     return NextResponse.json(
       {
@@ -153,6 +170,11 @@ export async function POST(request: Request) {
         authorizationEligibility,
         reportSourceId:source.id,
         reportSourceExpiresAt:source.expires_at,
+        personalIntelligence:{
+          authoritative:false,
+          controlsVerdict:false,
+          interventions:personalInterventions,
+        },
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );

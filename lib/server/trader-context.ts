@@ -7,6 +7,7 @@ import {
   type LearningExecution,
   type LearningTrade,
 } from "../trader-learning.ts";
+import { syncTraderIntelligenceState } from "./trader-intelligence-state.ts";
 
 type Client = ReturnType<typeof createAdminClient>;
 export type TraderContextSelection = {
@@ -104,6 +105,7 @@ export async function loadTraderContext(
       updated_at: summary.generatedAt,
     });
   if (snapshotError) throw snapshotError;
+  await syncTraderIntelligenceState(dataClient, userId, summary);
   const facts: CompanionFact[] = summary.findings.map((finding) => ({
     id: finding.id,
     text: finding.text,

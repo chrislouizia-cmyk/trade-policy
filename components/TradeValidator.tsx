@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
+import PersonalIntelligenceNotice, { type PersonalIntelligencePayload } from '@/components/PersonalIntelligenceNotice';
 import DecisionReport from '@/components/decision/DecisionReport';
 import MethodologyAudit from '@/components/MethodologyAudit';
 import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
@@ -43,7 +44,7 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
-type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string; authorizationEligibility?: TradeAuthorizationEligibility };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string; authorizationEligibility?: TradeAuthorizationEligibility; personalIntelligence?:PersonalIntelligencePayload };
 type ReportSaveState={status:'idle'|'saving'|'saved'|'error';message?:string;reportId?:string;reportUrl?:string;savedAt?:string};
 
 type SavedSetup = {
@@ -603,7 +604,7 @@ export default function TradeValidator({userId,displayName,experienceLevel,initi
     isSaving: savingTrade,
     overrideEligible: result?.overrideEligible === true,
   }), [authorizationEligibility, hasExecutableSetup, explanation, analyzing, savingTrade, result?.overrideEligible]);
-  const decisionPanel = explanation ? <DecisionHero
+  const decisionPanel = explanation ? <><DecisionHero
     analyzing={analyzing}
     explanation={explanation}
     narrative={narrative ?? undefined}
@@ -636,7 +637,7 @@ export default function TradeValidator({userId,displayName,experienceLevel,initi
     authorizationError={error}
     onMarkMissed={result?()=>setTradeActionMode('MISSED'):undefined}
     onViewHistory={()=>{window.location.href='/history'}}
-  /> : null;
+  /><PersonalIntelligenceNotice intelligence={result?.personalIntelligence}/></> : null;
   return <div className="validate-page-flow" data-validate-state={validateExperience.state}><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 

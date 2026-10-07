@@ -10,6 +10,8 @@ import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
 import {withTwelveDataCredits,ProviderCreditLimitError,ProviderRequestReplayError} from '@/lib/server/provider-credit-coordinator';
 import {applyTradingDnaRuntime} from '@/lib/trading-dna/runtime';
+import {buildTraderInterventions} from '@/lib/trader-intelligence';
+import {loadTraderLearningSnapshot,recordTraderInterventions} from '@/lib/server/trader-intelligence-state';
 
 export const runtime='nodejs';export const maxDuration=60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
@@ -26,6 +28,7 @@ export async function POST(request:Request){
     if(!idempotencyKey||idempotencyKey.length>100)return failure('A valid market-data request key is required.','IDEMPOTENCY_KEY_REQUIRED',400);
     const parsed=requestSchema.safeParse(await request.json());
     if(!parsed.success)return failure('A valid active trade ID is required.','INVALID_TRADE_ID',400);
+    const learningSnapshotPromise=loadTraderLearningSnapshot(user.id);
     const {data:trade,error:tradeError}=await supabase.from('active_trades').select('*').eq('id',parsed.data.tradeId).eq('user_id',user.id).eq('status','OPEN').maybeSingle();
     if(tradeError)throw tradeError;if(!trade)return failure('Active trade not found.','ACTIVE_TRADE_NOT_FOUND',404,{tradeId:parsed.data.tradeId});
     const entry=finite(trade.entry),stopLoss=finite(trade.stop_loss),takeProfit=finite(trade.take_profit),riskPercent=finite(trade.risk_percent);
@@ -64,7 +67,9 @@ export async function POST(request:Request){
     const reasons=[...validation.vetoes,...validation.observations,...analysis.warnings];
     if(newsUnknown)reasons.unshift('Original news-state snapshot unavailable. News protection could not be verified for this legacy trade.');
     if(!reasons.length)reasons.push('The current market structure remains compatible with the stored trade strategy.');
-    const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict};
+    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{stage:'ACTIVE_TRADE',at:new Date(),instrument:trade.instrument,session,strategyId:strategy.id,strategyName:strategy.name,takenAgainstVerdict:trade.taken_against_verdict===true});
+    const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict,personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions}};
+    await recordTraderInterventions(user.id,personalInterventions,{stage:'ACTIVE_TRADE',tradeId:trade.id,instrument:trade.instrument,strategyId:strategy.id,generatedAt:guidance.generatedAt});
     const {error:eventError}=await supabase.from('active_trade_events').insert({user_id:user.id,trade_id:trade.id,event_type:'REANALYSIS',verdict:status,current_price:currentPrice,current_r:currentR,analysis:guidance});if(eventError)throw eventError;
     if(!record?.session&&trade.trade_record_id){const {error:sessionRepairError}=await supabase.from('trade_records').update({session,updated_at:guidance.generatedAt}).eq('id',trade.trade_record_id).eq('user_id',user.id);if(sessionRepairError)throw sessionRepairError;}
     const repairedSnapshot=snapshotSession?snapshot:{...snapshot,tradeContext:{...(snapshot.tradeContext??{}),session}};
