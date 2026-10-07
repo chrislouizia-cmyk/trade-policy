@@ -20,7 +20,7 @@ type Message = {
 type Memory = { id: string; content: string; category: string };
 const copy = {
   es: {
-    title: "Tu acompañante",
+    title: "Preguntar a Trade Police",
     intro:
       "Entiende tu proceso, explica tus decisiones y aprende de tus operaciones registradas.",
     send: "Conversar",
@@ -41,7 +41,7 @@ const copy = {
       "Ayúdame a revisar mi proceso y pregúntame lo que necesitas para entender cómo opero.",
   },
   en: {
-    title: "Your companion",
+    title: "Ask Trade Police",
     intro:
       "Understands your process, explains decisions and learns from recorded trades.",
     send: "Talk",
@@ -61,7 +61,7 @@ const copy = {
       "Help me review my process and ask what you need to understand how I trade.",
   },
   fr: {
-    title: "Votre compagnon",
+    title: "Interroger Trade Police",
     intro:
       "Comprend votre méthode, explique les décisions et apprend de vos opérations enregistrées.",
     send: "Discuter",
@@ -82,7 +82,7 @@ const copy = {
       "Aide-moi à revoir ma méthode et pose les questions nécessaires pour comprendre comment je trade.",
   },
 };
-export default function TraderCompanion() {
+export default function TraderCompanion({ embedded = false }: { embedded?: boolean }) {
   const pathname = usePathname();
   const { locale } = useLocale();
   const c = copy[locale];
@@ -258,7 +258,7 @@ export default function TraderCompanion() {
   }, [ready, send, reload, locale, c.error]);
   if (!allowed || !ready) return null;
   return (
-    <section className="card trader-companion" aria-label={c.title}>
+    <section className={`card trader-companion${embedded ? " trader-companion--embedded" : ""}`} aria-label={c.title}>
       <button
         type="button"
         className="companion-toggle"

@@ -16,6 +16,9 @@ const primaryNav=fs.readFileSync('components/AppPrimaryNavigation.tsx','utf8');
 const layout=fs.readFileSync('app/layout.tsx','utf8');
 const feedback=fs.readFileSync('components/FeedbackWidget.tsx','utf8');
 const liveMarket=fs.readFileSync('components/LiveMarketPanel.tsx','utf8');
+const analyticsPage=fs.readFileSync('app/analytics/page.tsx','utf8');
+const analyticsDashboard=fs.readFileSync('components/AnalyticsDashboard.tsx','utf8');
+const policeIntelligence=fs.readFileSync('components/PoliceIntelligence.tsx','utf8');
 
 test('context exists only on Dashboard Decision and Active Trade',()=>{
   assert.match(dashboard,/showContext/);
@@ -100,7 +103,17 @@ test('the shared shell owns viewport height safe spacing and document layers',()
   assert.match(mobileCss,/\.mobile-more-backdrop[\s\S]*z-index: 100/);
   assert.match(mobileCss,/\.mobile-bottom-nav[\s\S]*z-index: 80/);
   assert.match(mobileCss,/\.authenticated-app-shell[\s\S]*padding-bottom: calc\(var\(--mobile-bottom-nav-height\)/);
-  assert.match(layout,/\{children\}<TraderCompanion\/><AppFooter \/>/);
+  assert.match(layout,/\{children\}<AppFooter \/>/);
+  assert.doesNotMatch(layout,/TraderCompanion/);
+});
+
+test('trader intelligence stays automatic and uses progressive disclosure',()=>{
+  assert.match(layout,/<TraderIntelligenceTracker\/>/);
+  assert.match(dashboardComponent,/<PoliceIntelligence summary=\{p\.intelligence\} locale=\{p\.locale\}\/>/);
+  assert.match(analyticsDashboard,/<PoliceIntelligence summary=\{intelligence\} locale=\{locale\} full \/>/);
+  assert.match(policeIntelligence,/police-intelligence--compact/);
+  assert.match(policeIntelligence,/police-intelligence-disclosure/);
+  assert.match(analyticsPage,/<TraderCompanion embedded \/>/);
 });
 
 test('mobile keeps the five core destinations visible and account access in the header',()=>{

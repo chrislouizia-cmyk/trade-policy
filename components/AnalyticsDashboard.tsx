@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { summarizeClosedTradeMetrics } from '@/lib/analytics/closed-trade-metrics';
 import { useLocale } from '@/components/i18n/LocaleProvider';
+import PoliceIntelligence from '@/components/PoliceIntelligence';
+import type { LearningSummary } from '@/lib/trader-learning';
 
 type Trade = {
   id: string;
@@ -21,7 +23,7 @@ type Trade = {
 type Account = { name: string; currency: string; startingBalance: number; currentBalance: number };
 type BreakdownEntry = { name: string; trades: number; winRate: number; averageR: number };
 
-export default function AnalyticsDashboard({ account, trades }: { account: Account; trades: Trade[] }) {
+export default function AnalyticsDashboard({ account, trades, intelligence }: { account: Account; trades: Trade[]; intelligence?: LearningSummary | null }) {
   const {copy:{analytics:c},locale}=useLocale();
   const metricRows = useMemo(() => trades.map((trade) => ({
     id: trade.id,
@@ -51,6 +53,7 @@ export default function AnalyticsDashboard({ account, trades }: { account: Accou
             </div>
           </div>
         </section>
+        {intelligence ? <PoliceIntelligence summary={intelligence} locale={locale} full /> : null}
       </div>
     );
   }
@@ -90,6 +93,8 @@ export default function AnalyticsDashboard({ account, trades }: { account: Accou
           </div>
         </div>
       </section>
+
+      {intelligence ? <PoliceIntelligence summary={intelligence} locale={locale} full /> : null}
 
       <section className="analytics-primary-metrics analytics-canonical-metrics" aria-label="Primary analytics metrics">
         <PrimaryMetric

@@ -11,6 +11,27 @@
   padding: 16px;
   box-shadow: 0 12px 40px #0005;
 }
+.trader-companion--embedded {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  width: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: visible;
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.015);
+  box-shadow: none;
+}
+.trader-companion--embedded .companion-toggle {
+  min-height: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+}
 .companion-toggle {
   display: flex;
   justify-content: space-between;
@@ -52,7 +73,7 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 640px) {
-  .trader-companion {
+  .trader-companion:not(.trader-companion--embedded) {
     right: 12px;
     bottom: calc(
       var(--mobile-bottom-nav-height, 72px) + env(safe-area-inset-bottom) + 12px

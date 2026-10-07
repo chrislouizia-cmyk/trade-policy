@@ -1,20 +1,60 @@
-.police-intelligence{display:grid;gap:18px;overflow:hidden}
-.police-intelligence-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.police-intelligence-head h2{margin:.25rem 0 0}
-.police-intelligence-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.police-intelligence-metrics>div,.police-intelligence-patterns article{padding:14px;border:1px solid var(--border,#334155);border-radius:14px;background:#ffffff08}
+.police-intelligence{position:relative;display:grid;gap:18px;overflow:hidden;background:radial-gradient(circle at 0 0,rgba(104,226,194,.075),transparent 34%),linear-gradient(145deg,rgba(17,23,33,.98),rgba(8,12,18,.99))}
+.police-intelligence:before{position:absolute;inset:0;pointer-events:none;content:"";border:1px solid rgba(119,226,198,.08);border-radius:inherit}
+.police-intelligence--compact{grid-template-columns:minmax(190px,.7fr) minmax(260px,1.3fr) auto auto;align-items:center;gap:22px;padding:17px 20px}
+.police-intelligence-identity{display:flex;align-items:center;gap:11px;min-width:0}
+.police-intelligence-identity h2{margin:3px 0 0;font-size:14px;letter-spacing:-.01em}
+.police-intelligence-signal{position:relative;flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#68e2c2;box-shadow:0 0 0 5px rgba(104,226,194,.08),0 0 18px rgba(104,226,194,.38)}
+.police-intelligence-compact-insight{min-width:0;padding-left:20px;border-left:1px solid rgba(255,255,255,.08)}
+.police-intelligence-compact-insight strong,.police-intelligence-compact-insight p{display:block;overflow:hidden;margin:0;text-overflow:ellipsis;white-space:nowrap}
+.police-intelligence-compact-insight strong{font-size:13px}
+.police-intelligence-compact-insight p{margin-top:3px;color:var(--muted,#94a3b8);font-size:11px}
+.police-intelligence-compact-meta{display:flex;gap:14px;color:var(--muted,#94a3b8);font-size:10px;white-space:nowrap}
+.police-intelligence-compact-meta span{display:grid;gap:2px}
+.police-intelligence-compact-meta strong{color:var(--text,#f8fafc);font-size:13px}
+.police-intelligence-link{display:flex;align-items:center;gap:8px;color:#8ee8ce;font-size:11px;font-weight:850;text-decoration:none;white-space:nowrap}
+.police-intelligence-link:hover{text-decoration:underline;text-underline-offset:4px}
+.police-intelligence--brief{margin:0;padding:24px 26px;scroll-margin-top:110px}
+.police-intelligence-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}
+.police-intelligence-head h2{margin:5px 0 0;font-size:clamp(22px,3vw,30px);letter-spacing:-.04em}
+.police-intelligence-head p{max-width:650px;margin:8px 0 0;color:var(--muted,#94a3b8);font-size:12px;line-height:1.55}
+.police-intelligence-state{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(255,255,255,.08);border-radius:999px;color:var(--muted,#94a3b8);font-size:9px;font-weight:850;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap}
+.police-intelligence-state i{width:6px;height:6px;border-radius:50%;background:#e0b961;box-shadow:0 0 10px rgba(224,185,97,.36)}
+.police-intelligence-state.is-established i{background:#68e2c2;box-shadow:0 0 10px rgba(104,226,194,.4)}
+.police-intelligence-priority{display:grid;gap:5px;padding:16px 18px;border:1px solid rgba(104,226,194,.15);border-radius:14px;background:rgba(104,226,194,.035)}
+.police-intelligence-priority>span{color:#8ee8ce;font-size:9px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}
+.police-intelligence-priority>strong{font-size:15px}
+.police-intelligence-priority>p{max-width:850px;margin:0;color:var(--muted,#94a3b8);font-size:12px;line-height:1.55}
+.police-intelligence-empty{margin:0;color:var(--muted,#94a3b8)}
+.police-intelligence-patterns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.police-intelligence-patterns article{position:relative;padding:13px 15px;border:1px solid rgba(255,255,255,.075);border-radius:12px;background:rgba(255,255,255,.018)}
+.police-intelligence-patterns article:before{position:absolute;top:13px;left:0;width:2px;height:30px;border-radius:2px;content:"";background:#68e2c2}
+.police-intelligence-patterns article.negative:before{background:#e0b961}
+.police-intelligence-patterns span,.police-intelligence-patterns strong,.police-intelligence-patterns small{display:block}
+.police-intelligence-patterns span,.police-intelligence-patterns small{color:var(--muted,#94a3b8);font-size:10px}
+.police-intelligence-patterns strong{margin:5px 0 3px;font-size:13px}
+.police-intelligence-disclosure{border-top:1px solid rgba(255,255,255,.075)}
+.police-intelligence-disclosure>summary{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:14px 0 0;cursor:pointer;list-style:none}
+.police-intelligence-disclosure>summary::-webkit-details-marker{display:none}
+.police-intelligence-disclosure>summary span{font-size:12px;font-weight:850}
+.police-intelligence-disclosure>summary small{color:var(--muted,#94a3b8);font-size:10px}
+.police-intelligence-disclosure>summary i{font-size:18px;font-style:normal;transition:transform .18s ease}
+.police-intelligence-disclosure[open]>summary i{transform:rotate(45deg)}
+.police-intelligence-deep-content{display:grid;gap:18px;padding-top:18px}
+.police-intelligence-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.police-intelligence-metrics>div{padding:12px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.015)}
 .police-intelligence-metrics strong,.police-intelligence-metrics span{display:block}
-.police-intelligence-metrics strong{font-size:1.25rem}
-.police-intelligence-metrics span,.police-intelligence-patterns span,.police-intelligence-patterns small{font-size:.78rem;color:var(--muted,#94a3b8)}
-.police-intelligence-patterns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.police-intelligence-patterns strong,.police-intelligence-patterns small{display:block;margin-top:5px}
-.police-intelligence-patterns .positive{border-color:#22c55e55}
-.police-intelligence-patterns .negative{border-color:#ef444455}
-.police-intelligence-coaching{display:grid;gap:10px}
-.police-intelligence-coaching h3{margin:0}
-.police-intelligence-coaching article{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-top:1px solid var(--border,#334155)}
-.police-intelligence-coaching p{margin:.3rem 0 0;color:var(--muted,#94a3b8)}
-.police-intelligence-details>div{display:grid;gap:7px;margin-top:12px}
-.police-intelligence-details p{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;margin:0;padding:10px;border-bottom:1px solid var(--border,#334155)}
-@media(max-width:640px){.police-intelligence-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.police-intelligence-patterns{grid-template-columns:1fr}.police-intelligence-head{display:grid}.police-intelligence-details p{grid-template-columns:1fr auto}.police-intelligence-details small{grid-column:1/-1}}
-
+.police-intelligence-metrics strong{font-size:18px}
+.police-intelligence-metrics span{margin-top:3px;color:var(--muted,#94a3b8);font-size:9px;text-transform:uppercase}
+.police-intelligence-coaching{display:grid;gap:0}
+.police-intelligence-coaching h3{margin:0 0 4px;font-size:13px}
+.police-intelligence-coaching article{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.police-intelligence-coaching p{margin:3px 0 0;color:var(--muted,#94a3b8);font-size:11px;line-height:1.5}
+.police-intelligence-details{padding-top:2px}
+.police-intelligence-details>summary{cursor:pointer;font-size:11px;font-weight:800}
+.police-intelligence-details>div{display:grid;gap:0;margin-top:10px}
+.police-intelligence-details p{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;margin:0;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:10px}
+.police-intelligence-details small{color:var(--muted,#94a3b8)}
+.police-intelligence-footnote{color:var(--muted,#94a3b8);font-size:9px}
+@media(max-width:900px){.police-intelligence--compact{grid-template-columns:minmax(180px,.75fr) minmax(220px,1.25fr) auto}.police-intelligence-compact-meta{display:none}}
+@media(max-width:640px){.police-intelligence--compact{grid-template-columns:1fr auto;gap:12px;padding:15px 16px}.police-intelligence-compact-insight{grid-column:1/-1;grid-row:2;padding:10px 0 0;border-top:1px solid rgba(255,255,255,.07);border-left:0}.police-intelligence-link{grid-column:2;grid-row:1}.police-intelligence--brief{padding:20px 17px}.police-intelligence-head{display:grid;gap:12px}.police-intelligence-state{justify-self:start}.police-intelligence-patterns{grid-template-columns:1fr}.police-intelligence-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.police-intelligence-disclosure>summary{grid-template-columns:1fr auto}.police-intelligence-disclosure>summary small{display:none}.police-intelligence-details p{grid-template-columns:1fr auto}.police-intelligence-details small{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){.police-intelligence-disclosure>summary i{transition:none}}
