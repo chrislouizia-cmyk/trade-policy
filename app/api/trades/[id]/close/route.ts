@@ -7,6 +7,7 @@ import { publicApiError } from '@/lib/server/public-error';
 import { isTradeLifecycleV2Enabled } from '@/lib/server/trade-lifecycle-v2';
 import { buildTraderInterventions } from '@/lib/trader-intelligence';
 import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
+import { recordTraderIntelligenceEvent } from '@/lib/server/trader-intelligence-events';
 
 const requestSchema = z.object({
   closePrice: z.coerce.number(),
@@ -64,12 +65,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const snapshot=await loadTraderLearningSnapshot(user.id);
     const storedStrategy=tradeContext.data.strategy_snapshot as {tradeContext?:{session?:string}}|null;
     const personalInterventions=buildTraderInterventions(snapshot,{stage:'POST_TRADE',at:tradeContext.data.opened_at?new Date(tradeContext.data.opened_at):new Date(),instrument:tradeContext.data.instrument,session:storedStrategy?.tradeContext?.session,strategyId:tradeContext.data.strategy_profile_id,strategyName:tradeContext.data.strategy_name_at_entry,takenAgainstVerdict:tradeContext.data.taken_against_verdict===true});
-    await recordTraderInterventions(user.id,personalInterventions,{stage:'POST_TRADE',tradeId:id});
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{stage:'POST_TRADE',tradeId:id});
+    const resultValue=response.data as unknown;
+    const resultObject=resultValue&&typeof resultValue==='object'?resultValue as Record<string,unknown>:{};
+    await recordTraderIntelligenceEvent({userId:user.id,eventType:'TRADE_CLOSED',route:'/api/trades/[id]/close',dedupeKey:id,context:{tradeId:id,strategyId:tradeContext.data.strategy_profile_id,instrument:tradeContext.data.instrument,resultR:resultObject.result_r,outcome:resultObject.outcome,takenAgainstVerdict:tradeContext.data.taken_against_verdict===true}});
     return NextResponse.json({
       learning,
       result: response.data,
       route: 'close_trade_v2',
-      personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions},
+      personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:storedInterventions},
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return publicApiError({

@@ -116,16 +116,22 @@ test("small samples remain descriptive and overrides have recorded evidence with
   );
 });
 test("automatic intelligence learns hour, weekday, behavior and coaching from recorded evidence", () => {
-  const positive = Array.from({ length: 5 }, (_, index) =>
+  const positive = Array.from({ length: 10 }, (_, index) =>
     trade(`win-${index}`, {
-      opened_at: `2026-10-05T09:${String(index).padStart(2, "0")}:00Z`,
+      opened_at: `2026-10-${index < 5 ? "04" : "05"}T09:${String(index % 5).padStart(2, "0")}:00Z`,
       result_r: 1,
+      direction: "BUY",
+      setup_type: "Liquidity expansion",
+      risk_percent: 0.5,
     }),
   );
   const negative = Array.from({ length: 5 }, (_, index) =>
     trade(`loss-${index}`, {
       opened_at: `2026-10-06T15:${String(index).padStart(2, "0")}:00Z`,
       result_r: -1,
+      direction: "SELL",
+      setup_type: "Liquidity expansion",
+      risk_percent: 1,
     }),
   );
   const summary = buildTraderLearning(
@@ -153,6 +159,14 @@ test("automatic intelligence learns hour, weekday, behavior and coaching from re
   assert.equal(summary.behavior.readyRate, 100);
   assert.ok(summary.dimensions.some((item) => item.dimension === "hour"));
   assert.ok(summary.dimensions.some((item) => item.dimension === "weekday"));
+  assert.ok(summary.dimensions.some((item) => item.dimension === "trade_number"));
+  assert.ok(summary.dimensions.some((item) => item.dimension === "after_outcome"));
+  assert.ok(summary.dimensions.some((item) => item.dimension === "direction"));
+  assert.equal(summary.behavior.currentLossStreak, 5);
+  assert.equal(summary.behavior.maximumLossStreak, 5);
+  assert.equal(summary.behavior.adherenceRate, 100);
+  assert.equal(summary.behavior.averageRiskPercent, 0.667);
+  assert.ok(summary.recommendations.some((item) => item.id === "discipline:loss-streak"));
   assert.ok(summary.recommendations.some((item) => item.id.startsWith("review:hour:")));
 });
 test("personal intelligence intervenes on matching weak contexts without becoming authoritative", () => {
@@ -172,7 +186,7 @@ test("personal intelligence intervenes on matching weak contexts without becomin
   assert.ok(interventions.length > 0);
   assert.equal(interventions[0].severity, "PAUSE");
   assert.equal(interventions.every((item) => item.authoritative === false), true);
-  assert.match(interventions[0].detail, /does not change the strategy verdict/);
+  assert.match(interventions[0].detail, /constitutional limit|does not change the strategy verdict/);
 });
 test("collective learning strips private strategy data and enforces privacy thresholds", () => {
   const summary = buildTraderLearning(

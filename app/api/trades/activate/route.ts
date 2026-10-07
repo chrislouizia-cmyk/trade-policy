@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { publicApiError } from '@/lib/server/public-error';
 import { assertValidInternalLifecycleSourceIds } from '@/lib/server/internal-lifecycle-lineage';
 import { attachTradeLifecycleSimulationMetadata, isTradeLifecycleSimulationRequest, isTradeLifecycleV2Enabled } from '@/lib/server/trade-lifecycle-v2';
+import { recordTraderIntelligenceEvent } from '@/lib/server/trader-intelligence-events';
 
 const requestSchema = z.object({
   accountId: z.string().uuid().nullable().optional(),
@@ -113,6 +114,18 @@ export async function POST(request: Request) {
         error: message,
         code,
       }, { status: code === '23505' ? 409 : 400, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (!simulationRequest) {
+      const responseValue=response.data as unknown;
+      const tradeId=typeof responseValue==='string'
+        ?responseValue
+        :responseValue&&typeof responseValue==='object'&&'id' in responseValue
+          ?String((responseValue as {id:unknown}).id)
+          :null;
+      const eventContext={tradeId,sourceId:payload.sourceReportId,strategyId:payload.strategyProfileId,instrument:payload.instrument,direction:payload.direction,setupType:payload.setupType,riskPercent:Number(payload.riskPercent),initialRR:Number(payload.initialRR??1),activationMode:payload.activationMode,takenAgainstVerdict:Boolean(payload.takenAgainstVerdict||payload.activationMode==='OVERRIDE')};
+      await recordTraderIntelligenceEvent({userId:user.id,eventType:'TRADE_OPENED',route:'/api/trades/activate',dedupeKey:payload.sourceReportId,context:eventContext});
+      if(payload.activationMode==='OVERRIDE')await recordTraderIntelligenceEvent({userId:user.id,eventType:'VERDICT_OVERRIDDEN',route:'/api/trades/activate',dedupeKey:payload.sourceReportId,context:eventContext});
     }
 
     return NextResponse.json({

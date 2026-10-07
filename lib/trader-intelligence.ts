@@ -4,6 +4,7 @@ export type IntelligenceStage = "PRE_TRADE" | "ACTIVE_TRADE" | "POST_TRADE";
 export type IntelligenceSeverity = "INFO" | "CAUTION" | "PAUSE";
 
 export type IntelligenceIntervention = {
+  recordId?: string;
   key: string;
   stage: IntelligenceStage;
   severity: IntelligenceSeverity;
@@ -22,10 +23,13 @@ export type InterventionContext = {
   strategyId?: string | null;
   strategyName?: string | null;
   takenAgainstVerdict?: boolean;
+  direction?: string | null;
+  setupType?: string | null;
+  riskPercent?: number | null;
 };
 
 export type AnonymousContribution = {
-  dimension: Exclude<LearningDimension["dimension"], "strategy">;
+  dimension: "hour" | "weekday" | "instrument" | "session" | "discipline" | "direction" | "trade_number" | "after_outcome";
   bucket: string;
   trades: number;
   wins: number;
@@ -61,6 +65,11 @@ export function buildTraderInterventions(
   if (weekday) matches.set("weekday", weekday.toLowerCase());
   if (context.instrument) matches.set("instrument", context.instrument);
   if (context.session) matches.set("session", context.session);
+  if (context.direction) matches.set("direction", context.direction.toUpperCase());
+  if (context.setupType) matches.set("setup", context.setupType);
+  matches.set("trade_number", String(summary.behavior.tradesToday + 1));
+  if (summary.behavior.currentLossStreak > 0) matches.set("after_outcome", "LOSS");
+  else if (summary.behavior.currentWinStreak > 0) matches.set("after_outcome", "WIN");
 
   const strategyKeys = new Set(
     [context.strategyId, context.strategyName].filter(
@@ -68,6 +77,34 @@ export function buildTraderInterventions(
     ),
   );
   const interventions: IntelligenceIntervention[] = [];
+  if (summary.behavior.currentLossStreak >= 3) {
+    interventions.push({
+      key: `${context.stage.toLowerCase()}:discipline:loss-streak`,
+      stage: context.stage,
+      severity: summary.behavior.currentLossStreak >= 5 ? "PAUSE" : "CAUTION",
+      title: `${summary.behavior.currentLossStreak} consecutive recorded losses`,
+      detail: "Run the loss-streak investigation before increasing exposure. Trade Police will still apply the saved constitutional limit independently of this coaching context.",
+      sampleSize: summary.behavior.currentLossStreak,
+      evidenceIds: summary.recommendations.find((item) => item.id === "discipline:loss-streak")?.evidenceIds ?? [],
+      authoritative: false,
+    });
+  }
+  if (
+    context.riskPercent != null &&
+    summary.behavior.averageRiskPercent != null &&
+    context.riskPercent > summary.behavior.averageRiskPercent * 1.25
+  ) {
+    interventions.push({
+      key: `${context.stage.toLowerCase()}:discipline:risk-drift`,
+      stage: context.stage,
+      severity: "CAUTION",
+      title: "Risk is above your recorded baseline",
+      detail: `This trade uses ${context.riskPercent}% risk versus your recorded ${summary.behavior.averageRiskPercent}% average. Confirm the increase is allowed by the saved strategy; this observation cannot change its verdict.`,
+      sampleSize: summary.closedTrades,
+      evidenceIds: summary.evidenceIds.slice(-20),
+      authoritative: false,
+    });
+  }
   for (const item of summary.dimensions) {
     if (item.trades < MIN_PERSONAL_SAMPLE || item.averageR >= 0) continue;
     const matchesContext = item.dimension === "strategy"
@@ -114,7 +151,7 @@ export function buildAnonymousContributions(
 ): AnonymousContribution[] {
   return summary.dimensions
     .filter((item): item is LearningDimension & { dimension: AnonymousContribution["dimension"] } =>
-      item.dimension !== "strategy" && item.trades >= MIN_PERSONAL_SAMPLE)
+      ["hour", "weekday", "instrument", "session", "discipline", "direction", "trade_number", "after_outcome"].includes(item.dimension) && item.trades >= MIN_PERSONAL_SAMPLE)
     .map((item) => ({
       dimension: item.dimension,
       bucket: item.key,

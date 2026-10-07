@@ -24,6 +24,13 @@ const copy = {
     open: "View full analysis",
     close: "Evidence and recommendations",
     evidence: "Evidence map",
+    dna: "TRADING DNA",
+    streak: "Current streak",
+    adherence: "Rule adherence",
+    riskBaseline: "Recent / baseline risk",
+    today: "Trades today",
+    losses: "losses",
+    wins: "wins",
   },
   es: {
     eyebrow: "INTELIGENCIA POLICIAL",
@@ -47,6 +54,13 @@ const copy = {
     open: "Ver análisis completo",
     close: "Evidencia y recomendaciones",
     evidence: "Mapa de evidencia",
+    dna: "ADN DE TRADING",
+    streak: "Racha actual",
+    adherence: "Adherencia a reglas",
+    riskBaseline: "Riesgo reciente / base",
+    today: "Trades hoy",
+    losses: "pérdidas",
+    wins: "ganancias",
   },
   fr: {
     eyebrow: "INTELLIGENCE POLICIÈRE",
@@ -70,6 +84,13 @@ const copy = {
     open: "Voir l’analyse complète",
     close: "Preuves et recommandations",
     evidence: "Carte des preuves",
+    dna: "ADN DE TRADING",
+    streak: "Série actuelle",
+    adherence: "Respect des règles",
+    riskBaseline: "Risque récent / référence",
+    today: "Trades aujourd’hui",
+    losses: "pertes",
+    wins: "gains",
   },
 } as const;
 
@@ -133,6 +154,13 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
               <p>{priority.detail}</p>
             </article>
           ) : null}
+          <section className="police-intelligence-dna" aria-label={c.dna}>
+            <span className="police-intelligence-dna-label">{c.dna}</span>
+            <Metric value={streakValue(summary, c.losses, c.wins)} label={c.streak} />
+            <Metric value={summary.behavior.adherenceRate == null ? "—" : `${summary.behavior.adherenceRate}%`} label={c.adherence} />
+            <Metric value={riskValue(summary)} label={c.riskBaseline} />
+            <Metric value={String(summary.behavior.tradesToday)} label={c.today} />
+          </section>
           {strongest || weakest ? (
             <div className="police-intelligence-patterns">
               {strongest ? <Pattern title={c.strongest} item={strongest} tone="positive" sample={c.sample} /> : null}
@@ -173,6 +201,18 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
 
 function formatAverage(value: number | null) {
   return value === null ? "—" : `${value >= 0 ? "+" : ""}${value}R`;
+}
+
+function streakValue(summary: LearningSummary, losses: string, wins: string) {
+  if (summary.behavior.currentLossStreak) return `${summary.behavior.currentLossStreak} ${losses}`;
+  if (summary.behavior.currentWinStreak) return `${summary.behavior.currentWinStreak} ${wins}`;
+  return "—";
+}
+
+function riskValue(summary: LearningSummary) {
+  const recent = summary.behavior.recentRiskPercent;
+  const baseline = summary.behavior.averageRiskPercent;
+  return recent == null || baseline == null ? "—" : `${recent}% / ${baseline}%`;
 }
 
 function formatPattern(item: LearningDimension, sample: string) {

@@ -12,6 +12,7 @@ export type DailyTradeContext = {
   extraTradesUsed: number;
   realizedDailyPnl: number;
   openRisk: number;
+  consecutiveLosses: number;
 };
 
 export function isCountableDailyTradeExecution(
@@ -67,9 +68,20 @@ export async function loadDailyTradeContext({
 
   if (accountId) activeTradeQuery = activeTradeQuery.eq('account_id', accountId);
 
-  const [recordsResult, activeTradeResult] = await Promise.all([recordsQuery, activeTradeQuery]);
+  let streakQuery = supabase
+    .from('active_trades')
+    .select('id,result_r,outcome,closed_at,strategy_snapshot')
+    .eq('user_id', userId)
+    .eq('status', 'CLOSED')
+    .order('closed_at', { ascending: false })
+    .limit(50);
+  if (strategy.id) streakQuery = streakQuery.eq('strategy_profile_id', strategy.id);
+  if (accountId) streakQuery = streakQuery.eq('account_id', accountId);
+
+  const [recordsResult, activeTradeResult, streakResult] = await Promise.all([recordsQuery, activeTradeQuery, streakQuery]);
   if (recordsResult.error) throw recordsResult.error;
   if (activeTradeResult.error) throw activeTradeResult.error;
+  if (streakResult.error) throw streakResult.error;
 
   const activatedTradeRecordIds: Set<string> = new Set(
     (activeTradeResult.data ?? [])
@@ -96,6 +108,18 @@ export async function loadDailyTradeContext({
       (sum: number, row: any) => sum + Math.max(0, Number(row.risk_amount ?? 0)),
       0,
     );
+  let consecutiveLosses = 0;
+  for (const row of streakResult.data ?? []) {
+    if (isTradeLifecycleSimulationRecord(row)) continue;
+    if (!row.closed_at || localDayKey(new Date(row.closed_at), timezone) !== dayKey) break;
+    const resultR = Number(row.result_r);
+    const outcome = String(row.outcome ?? '').toUpperCase();
+    if ((Number.isFinite(resultR) && resultR < 0) || outcome === 'LOSS') {
+      consecutiveLosses += 1;
+      continue;
+    }
+    break;
+  }
 
   return {
     strategyTradesToday,
@@ -103,5 +127,6 @@ export async function loadDailyTradeContext({
     extraTradesUsed: Math.max(0, strategyTradesToday - strategy.maximumTradesPerDay),
     realizedDailyPnl,
     openRisk,
+    consecutiveLosses,
   };
 }

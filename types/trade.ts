@@ -286,6 +286,8 @@ export type TradeResult = {
     protectedFloor: number;
     worstCaseDailyPnl: number;
     greenDayExceptionApplied: boolean;
+    consecutiveLosses: number;
+    consecutiveLossLimit: number;
     message?: string;
   };
 };

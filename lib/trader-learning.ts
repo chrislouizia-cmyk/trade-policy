@@ -14,6 +14,10 @@ export type LearningTrade = {
   opened_at?: string | null;
   strategy_name_at_entry?: string | null;
   taken_against_verdict?: boolean | null;
+  direction?: string | null;
+  risk_percent?: number | string | null;
+  initial_rr?: number | string | null;
+  setup_type?: string | null;
   strategy_snapshot?: Record<string, unknown> | null;
   post_analysis?: Record<string, unknown> | null;
   rule_snapshot?: Record<string, unknown> | null;
@@ -45,9 +49,19 @@ export type LearningBehavior = {
   activeDays: number;
   mostCheckedInstrument: string | null;
   mostUsedTimeframe: string | null;
+  currentLossStreak: number;
+  currentWinStreak: number;
+  maximumLossStreak: number;
+  tradesToday: number;
+  followedVerdictTrades: number;
+  overrideTrades: number;
+  adherenceRate: number | null;
+  averageRiskPercent: number | null;
+  recentRiskPercent: number | null;
+  riskDriftPercent: number | null;
 };
 export type LearningDimension = {
-  dimension: "hour" | "weekday" | "instrument" | "session" | "strategy" | "discipline";
+  dimension: "hour" | "weekday" | "instrument" | "session" | "strategy" | "discipline" | "direction" | "setup" | "trade_number" | "after_outcome";
   key: string;
   label: string;
   trades: number;
@@ -266,6 +280,46 @@ export function buildTraderLearning(
       };
     }),
   );
+  const chronological = [...valid].sort((a, b) =>
+    new Date(a.opened_at ?? a.closed_at ?? 0).getTime() -
+    new Date(b.opened_at ?? b.closed_at ?? 0).getTime());
+  const tradeNumberById = new Map<string, number>();
+  const priorOutcomeById = new Map<string, string>();
+  const dayCounts = new Map<string, number>();
+  let priorOutcome: string | null = null;
+  for (const row of chronological) {
+    const timestamp = row.opened_at ?? row.closed_at;
+    const day = timestamp ? localDateKey(timestamp, timezone) : null;
+    if (day) {
+      const sequence = (dayCounts.get(day) ?? 0) + 1;
+      dayCounts.set(day, sequence);
+      tradeNumberById.set(row.id, sequence);
+    }
+    if (priorOutcome) priorOutcomeById.set(row.id, priorOutcome);
+    priorOutcome = Number(row.result_r) > 0 ? "WIN" : Number(row.result_r) < 0 ? "LOSS" : "BREAKEVEN";
+  }
+  addDimension(
+    "direction",
+    group(valid, (row) => row.direction ? { key: row.direction.toUpperCase(), label: row.direction.toUpperCase() } : null),
+  );
+  addDimension(
+    "setup",
+    group(valid, (row) => row.setup_type ? { key: row.setup_type, label: row.setup_type } : null),
+  );
+  addDimension(
+    "trade_number",
+    group(valid, (row) => {
+      const sequence = tradeNumberById.get(row.id);
+      return sequence ? { key: String(sequence), label: `Trade ${sequence} of the day` } : null;
+    }),
+  );
+  addDimension(
+    "after_outcome",
+    group(valid, (row) => {
+      const outcome = priorOutcomeById.get(row.id);
+      return outcome ? { key: outcome, label: `After a ${outcome.toLowerCase()}` } : null;
+    }),
+  );
   const ownDecisions = (options.decisions ?? []).filter(
     (row) => row.user_id === userId,
   );
@@ -290,6 +344,7 @@ export function buildTraderLearning(
     activeDays,
     mostCheckedInstrument: mostFrequent(ownDecisions.map((row) => row.instrument)),
     mostUsedTimeframe: mostFrequent(ownDecisions.map((row) => row.timeframe)),
+    ...buildBehaviorProfile(valid, chronological, timezone, now),
   };
   const recommendations = buildRecommendations(valid, dimensions);
   return {
@@ -304,6 +359,61 @@ export function buildTraderLearning(
     recommendations,
     behavior,
     generatedAt: now.toISOString(),
+  };
+}
+
+function buildBehaviorProfile(
+  valid: LearningTrade[],
+  chronological: LearningTrade[],
+  timezone: string,
+  now: Date,
+): Pick<LearningBehavior,
+  "currentLossStreak" | "currentWinStreak" | "maximumLossStreak" | "tradesToday" |
+  "followedVerdictTrades" | "overrideTrades" | "adherenceRate" |
+  "averageRiskPercent" | "recentRiskPercent" | "riskDriftPercent"> {
+  let maximumLossStreak = 0;
+  let runningLosses = 0;
+  for (const row of chronological) {
+    if (Number(row.result_r) < 0) {
+      runningLosses += 1;
+      maximumLossStreak = Math.max(maximumLossStreak, runningLosses);
+    } else {
+      runningLosses = 0;
+    }
+  }
+  let currentLossStreak = 0;
+  let currentWinStreak = 0;
+  for (const row of [...chronological].reverse()) {
+    const result = Number(row.result_r);
+    if (result < 0 && currentWinStreak === 0) currentLossStreak += 1;
+    else if (result > 0 && currentLossStreak === 0) currentWinStreak += 1;
+    else break;
+  }
+  const overrideTrades = valid.filter((row) => row.taken_against_verdict === true).length;
+  const followedVerdictTrades = valid.length - overrideTrades;
+  const risks = valid.map((row) => Number(row.risk_percent)).filter(Number.isFinite);
+  const recentRisks = chronological.slice(-5).map((row) => Number(row.risk_percent)).filter(Number.isFinite);
+  const mean = (values: number[]) => values.length
+    ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000
+    : null;
+  const averageRiskPercent = mean(risks);
+  const recentRiskPercent = mean(recentRisks);
+  return {
+    currentLossStreak,
+    currentWinStreak,
+    maximumLossStreak,
+    tradesToday: valid.filter((row) => {
+      const timestamp = row.opened_at ?? row.closed_at;
+      return timestamp && localDateKey(timestamp, timezone) === localDateKey(now.toISOString(), timezone);
+    }).length,
+    followedVerdictTrades,
+    overrideTrades,
+    adherenceRate: valid.length ? Math.round((followedVerdictTrades / valid.length) * 1000) / 10 : null,
+    averageRiskPercent,
+    recentRiskPercent,
+    riskDriftPercent: averageRiskPercent != null && recentRiskPercent != null
+      ? Math.round((recentRiskPercent - averageRiskPercent) * 1000) / 1000
+      : null,
   };
 }
 
@@ -361,7 +471,7 @@ function buildRecommendations(
     dimensions
       .filter((item) => item.dimension === dimension && item.trades >= 5)
       .sort((a, b) => a.averageR - b.averageR);
-  for (const dimension of ["hour", "weekday", "strategy", "instrument"] as const) {
+  for (const dimension of ["hour", "weekday", "strategy", "instrument", "trade_number", "after_outcome", "direction", "setup"] as const) {
     const rows = ranked(dimension);
     const worst = rows[0];
     const best = rows.at(-1);
@@ -399,6 +509,22 @@ function buildRecommendations(
       title: "Pause before overriding the verdict",
       detail: `Overrides average ${overridden.averageR}R versus ${followed.averageR}R when the verdict was followed. Require a written reason before the next override.`,
       evidenceIds: [...overridden.evidenceIds, ...followed.evidenceIds],
+    });
+  const chronological = [...trades].sort((a, b) =>
+    new Date(a.closed_at ?? a.opened_at ?? 0).getTime() -
+    new Date(b.closed_at ?? b.opened_at ?? 0).getTime());
+  let lossStreak = 0;
+  for (const row of chronological.reverse()) {
+    if (Number(row.result_r) < 0) lossStreak += 1;
+    else break;
+  }
+  if (lossStreak >= 3)
+    recommendations.unshift({
+      id: "discipline:loss-streak",
+      priority: "HIGH",
+      title: "Investigate the current loss streak",
+      detail: `${lossStreak} consecutive recorded losses require a structured review of execution, market context and rule adherence before increasing exposure. Your saved constitutional limit remains authoritative.`,
+      evidenceIds: chronological.slice(0, lossStreak).map((row) => row.id),
     });
   return recommendations.slice(0, 6);
 }

@@ -74,6 +74,7 @@ function describeFinalRiskBlock({veto,input,profile,riskDistance,instrumentStopL
   if(veto.startsWith('Risk exceeds '))return {id:'RISK_MAXIMUM',name:'Maximum risk percentage',actual:`${input.riskPercent}%`,required:`${profile.maximumRiskPercent}%`,operator:'actual risk ≤ configured maximum',source:'Strategy maximumRiskPercent',reason:veto,overrideable};
   if(veto==='Session is not allowed by this strategy.')return {id:'SESSION_ALLOWED',name:'Allowed trading session',actual:input.session,required:profile.allowedSessions.join(', '),operator:'actual session ∈ allowed sessions',source:'Strategy allowedSessions',reason:veto,overrideable};
   if(veto==='High-impact news conflict detected.')return {id:'HIGH_IMPACT_NEWS',name:'High-impact news filter',actual:String(input.highImpactNews),required:'false',operator:'news conflict = false',source:'Strategy avoidHighImpactNews',reason:veto,overrideable};
+  if(veto.startsWith('Consecutive-loss limit reached'))return {id:'CONSECUTIVE_LOSS_LIMIT',name:'Consecutive-loss protection',actual:String(veto.match(/\((\d+)\//)?.[1]??'limit reached'),required:String(profile.maximumConsecutiveLosses??profile.lossStreakLimit??5),operator:'current consecutive losses < saved maximum',source:'Strategy maximumConsecutiveLosses',reason:veto,overrideable:false};
   if(veto==='Required timeframe alignment is missing.')return {id:'TREND_ALIGNMENT_REQUIRED',name:'Required timeframe alignment',actual:`H4=${input.h4TrendAligned}; H1=${input.h1TrendAligned}`,required:'H4=true and H1=true',operator:'both timeframes must align',source:'Strategy requireTrendAlignment',reason:veto,overrideable};
   if(veto==='Live strategy confidence is required before authorization.')return {id:'LIVE_CONFIDENCE_REQUIRED',name:'Live strategy confidence',actual:String(input.setupConfidence??'missing'),required:`≥ ${profile.aiBehavior?.confidenceThreshold??80}%`,operator:'confidence must be supplied',source:'Strategy aiBehavior.confidenceThreshold',reason:veto,overrideable};
   return {id:`CONTROL_${veto.replace(/[^A-Z0-9]+/gi,'_').replace(/^_|_$/g,'').slice(0,64)}`,name:'Final risk control',actual:'See final risk input',required:'See saved strategy control',operator:'Control-specific validation',source:'Saved strategy and final risk input',reason:veto,overrideable};
@@ -234,6 +235,14 @@ export function validateTradeWithStrategy(
   const worstCaseDailyPnl = round(realizedDailyPnl - openRisk - riskAmount);
   const limitReached =
     strategyTradesToday >= strategyLimit || instrumentTradesToday >= instrumentLimit;
+  const consecutiveLosses = Math.max(0, Number(dailyContext?.consecutiveLosses ?? 0));
+  const consecutiveLossLimit = Math.max(1, Number(profile.maximumConsecutiveLosses ?? profile.lossStreakLimit ?? 5));
+
+  if (consecutiveLosses >= consecutiveLossLimit) {
+    vetoes.push(`Consecutive-loss limit reached (${consecutiveLosses}/${consecutiveLossLimit}). New authorizations are paused for this trading day.`);
+    overrideAllowed = false;
+    observations.push('Trade Police detected the configured loss-streak stop. This constitutional control is independent of AI coaching.');
+  }
 
   if (limitReached) {
     overrideAllowed = false;
@@ -315,6 +324,8 @@ export function validateTradeWithStrategy(
       protectedFloor: round(floor),
       worstCaseDailyPnl,
       greenDayExceptionApplied,
+      consecutiveLosses,
+      consecutiveLossLimit,
       message: dailyMessage || undefined,
     },
   };

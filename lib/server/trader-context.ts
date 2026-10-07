@@ -34,7 +34,7 @@ export async function loadTraderContext(
     dataClient
       .from("active_trades")
       .select(
-        "id,user_id,status,instrument,strategy_profile_id,strategy_name_at_entry,outcome,result_r,opened_at,closed_at,taken_against_verdict,strategy_snapshot",
+        "id,user_id,status,instrument,direction,risk_percent,initial_rr,setup_type,strategy_profile_id,strategy_name_at_entry,outcome,result_r,opened_at,closed_at,taken_against_verdict,strategy_snapshot",
       )
       .eq("user_id", userId)
       .eq("status", "CLOSED")
@@ -268,6 +268,19 @@ export async function loadTraderContext(
 export async function refreshTraderLearning(client: Client, userId: string) {
   try {
     const context = await loadTraderContext(client, userId);
+    await createAdminClient()
+      .from("trader_intelligence_profiles")
+      .upsert({
+        user_id: userId,
+        last_intraday_refresh_at: context.summary.generatedAt,
+        learning_state: {
+          closedTrades: context.summary.closedTrades,
+          averageR: context.summary.averageR,
+          behavior: context.summary.behavior,
+          priorityRecommendation: context.summary.recommendations[0]?.id ?? null,
+          generatedAt: context.summary.generatedAt,
+        },
+      }, { onConflict: "user_id" });
     return { updated: true, closedTrades: context.summary.closedTrades };
   } catch {
     console.warn("[TRADER_LEARNING_REFRESH_FAILED]");

@@ -12,6 +12,7 @@ import {withTwelveDataCredits,ProviderCreditLimitError,ProviderRequestReplayErro
 import {applyTradingDnaRuntime} from '@/lib/trading-dna/runtime';
 import {buildTraderInterventions} from '@/lib/trader-intelligence';
 import {loadTraderLearningSnapshot,recordTraderInterventions} from '@/lib/server/trader-intelligence-state';
+import {recordTraderIntelligenceEvent} from '@/lib/server/trader-intelligence-events';
 
 export const runtime='nodejs';export const maxDuration=60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
@@ -67,13 +68,15 @@ export async function POST(request:Request){
     const reasons=[...validation.vetoes,...validation.observations,...analysis.warnings];
     if(newsUnknown)reasons.unshift('Original news-state snapshot unavailable. News protection could not be verified for this legacy trade.');
     if(!reasons.length)reasons.push('The current market structure remains compatible with the stored trade strategy.');
-    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{stage:'ACTIVE_TRADE',at:new Date(),instrument:trade.instrument,session,strategyId:strategy.id,strategyName:strategy.name,takenAgainstVerdict:trade.taken_against_verdict===true});
+    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{stage:'ACTIVE_TRADE',at:new Date(),instrument:trade.instrument,session,strategyId:strategy.id,strategyName:strategy.name,takenAgainstVerdict:trade.taken_against_verdict===true,direction:trade.direction,setupType:trade.setup_type,riskPercent:riskPercent!});
     const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict,personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions}};
-    await recordTraderInterventions(user.id,personalInterventions,{stage:'ACTIVE_TRADE',tradeId:trade.id,instrument:trade.instrument,strategyId:strategy.id,generatedAt:guidance.generatedAt});
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{stage:'ACTIVE_TRADE',tradeId:trade.id,instrument:trade.instrument,strategyId:strategy.id,generatedAt:guidance.generatedAt});
+    guidance.personalIntelligence.interventions=storedInterventions;
     const {error:eventError}=await supabase.from('active_trade_events').insert({user_id:user.id,trade_id:trade.id,event_type:'REANALYSIS',verdict:status,current_price:currentPrice,current_r:currentR,analysis:guidance});if(eventError)throw eventError;
     if(!record?.session&&trade.trade_record_id){const {error:sessionRepairError}=await supabase.from('trade_records').update({session,updated_at:guidance.generatedAt}).eq('id',trade.trade_record_id).eq('user_id',user.id);if(sessionRepairError)throw sessionRepairError;}
     const repairedSnapshot=snapshotSession?snapshot:{...snapshot,tradeContext:{...(snapshot.tradeContext??{}),session}};
     const {error:updateError}=await supabase.from('active_trades').update({strategy_snapshot:repairedSnapshot,current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
+    await recordTraderIntelligenceEvent({userId:user.id,eventType:'TRADE_REANALYZED',route:'/api/trades/reanalyze',dedupeKey:`${trade.id}:${guidance.generatedAt}`,context:{tradeId:trade.id,strategyId:strategy.id,instrument:trade.instrument,direction:trade.direction,session,setupType:trade.setup_type,riskPercent:riskPercent!,currentR,verdict:status}});
     return NextResponse.json({guidance},{headers:{'Cache-Control':'no-store'}});
   }catch(error){
     if(error instanceof StrategyConfigurationError)return failure(error.message,'STRATEGY_CONFIGURATION_ERROR',409,{missingFields:error.missingFields});

@@ -7,6 +7,7 @@ import {
   buildCollectivePatterns,
   type IntelligenceIntervention,
 } from "../trader-intelligence.ts";
+import { recordTraderIntelligenceEvent } from "./trader-intelligence-events.ts";
 
 type Client = ReturnType<typeof createAdminClient>;
 
@@ -39,7 +40,7 @@ export async function recordTraderInterventions(
   interventions: IntelligenceIntervention[],
   context: Record<string, unknown>,
 ) {
-  if (!interventions.length) return;
+  if (!interventions.length) return [];
   const client = createAdminClient();
   const contextFingerprint = createHash("sha256")
     .update(JSON.stringify(context))
@@ -59,8 +60,19 @@ export async function recordTraderInterventions(
       presented_at: new Date().toISOString(),
     })),
     { onConflict: "user_id,intervention_key,context_fingerprint" },
-  );
-  if (result.error) console.warn("[TRADER_INTELLIGENCE_INTERVENTION_WRITE_FAILED]");
+  ).select("id,intervention_key");
+  if (result.error) {
+    console.warn("[TRADER_INTELLIGENCE_INTERVENTION_WRITE_FAILED]");
+    return interventions;
+  }
+  await Promise.all(interventions.map((item) => recordTraderIntelligenceEvent({
+    userId,
+    eventType: "INTERVENTION_PRESENTED",
+    dedupeKey: `${item.key}:${contextFingerprint}`,
+    context: { interventionKey: item.key, stage: item.stage, severity: item.severity },
+  })));
+  const ids = new Map((result.data ?? []).map((row) => [row.intervention_key, row.id]));
+  return interventions.map((item) => ({ ...item, recordId: ids.get(item.key) }));
 }
 
 export async function rebuildCollectivePatterns(client: Client) {
@@ -173,6 +185,12 @@ async function syncRecommendations(
         })
         .eq("id", current.id);
       if (evaluated.error) throw evaluated.error;
+      await recordTraderIntelligenceEvent({
+        userId,
+        eventType: "RECOMMENDATION_EVALUATED",
+        dedupeKey: current.id,
+        context: { recommendationKey: recommendation.id, status: "EVALUATED" },
+      });
     }
   }
   const staleIds = rows

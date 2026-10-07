@@ -20,6 +20,8 @@ import { recordReportFailure } from '@/lib/historical-decisions/operations';
 import { evaluateTradeAuthorizationEligibility } from '@/lib/trade-authorization';
 import { buildTraderInterventions } from '@/lib/trader-intelligence';
 import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
+import { refreshTraderLearning } from '@/lib/server/trader-context';
+import { recordTraderIntelligenceEvent } from '@/lib/server/trader-intelligence-events';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,8 +80,6 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return apiError('INVALID_TRADE','Some trade values are invalid.',400,parsed.error.flatten());
     }
-    const learningSnapshotPromise=loadTraderLearningSnapshot(user.id);
-
     const {data:scan,error:scanError}=await supabase.from('market_scans').select('id,user_id,strategy_profile_id,strategy_revision_id,instrument,analysis,server_created').eq('id',parsed.data.analysisId).eq('user_id',user.id).maybeSingle();
     if(scanError||!scan||!scan.server_created)return apiError('ANALYSIS_NOT_FOUND','The verified market analysis could not be found. Run the market check again.',409);
     if(typeof scan.strategy_profile_id!=='string'||!scan.strategy_profile_id)return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis is missing its strategy identity. Run the market check again.',409);
@@ -135,20 +135,32 @@ export async function POST(request: Request) {
     try{snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot)}catch{await recordReportFailure({reasonCode:'FINGERPRINT_FAILURE',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('REPORT_SNAPSHOT_FAILED','The decision was completed but its historical snapshot could not be prepared. No report was saved.',503)}
     const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
     const aiExplanation=aiParts.length?{reportId:snapshot.reportId,explanationVersion:'1',provider:'OpenAI',...(process.env.OPENAI_MODEL?{model:process.env.OPENAI_MODEL}:{}),prose:aiParts.join('\n\n'),createdAt:new Date().toISOString(),sourceVerdict:snapshot.verdict,sourceDeterministicFingerprint:snapshot.deterministicFingerprint,authoritative:false}:null;
-    const {data:source,error:sourceError}=await createAdminClient().from('decision_report_sources').insert({user_id:user.id,source_analysis_id:scan.id,strategy_id:strategy.id,schema_version:snapshot.schemaVersion,deterministic_fingerprint:snapshot.deterministicFingerprint,snapshot_json:validatedSnapshot,ai_explanation_json:aiExplanation}).select('id,expires_at').single();
+    const admin=createAdminClient();
+    const {data:source,error:sourceError}=await admin.from('decision_report_sources').insert({user_id:user.id,source_analysis_id:scan.id,strategy_id:strategy.id,schema_version:snapshot.schemaVersion,deterministic_fingerprint:snapshot.deterministicFingerprint,snapshot_json:validatedSnapshot,ai_explanation_json:aiExplanation}).select('id,expires_at').single();
     if(sourceError||!source){
       const failure=sourceError??new Error('Decision report source was not created.');
       console.error('Validation error', {requestId,operation:'decision_report_sources.insert',...safeValidationError(failure)});
       throw failure;
     }
-    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{
+    await recordTraderIntelligenceEvent({
+      userId:user.id,
+      eventType:'DECISION_CREATED',
+      route:'/api/validate',
+      dedupeKey:source.id,
+      context:{analysisId:scan.id,sourceId:source.id,strategyId:strategy.id,instrument:parsed.data.instrument,direction:parsed.data.direction,session:parsed.data.session,setupType:authoritativeAnalysis.setupType,verdict:result.verdict,riskPercent:parsed.data.riskPercent,initialRR:result.rr},
+    });
+    await refreshTraderLearning(admin,user.id);
+    const personalInterventions=buildTraderInterventions(await loadTraderLearningSnapshot(user.id),{
       stage:'PRE_TRADE',
       instrument:parsed.data.instrument,
       session:parsed.data.session,
       strategyId:strategy.id,
       strategyName:strategy.name,
+      direction:parsed.data.direction,
+      setupType:authoritativeAnalysis.setupType,
+      riskPercent:parsed.data.riskPercent,
     });
-    await recordTraderInterventions(user.id,personalInterventions,{
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{
       stage:'PRE_TRADE',
       sourceId:source.id,
       analysisId:scan.id,
@@ -173,7 +185,7 @@ export async function POST(request: Request) {
         personalIntelligence:{
           authoritative:false,
           controlsVerdict:false,
-          interventions:personalInterventions,
+          interventions:storedInterventions,
         },
       },
       { headers: { 'Cache-Control': 'no-store' } },

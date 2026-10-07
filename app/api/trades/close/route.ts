@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { canCloseTrade } from '@/lib/server/trade-lifecycle';
 import { buildTraderInterventions } from '@/lib/trader-intelligence';
 import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
+import { recordTraderIntelligenceEvent } from '@/lib/server/trader-intelligence-events';
 
 export async function POST(request: Request) {
   try {
@@ -62,9 +63,10 @@ export async function POST(request: Request) {
     const snapshot=await loadTraderLearningSnapshot(user.id);
     const strategySnapshot=existingTrade.strategy_snapshot as {tradeContext?:{session?:string}}|null;
     const personalInterventions=buildTraderInterventions(snapshot,{stage:'POST_TRADE',at:existingTrade.opened_at?new Date(existingTrade.opened_at):new Date(),instrument:existingTrade.instrument,session:strategySnapshot?.tradeContext?.session,strategyId:existingTrade.strategy_profile_id,strategyName:existingTrade.strategy_name_at_entry,takenAgainstVerdict:existingTrade.taken_against_verdict===true});
-    await recordTraderInterventions(user.id,personalInterventions,{stage:'POST_TRADE',tradeId:existingTrade.id,closedAt:canonicalTrade.closed_at});
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{stage:'POST_TRADE',tradeId:existingTrade.id,closedAt:canonicalTrade.closed_at});
+    await recordTraderIntelligenceEvent({userId:user.id,eventType:'TRADE_CLOSED',route:'/api/trades/close',dedupeKey:existingTrade.id,context:{tradeId:existingTrade.id,strategyId:existingTrade.strategy_profile_id,instrument:existingTrade.instrument,resultR:canonicalTrade.result_r,outcome:canonicalTrade.outcome,takenAgainstVerdict:existingTrade.taken_against_verdict===true}});
     return NextResponse.json(
-      { learning, result: data, lifecycle: lifecycleCheck, canonicalTrade, personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions} },
+      { learning, result: data, lifecycle: lifecycleCheck, canonicalTrade, personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:storedInterventions} },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
