@@ -102,11 +102,11 @@ type Props = {
 
 export default function PoliceIntelligence({ summary, locale, full = false }: Props) {
   const c = copy[locale] ?? copy.en;
-  const eligible = summary.dimensions.filter((item) => item.trades >= 3);
+  const eligible = summary.dimensions.filter((item) => item.trades >= 3 && item.evidence?.status !== "STALE" && item.evidence?.status !== "CONFLICTING");
   const strongest = [...eligible].sort((a, b) => b.averageR - a.averageR)[0];
   const weakest = [...eligible].sort((a, b) => a.averageR - b.averageR)[0];
   const priority = summary.recommendations[0];
-  const established = summary.closedTrades >= 30;
+  const established = eligible.some(item => item.evidence?.status === "REPEATED");
   const headingId = full ? "police-intelligence-title" : "police-intelligence-compact-title";
 
   if (!full) {
@@ -190,7 +190,7 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
               ))}
             </div>
           ) : null}
-          <DimensionTable dimensions={summary.dimensions} sample={c.sample} label={c.evidence} />
+          <DimensionTable dimensions={summary.dimensions} sample={c.sample} label={c.evidence} locale={locale} />
         </div>
       </details>
 
@@ -227,7 +227,7 @@ function Pattern({ title, item, tone, sample }: { title: string; item: LearningD
   return <article className={tone}><span>{title}</span><strong>{item.label}</strong><small>{formatPattern(item, sample)}</small></article>;
 }
 
-function DimensionTable({ dimensions, sample, label }: { dimensions: LearningDimension[]; sample: string; label: string }) {
+function DimensionTable({ dimensions, sample, label, locale }: { dimensions: LearningDimension[]; sample: string; label: string; locale: Locale }) {
   if (!dimensions.length) return null;
   return (
     <details className="police-intelligence-details">
@@ -239,10 +239,19 @@ function DimensionTable({ dimensions, sample, label }: { dimensions: LearningDim
             <p key={`${item.dimension}:${item.key}`}>
               <span>{item.dimension} · {item.label}</span>
               <strong>{item.averageR >= 0 ? "+" : ""}{item.averageR}R</strong>
-              <small>{item.trades} {sample} · {item.winRate}%</small>
+              <small>{item.trades} {sample} · {item.winRate}% · {evidenceLabel(item, locale)}</small>
             </p>
           ))}
       </div>
     </details>
   );
+}
+
+function evidenceLabel(item: LearningDimension, locale: Locale) {
+  const labels = {
+    es: { OBSERVED: "Observación inicial", REPEATED: "Repetido en datos posteriores", CONFLICTING: "Datos posteriores discrepan", STALE: "Evidencia antigua" },
+    en: { OBSERVED: "Early observation", REPEATED: "Repeated in later records", CONFLICTING: "Later records disagree", STALE: "Stale evidence" },
+    fr: { OBSERVED: "Observation initiale", REPEATED: "Répété dans les données suivantes", CONFLICTING: "Données suivantes divergentes", STALE: "Preuves anciennes" },
+  };
+  return (labels[locale] ?? labels.en)[item.evidence?.status ?? "OBSERVED"];
 }

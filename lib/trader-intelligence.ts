@@ -92,6 +92,7 @@ export function buildTraderInterventions(
   if (
     context.riskPercent != null &&
     summary.behavior.averageRiskPercent != null &&
+    (summary.behavior.riskSampleSize ?? 0) >= 5 &&
     context.riskPercent > summary.behavior.averageRiskPercent * 1.25
   ) {
     interventions.push({
@@ -106,7 +107,8 @@ export function buildTraderInterventions(
     });
   }
   for (const item of summary.dimensions) {
-    if (item.trades < MIN_PERSONAL_SAMPLE || item.averageR >= 0) continue;
+    if (item.trades < MIN_PERSONAL_SAMPLE || item.averageR >= 0 ||
+      item.evidence?.status === "STALE" || item.evidence?.status === "CONFLICTING") continue;
     const matchesContext = item.dimension === "strategy"
       ? strategyKeys.has(item.key) || strategyKeys.has(item.label)
       : matches.get(item.dimension) === item.key;
@@ -114,9 +116,9 @@ export function buildTraderInterventions(
     interventions.push({
       key: `${context.stage.toLowerCase()}:${item.dimension}:${item.key}`,
       stage: context.stage,
-      severity: item.trades >= 8 && item.averageR <= -0.5 ? "PAUSE" : "CAUTION",
+      severity: item.evidence?.status === "REPEATED" && item.averageR <= -0.5 ? "PAUSE" : "CAUTION",
       title: `Personal pattern: ${item.label}`,
-      detail: `${item.trades} recorded trades in this context average ${item.averageR}R. Review the evidence before continuing; this history does not prove causation and does not change the strategy verdict.`,
+      detail: `${item.trades} recorded trades in this context average ${item.averageR}R. ${item.evidence?.explanation ?? "Unassessed historical snapshot; refresh before treating this as a repeated pattern."} Review the evidence before continuing; this history does not prove causation and does not change the strategy verdict.`,
       sampleSize: item.trades,
       evidenceIds: item.evidenceIds,
       authoritative: false,

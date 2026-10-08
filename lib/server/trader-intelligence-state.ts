@@ -1,4 +1,5 @@
 import "server-only";
+import { evaluateRecommendationFollowup, type RecommendationBaseline } from "../trader-recommendation-evaluation.ts";
 import { createHash } from "node:crypto";
 import { createAdminClient } from "../supabase/admin.ts";
 import type { LearningDimension, LearningSummary } from "../trader-learning.ts";
@@ -164,23 +165,24 @@ async function syncRecommendations(
       if (created.error) throw created.error;
       continue;
     }
-    const prior = current.baseline as { closedTrades?: number; averageR?: number | null; metric?: number | null } | null;
-    if (summary.closedTrades >= Number(prior?.closedTrades ?? 0) + 5) {
-      const currentMetric = recommendationMetric(summary, recommendation.id);
+    const prior = current.baseline as RecommendationBaseline | null;
+    if (!prior?.evidenceIds) {
+      const refreshed = await client.from("trader_intelligence_recommendations")
+        .update({ baseline, delivered_at: now, updated_at: now }).eq("id", current.id).eq("user_id", userId);
+      if (refreshed.error) throw refreshed.error;
+      continue;
+    }
+    const contextDimension = recommendationDimension(summary, recommendation.id);
+    const followup = evaluateRecommendationFollowup(prior, summary.outcomes ?? [],
+      recommendation.id.startsWith("review:") || recommendation.id.startsWith("protect:")
+        ? contextDimension?.evidenceIds ?? [] : undefined);
+    if (followup) {
       const evaluated = await client
         .from("trader_intelligence_recommendations")
         .update({
           status: "EVALUATED",
           evaluated_at: now,
-          outcome: {
-            closedTrades: summary.closedTrades,
-            averageR: summary.averageR,
-            metric: currentMetric,
-            change: currentMetric == null || prior?.metric == null
-              ? null
-              : Math.round((currentMetric - prior.metric) * 1000) / 1000,
-            interpretation: "Descriptive change after delivery; not causal attribution.",
-          },
+          outcome: followup,
           updated_at: now,
         })
         .eq("id", current.id);
@@ -253,14 +255,19 @@ function recommendationBaseline(summary: LearningSummary, key: string) {
     averageR: summary.averageR,
     metric: recommendationMetric(summary, key),
     capturedAt: summary.generatedAt,
+    evidenceIds: summary.evidenceIds,
   };
 }
 
-function recommendationMetric(summary: LearningSummary, key: string) {
+function recommendationDimension(summary: LearningSummary, key: string) {
   const [, dimension, ...bucketParts] = key.split(":");
-  if (!dimension || !bucketParts.length) return summary.averageR;
+  if (!dimension || !bucketParts.length) return undefined;
   const bucket = bucketParts.join(":");
   return summary.dimensions.find(
     (item: LearningDimension) => item.dimension === dimension && item.key === bucket,
-  )?.averageR ?? null;
+  );
+}
+
+function recommendationMetric(summary: LearningSummary, key: string) {
+  return recommendationDimension(summary, key)?.averageR ?? summary.averageR;
 }

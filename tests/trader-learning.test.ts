@@ -63,7 +63,7 @@ const trade = (
   status: "CLOSED",
   instrument: "XAUUSD",
   result_r: 1,
-  closed_at: "2026-10-05T00:00:00Z",
+  closed_at: "2026-10-06T23:00:00Z",
   ...extra,
 });
 test("learns only own closed real executions, deduplicated, excluding every simulation marker", () => {
@@ -119,7 +119,9 @@ test("automatic intelligence learns hour, weekday, behavior and coaching from re
   const positive = Array.from({ length: 10 }, (_, index) =>
     trade(`win-${index}`, {
       opened_at: `2026-10-${index < 5 ? "04" : "05"}T09:${String(index % 5).padStart(2, "0")}:00Z`,
+      closed_at: `2026-10-${index < 5 ? "04" : "05"}T09:${String(index % 5).padStart(2, "0")}:30Z`,
       result_r: 1,
+      taken_against_verdict: false,
       direction: "BUY",
       setup_type: "Liquidity expansion",
       risk_percent: 0.5,
@@ -128,7 +130,9 @@ test("automatic intelligence learns hour, weekday, behavior and coaching from re
   const negative = Array.from({ length: 5 }, (_, index) =>
     trade(`loss-${index}`, {
       opened_at: `2026-10-06T15:${String(index).padStart(2, "0")}:00Z`,
+      closed_at: `2026-10-06T15:${String(index).padStart(2, "0")}:30Z`,
       result_r: -1,
+      taken_against_verdict: false,
       direction: "SELL",
       setup_type: "Liquidity expansion",
       risk_percent: 1,

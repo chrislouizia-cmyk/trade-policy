@@ -1,3 +1,5 @@
+import type { RecordedOutcome } from "./trader-recommendation-evaluation.ts";
+import { assessPatternEvidence, type PatternEvidence } from "./trader-pattern-evidence.ts";
 import { isTradeLifecycleSimulationRecord } from "./trade-lifecycle-v2-core.ts";
 
 export type LearningTrade = {
@@ -59,8 +61,11 @@ export type LearningBehavior = {
   averageRiskPercent: number | null;
   recentRiskPercent: number | null;
   riskDriftPercent: number | null;
+  knownAdherenceTrades: number;
+  riskSampleSize: number;
 };
 export type LearningDimension = {
+  evidence?: PatternEvidence;
   dimension: "hour" | "weekday" | "instrument" | "session" | "strategy" | "discipline" | "direction" | "setup" | "trade_number" | "after_outcome";
   key: string;
   label: string;
@@ -97,6 +102,8 @@ export type LearningSummary = {
   dimensions: LearningDimension[];
   recommendations: LearningRecommendation[];
   behavior: LearningBehavior;
+  outcomes?: RecordedOutcome[];
+  quality?: { validRecords: number; invalidRecords: number; missingRisk: number; missingEntryTime: number; unknownAdherence: number; brokerVerified: false };
   generatedAt: string;
 };
 
@@ -123,15 +130,20 @@ export function buildTraderLearning(
   ];
   const valid = ownTrades.filter((row) => {
     const execution = executionByRecord.get(row.id);
+    const entryTime = row.opened_at ?? execution?.opened_at;
     return (
       row.user_id === userId &&
       row.source === "EXECUTED" &&
       row.status === "CLOSED" &&
       Boolean(row.closed_at) &&
+      Number.isFinite(Date.parse(row.closed_at!)) &&
+      Date.parse(row.closed_at!) <= now.getTime() &&
+      (!entryTime || (Number.isFinite(Date.parse(entryTime)) && Date.parse(entryTime) <= Date.parse(row.closed_at!))) &&
       row.result_r != null &&
       String(row.result_r).trim() !== "" &&
       Number.isFinite(Number(row.result_r)) &&
       !isTradeLifecycleSimulationRecord(execution) &&
+      !isTradeLifecycleSimulationRecord({ strategy_snapshot: row.strategy_snapshot }) &&
       !isTradeLifecycleSimulationRecord({
         strategy_snapshot: row.post_analysis,
         source: row.source,
@@ -141,11 +153,19 @@ export function buildTraderLearning(
       }) &&
       ![
         execution?.strategy_snapshot,
+        row.strategy_snapshot,
         row.post_analysis,
         row.rule_snapshot,
       ].some((snapshot) => snapshot?.internalTestMode === true)
     );
   });
+  // Resolve execution metadata once so every metric uses the same recorded facts.
+  for (let i = 0; i < valid.length; i++) {
+    const row = valid[i];
+    const execution = executionByRecord.get(row.id);
+    valid[i] = { ...row, opened_at: row.opened_at ?? execution?.opened_at,
+      taken_against_verdict: row.taken_against_verdict ?? execution?.taken_against_verdict };
+  }
   const average = (rows: LearningTrade[]) =>
     Math.round(
       (rows.reduce((sum, row) => sum + Number(row.result_r), 0) / rows.length) *
@@ -216,6 +236,7 @@ export function buildTraderLearning(
         averageR: average(rows),
         totalR: sumR(rows),
         evidenceIds: rows.map((row) => row.id),
+        evidence: assessPatternEvidence(rows, now, timezone),
       });
     }
   };
@@ -272,6 +293,7 @@ export function buildTraderLearning(
   addDimension(
     "discipline",
     group(valid, (row) => {
+      if (typeof row.taken_against_verdict !== "boolean") return null;
       const overridden = row.taken_against_verdict === true ||
         executionByRecord.get(row.id)?.taken_against_verdict === true;
       return {
@@ -286,17 +308,24 @@ export function buildTraderLearning(
   const tradeNumberById = new Map<string, number>();
   const priorOutcomeById = new Map<string, string>();
   const dayCounts = new Map<string, number>();
-  let priorOutcome: string | null = null;
+  const byClose = [...valid].sort((a, b) => Date.parse(a.closed_at!) - Date.parse(b.closed_at!));
+  let closedCursor = 0;
+  let priorClosed: LearningTrade | undefined;
   for (const row of chronological) {
-    const timestamp = row.opened_at ?? row.closed_at;
-    const day = timestamp ? localDateKey(timestamp, timezone) : null;
+    // Missing entry times cannot identify trade order or the outcome known at entry.
+    if (!row.opened_at) continue;
+    const timestamp = row.opened_at;
+    const day = localDateKey(timestamp, timezone);
     if (day) {
       const sequence = (dayCounts.get(day) ?? 0) + 1;
       dayCounts.set(day, sequence);
       tradeNumberById.set(row.id, sequence);
     }
-    if (priorOutcome) priorOutcomeById.set(row.id, priorOutcome);
-    priorOutcome = Number(row.result_r) > 0 ? "WIN" : Number(row.result_r) < 0 ? "LOSS" : "BREAKEVEN";
+    while (closedCursor < byClose.length && Date.parse(byClose[closedCursor].closed_at!) < Date.parse(timestamp)) {
+      priorClosed = byClose[closedCursor++];
+    }
+    if (priorClosed) priorOutcomeById.set(row.id,
+      Number(priorClosed.result_r) > 0 ? "WIN" : Number(priorClosed.result_r) < 0 ? "LOSS" : "BREAKEVEN");
   }
   addDimension(
     "direction",
@@ -344,7 +373,7 @@ export function buildTraderLearning(
     activeDays,
     mostCheckedInstrument: mostFrequent(ownDecisions.map((row) => row.instrument)),
     mostUsedTimeframe: mostFrequent(ownDecisions.map((row) => row.timeframe)),
-    ...buildBehaviorProfile(valid, chronological, timezone, now),
+    ...buildBehaviorProfile(valid, [...valid].sort((a, b) => Date.parse(a.closed_at!) - Date.parse(b.closed_at!)), timezone, now),
   };
   const recommendations = buildRecommendations(valid, dimensions);
   return {
@@ -358,6 +387,12 @@ export function buildTraderLearning(
     dimensions,
     recommendations,
     behavior,
+    outcomes: valid.map(row => ({ id: row.id, openedAt: row.opened_at ?? null, closedAt: row.closed_at!, resultR: Number(row.result_r) })),
+    quality: { validRecords: valid.length, invalidRecords: ownTrades.length - valid.length,
+      missingRisk: valid.filter(row => positiveRisk(row.risk_percent) === null).length,
+      missingEntryTime: valid.filter(row => !row.opened_at).length,
+      unknownAdherence: valid.filter(row => typeof row.taken_against_verdict !== "boolean").length,
+      brokerVerified: false },
     generatedAt: now.toISOString(),
   };
 }
@@ -370,7 +405,7 @@ function buildBehaviorProfile(
 ): Pick<LearningBehavior,
   "currentLossStreak" | "currentWinStreak" | "maximumLossStreak" | "tradesToday" |
   "followedVerdictTrades" | "overrideTrades" | "adherenceRate" |
-  "averageRiskPercent" | "recentRiskPercent" | "riskDriftPercent"> {
+  "averageRiskPercent" | "recentRiskPercent" | "riskDriftPercent" | "knownAdherenceTrades" | "riskSampleSize"> {
   let maximumLossStreak = 0;
   let runningLosses = 0;
   for (const row of chronological) {
@@ -390,9 +425,10 @@ function buildBehaviorProfile(
     else break;
   }
   const overrideTrades = valid.filter((row) => row.taken_against_verdict === true).length;
-  const followedVerdictTrades = valid.length - overrideTrades;
-  const risks = valid.map((row) => Number(row.risk_percent)).filter(Number.isFinite);
-  const recentRisks = chronological.slice(-5).map((row) => Number(row.risk_percent)).filter(Number.isFinite);
+  const followedVerdictTrades = valid.filter(row => row.taken_against_verdict === false).length;
+  const knownAdherenceTrades = followedVerdictTrades + overrideTrades;
+  const risks = valid.map((row) => positiveRisk(row.risk_percent)).filter((value): value is number => value !== null);
+  const recentRisks = chronological.slice(-5).map((row) => positiveRisk(row.risk_percent)).filter((value): value is number => value !== null);
   const mean = (values: number[]) => values.length
     ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000
     : null;
@@ -408,13 +444,21 @@ function buildBehaviorProfile(
     }).length,
     followedVerdictTrades,
     overrideTrades,
-    adherenceRate: valid.length ? Math.round((followedVerdictTrades / valid.length) * 1000) / 10 : null,
+    knownAdherenceTrades,
+    riskSampleSize: risks.length,
+    adherenceRate: knownAdherenceTrades ? Math.round((followedVerdictTrades / knownAdherenceTrades) * 1000) / 10 : null,
     averageRiskPercent,
     recentRiskPercent,
     riskDriftPercent: averageRiskPercent != null && recentRiskPercent != null
       ? Math.round((recentRiskPercent - averageRiskPercent) * 1000) / 1000
       : null,
   };
+}
+
+function positiveRisk(value: LearningTrade["risk_percent"]): number | null {
+  if (value == null || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 && number <= 100 ? number : null;
 }
 
 function validTimezone(value?: string) {
@@ -469,7 +513,7 @@ function buildRecommendations(
   const recommendations: LearningRecommendation[] = [];
   const ranked = (dimension: LearningDimension["dimension"]) =>
     dimensions
-      .filter((item) => item.dimension === dimension && item.trades >= 5)
+      .filter((item) => item.dimension === dimension && item.trades >= 5 && item.evidence?.status !== "STALE" && item.evidence?.status !== "CONFLICTING")
       .sort((a, b) => a.averageR - b.averageR);
   for (const dimension of ["hour", "weekday", "strategy", "instrument", "trade_number", "after_outcome", "direction", "setup"] as const) {
     const rows = ranked(dimension);
@@ -478,7 +522,7 @@ function buildRecommendations(
     if (worst && worst.averageR < 0)
       recommendations.push({
         id: `review:${dimension}:${worst.key}`,
-        priority: worst.averageR <= -0.5 ? "HIGH" : "MEDIUM",
+        priority: worst.evidence?.status === "REPEATED" && worst.averageR <= -0.5 ? "HIGH" : "MEDIUM",
         title: `Review ${worst.label}`,
         detail: `${worst.trades} recorded trades average ${worst.averageR}R. Review the journal evidence before trading this ${dimension} again; the sample describes history and does not prove causation.`,
         evidenceIds: worst.evidenceIds,
@@ -487,8 +531,8 @@ function buildRecommendations(
       recommendations.push({
         id: `protect:${dimension}:${best.key}`,
         priority: "MEDIUM",
-        title: `Protect what works in ${best.label}`,
-        detail: `${best.trades} recorded trades average +${best.averageR}R. Compare its rule adherence with weaker samples before proposing any strategy change.`,
+        title: `Review the positive observation in ${best.label}`,
+        detail: `${best.trades} recorded trades average +${best.averageR}R. ${best.evidence?.status === "REPEATED" ? "The direction repeats across two time-ordered samples; this does not establish an edge." : "Early observation; collect later evidence before adapting."} Compare its rule adherence with weaker samples before proposing any strategy change.`,
         evidenceIds: best.evidenceIds,
       });
   }
@@ -501,6 +545,9 @@ function buildRecommendations(
   if (
     followed &&
     overridden &&
+    followed.trades >= 5 && overridden.trades >= 5 &&
+    followed.evidence?.status !== "STALE" && overridden.evidence?.status !== "STALE" &&
+    followed.evidence?.status !== "CONFLICTING" && overridden.evidence?.status !== "CONFLICTING" &&
     overridden.averageR + 0.25 < followed.averageR
   )
     recommendations.unshift({
