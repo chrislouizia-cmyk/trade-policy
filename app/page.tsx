@@ -23,7 +23,7 @@ export default async function LandingPage() {
   const accountHref=hasSessionHint?'/dashboard':'/client/login';
   const signupHref=hasSessionHint?'/dashboard':'/client/login?mode=signup&next=/onboarding';
 
-  return <main className={styles.page}>
+  return <main className={`${styles.page} public-landing`}>
     <nav className={styles.nav} aria-label={c.navigation}>
       <Link className={styles.brand} href="/" aria-label="Trade Police"><Image src="/brand/trade-police-logo.png" alt="Trade Police" width={232} height={48} priority /></Link>
       <div className={styles.navLinks}><a href="#system">{c.system}</a><a href="#workflow">{c.workflow}</a><a href="#trust">{c.trust}</a><Link href="/faq">FAQ</Link><Link href="/pricing">{c.pricing}</Link></div>

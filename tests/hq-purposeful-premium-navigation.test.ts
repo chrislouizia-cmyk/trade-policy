@@ -15,10 +15,10 @@ test('HQ navigation is permission-scoped and grouped into compact disclosures',(
 
 test('HQ navigation keeps one disclosure open and dismisses it predictably',()=>{
   const nav=read('components/hq/HQNav.tsx');
-  assert.match(nav,/const \[openGroup,setOpenGroup\]=useState<string\|null>\(null\)/);
+  assert.match(nav,/openGroup\.path===pathname/);
   assert.match(nav,/document\.addEventListener\('pointerdown',closeFromOutside\)/);
   assert.match(nav,/event\.key==='Escape'/);
-  assert.match(nav,/setOpenGroup\(expanded\?null:group\.label\)/);
+  assert.match(nav,/setOpenGroup\(expanded\?null:\{label:group\.label,path:pathname\}\)/);
   assert.doesNotMatch(nav,/open=\{active \|\| undefined\}/);
 });
 

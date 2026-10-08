@@ -8,6 +8,7 @@ import './hq-brand.css';
 import './adaptive-experience.css';
 import './trader-companion.css';
 import './police-intelligence.css';
+import './ui-refinements.css';
 import TraderIntelligenceTracker from '@/components/TraderIntelligenceTracker';
 import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';

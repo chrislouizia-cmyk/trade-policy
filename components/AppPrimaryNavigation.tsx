@@ -15,6 +15,7 @@ const navigationItems = [
 ] as const;
 
 function isRouteActive(pathname: string, href: string) {
+  if (href === '/profile' && pathname.startsWith('/strategies/')) return true;
   if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
