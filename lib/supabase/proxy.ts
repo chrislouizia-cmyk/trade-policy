@@ -1,52 +1,269 @@
 import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import {
+  NextResponse,
+  type NextRequest,
+} from 'next/server';
 
-function redirectWithNext(request: NextRequest, pathname: string) {
-  const url = request.nextUrl.clone();
-  const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  url.pathname = pathname;
-  url.search = '';
-  url.searchParams.set('next', requestedPath);
-  return NextResponse.redirect(url);
+import {
+  getHQEntryDestination,
+  getHostnameRoutingDecision,
+  isHQEntryPath,
+} from '@/lib/hostname-routing';
+import { getCanonicalAppUrls } from '@/lib/app-urls';
+import { getSafeClientNextPath } from '@/lib/auth/safe-next';
+import {
+  isSupabaseAuthRateLimitError,
+  shouldAttemptSupabaseCookieRecovery,
+} from '@/lib/supabase/auth-cookies';
+
+function redirectToOrigin(request: NextRequest, origin: string) {
+  const destination = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin);
+  return NextResponse.redirect(destination);
 }
 
-export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+function redirectToLogin(request: NextRequest, origin: string, pathname: string) {
+  const guardPath = pathname === '/login' || pathname === '/client/login' || pathname === '/auth/recover' ? '/client/login' : pathname;
+  const destination = new URL(guardPath, origin);
+  const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  const safeNext = getSafeClientNextPath(requestedPath, guardPath, '/dashboard');
+  destination.searchParams.set('next', safeNext === '/dashboard' || safeNext === guardPath ? '/dashboard' : safeNext);
+  return NextResponse.redirect(destination);
+}
+
+function isMissingSession(error: { name?: string; code?: string }) {
+  return error.name === 'AuthSessionMissingError' || error.code === 'session_not_found';
+}
+
+function unavailable(
+  request: NextRequest,
+  isPublic: boolean,
+) {
+  if (isPublic) {
+    return NextResponse.next({
+      request,
+    });
+  }
+
+  return NextResponse.json(
+    {
+      error: 'SERVICE_UNAVAILABLE',
+      message:
+        'Authentication is temporarily unavailable. Please try again shortly.',
+    },
+    {
+      status: 503,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+}
+
+export async function updateSession(
+  request: NextRequest,
+) {
+  const pathname = request.nextUrl.pathname;
+  const host = request.headers.get('host');
+
+  const routingDecision =
+    getHostnameRoutingDecision(host, pathname);
+  const canonicalUrls = getCanonicalAppUrls();
+
+  const publicPaths = new Set([
+    '/',
+    '/login',
+    '/access',
+    '/about',
+    '/faq',
+    '/pricing',
+    '/legal',
+    '/client/login',
+    '/auth/recover',
+    '/hq/login',
+    '/forgot-password',
+    '/reset-password',
+    // This JSON endpoint performs its own mandatory authentication and origin checks.
+    '/api/trader-companion',
+    '/api/trader-intelligence',
+  ]);
+
+  const isPublic =
+    publicPaths.has(pathname) ||
+    pathname.startsWith('/auth/');
+
+  let response = NextResponse.next({
+    request,
+  });
+
+  const authCookieNames = request.cookies.getAll().map((cookie) => cookie.name).filter((name) => /^(sb-|sb_)/.test(name));
+
+  if (routingDecision.redirectTarget === 'portal') {
+    return redirectToOrigin(request, canonicalUrls.portal);
+  }
+
+  if (routingDecision.redirectTarget === 'hq') {
+    return redirectToOrigin(request, canonicalUrls.hq);
+  }
+
+  // Public visitors without a Supabase session cannot become authenticated by
+  // a remote probe. Avoiding that round trip keeps landing → auth navigation
+  // immediate while every request carrying a session cookie is still verified.
+  if(authCookieNames.length===0&&isPublic){
+    if(routingDecision.mode==='hq'&&isHQEntryPath(pathname)){
+      const destination=getHQEntryDestination({pathname,authenticated:false,pendingInvitation:false,workspaceRoute:null,accessError:request.nextUrl.searchParams.get('error')==='access'});
+      if(destination)return NextResponse.redirect(new URL(destination,canonicalUrls.hq));
+    }
+    return response;
+  }
+
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  const supabaseAnonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error(
+      '[auth] Missing Supabase environment variables',
+    );
+
+    return unavailable(request, isPublic);
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
-        getAll: () => request.cookies.getAll(),
+        getAll() {
+          return request.cookies.getAll();
+        },
+
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          cookiesToSet.forEach(
+            ({ name, value }) => {
+              request.cookies.set(name, value);
+            },
+          );
+
+          response = NextResponse.next({
+            request,
+          });
+
+          cookiesToSet.forEach(
+            ({
+              name,
+              value,
+              options,
+            }) => {
+              response.cookies.set(
+                name,
+                value,
+                options,
+              );
+            },
+          );
         },
       },
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const pathname = request.nextUrl.pathname;
+  let user = null;
+  let authError: { name?: string; code?: string; status?: number; message?: string } | null = null;
 
-  const publicPaths = new Set([
-    '/access',
-    '/client/login',
-    '/hq/login',
-    '/forgot-password',
-    '/reset-password',
-  ]);
-  const isPublic = publicPaths.has(pathname) || pathname.startsWith('/auth/');
+  try {
+    const {
+      data,
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      authError = error;
+      if (!isMissingSession(error)) {
+        console.error('[auth] Session verification failed', {
+          name: error.name,
+          code: error.code,
+          status: error.status,
+        });
+      }
+
+      user = null;
+    } else {
+      user = data.user;
+    }
+  } catch (error) {
+    authError = error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+    } : { name: 'UnknownAuthError', message: 'Unknown auth error' };
+    console.error('[auth] Session verification threw', {
+      name: authError.name,
+      code: authError.code,
+      status: authError.status,
+    });
+
+    user = null;
+  }
+
+  const recoveredParam = request.nextUrl.searchParams.get('recovered') === '1';
+  const authStateCategory = user ? 'valid' : isSupabaseAuthRateLimitError(authError) ? 'rate_limited' : shouldAttemptSupabaseCookieRecovery({ user, authError, cookieNames: authCookieNames, recovered: recoveredParam }) ? 'stale' : 'missing';
+
+  console.info('[AUTH_ROUTE_DIAGNOSTIC]', {
+    pathname,
+    redirectDestination: !user && !isPublic ? (pathname.startsWith('/hq') || pathname.startsWith('/admin') || pathname.startsWith('/staff') || pathname.startsWith('/api/hq') ? '/hq/login' : '/client/login') : null,
+    recovered: recoveredParam,
+    authStateCategory,
+    hasMatchingSupabaseAuthCookies: authCookieNames.length > 0,
+  });
+
+  if (routingDecision.mode === 'hq' && isHQEntryPath(pathname)) {
+    let pendingInvitation = false;
+    let workspaceRoute: string | null = null;
+    if (user) {
+      const [{data:invitation},{data:route}] = await Promise.all([
+        supabase.rpc('current_staff_invitation_onboarding_v1'),
+        supabase.rpc('staff_workspace_route'),
+      ]);
+      pendingInvitation = Boolean(invitation);
+      workspaceRoute = typeof route === 'string' ? route : null;
+    }
+    const destination = getHQEntryDestination({
+      pathname,
+      authenticated: Boolean(user),
+      pendingInvitation,
+      workspaceRoute,
+      accessError: request.nextUrl.searchParams.get('error') === 'access',
+    });
+    if (destination) return NextResponse.redirect(new URL(destination, canonicalUrls.hq));
+  }
 
   if (!user && !isPublic) {
-    return redirectWithNext(request, pathname.startsWith('/hq') || pathname.startsWith('/admin') || pathname.startsWith('/staff') ? '/hq/login' : '/client/login');
+    const isStaffPath =
+      pathname.startsWith('/hq') ||
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/staff') ||
+      pathname.startsWith('/api/hq');
+
+    return redirectToLogin(
+      request,
+      isStaffPath ? canonicalUrls.hq : canonicalUrls.portal,
+      isStaffPath ? '/hq/login' : '/client/login',
+    );
   }
 
   if (user && pathname === '/login') {
     const url = request.nextUrl.clone();
+
     url.pathname = '/client/login';
+    url.search = '';
+    url.searchParams.set('next', '/dashboard');
+
     return NextResponse.redirect(url);
+  }
+
+  if (!isPublic) {
+    response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
   }
 
   return response;

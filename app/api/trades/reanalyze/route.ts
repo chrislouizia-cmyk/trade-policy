@@ -1,15 +1,21 @@
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {createClient} from '@/lib/supabase/server';
-import {fetchPrice,fetchSeries} from '@/lib/market-data';
+import {fetchPriceWithTelemetry,fetchSeriesWithTelemetry} from '@/lib/market-data';
 import {buildLiveAnalysis} from '@/lib/market-analysis';
 import {normalizeStrategyPolicy,StrategyConfigurationError} from '@/lib/strategy-policy';
 import {validateTradeWithStrategy} from '@/lib/server/decision-engine';
 import {loadDailyTradeContext} from '@/lib/server/daily-trade-context';
+import {strategyTimeframes} from '@/lib/strategy-timeframes';
 import type {EvidenceKey,StrategyProfile,TradeInput} from '@/types/trade';
+import {withTwelveDataCredits,ProviderCreditLimitError,ProviderRequestReplayError} from '@/lib/server/provider-credit-coordinator';
+import {applyTradingDnaRuntime} from '@/lib/trading-dna/runtime';
+import {buildTraderInterventions} from '@/lib/trader-intelligence';
+import {loadTraderLearningSnapshot,recordTraderInterventions} from '@/lib/server/trader-intelligence-state';
+import {recordTraderIntelligenceEvent} from '@/lib/server/trader-intelligence-events';
 
 export const runtime='nodejs';export const maxDuration=60;
-const requestSchema=z.object({tradeId:z.string().uuid()});
+const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
 type GuidanceStatus='HOLD'|'PROTECT'|'EXIT'|'INVALIDATED';
 
 function failure(error:string,code:string,status:number,details?:Record<string,unknown>){return NextResponse.json({error,code,details},{status});}
@@ -19,8 +25,11 @@ export async function POST(request:Request){
   try{
     const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();
     if(!user)return failure('Authentication is required.','UNAUTHORIZED',401);
+    const idempotencyKey=request.headers.get('idempotency-key');
+    if(!idempotencyKey||idempotencyKey.length>100)return failure('A valid market-data request key is required.','IDEMPOTENCY_KEY_REQUIRED',400);
     const parsed=requestSchema.safeParse(await request.json());
     if(!parsed.success)return failure('A valid active trade ID is required.','INVALID_TRADE_ID',400);
+    const learningSnapshotPromise=loadTraderLearningSnapshot(user.id);
     const {data:trade,error:tradeError}=await supabase.from('active_trades').select('*').eq('id',parsed.data.tradeId).eq('user_id',user.id).eq('status','OPEN').maybeSingle();
     if(tradeError)throw tradeError;if(!trade)return failure('Active trade not found.','ACTIVE_TRADE_NOT_FOUND',404,{tradeId:parsed.data.tradeId});
     const entry=finite(trade.entry),stopLoss=finite(trade.stop_loss),takeProfit=finite(trade.take_profit),riskPercent=finite(trade.risk_percent);
@@ -32,20 +41,23 @@ export async function POST(request:Request){
     const strategy:StrategyProfile=snapshot as StrategyProfile;
     const policy=normalizeStrategyPolicy(strategy);
     if(!policy.instruments.includes(trade.instrument))return failure(`${trade.instrument} is not enabled in the active strategy.`,'UNSUPPORTED_INSTRUMENT',400,{instrument:trade.instrument});
-    const timeframes=[policy.timeframes.trend,policy.timeframes.confirmation,policy.timeframes.entry];
-    let values;
-    try{values=await Promise.all(timeframes.map(timeframe=>fetchSeries(trade.instrument,timeframe)));}catch(error){return failure(error instanceof Error?error.message:'Twelve Data could not return configured candles.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
+    const timeframes=strategyTimeframes(strategy);
+    let values,currentPrice:number;
+    try{const result=await withTwelveDataCredits({requestKey:`reanalyze:${user.id}:${trade.id}:${idempotencyKey}`,operation:'active-trade.reanalysis',priority:'LIVE',credits:timeframes.length+1},async()=>{const series=await Promise.all(timeframes.map(timeframe=>fetchSeriesWithTelemetry(trade.instrument,timeframe)));const price=await fetchPriceWithTelemetry(trade.instrument);const telemetry=[...series.map(item=>item.telemetry),price.telemetry];return{value:{values:series.map(item=>item.value),currentPrice:price.value},telemetry:{creditsUsed:telemetry.at(-1)?.creditsUsed??null,creditsLeft:telemetry.at(-1)?.creditsLeft??null,requestCredits:telemetry.reduce((sum,item)=>sum+(item.requestCredits??1),0),observedAt:new Date().toISOString()}};});values=result.values;currentPrice=result.currentPrice;}catch(error){if(error instanceof ProviderRequestReplayError)return failure(error.message,error.code,409);if(error instanceof ProviderCreditLimitError)return failure(error.message,'MARKET_DATA_CREDIT_WINDOW',429,{retryAfterSeconds:error.reservation.retryAfterSeconds,dailyResetsAt:error.reservation.dailyResetsAt});return failure(error instanceof Error?error.message:'Twelve Data could not return configured market data.','MARKET_DATA_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument,timeframes});}
     if(values.some(candles=>candles.length<25))return failure('Twelve Data returned insufficient candles for deterministic analysis.','INSUFFICIENT_MARKET_DATA',422,{instrument:trade.instrument,timeframes});
-    let currentPrice:number;try{currentPrice=await fetchPrice(trade.instrument);}catch(error){return failure(error instanceof Error?error.message:'Current price is unavailable.','CURRENT_PRICE_UNAVAILABLE',503,{provider:'Twelve Data',instrument:trade.instrument});}
     const analysis=buildLiveAnalysis(trade.instrument,strategy,Object.fromEntries(timeframes.map((timeframe,index)=>[timeframe,values[index]])),'Twelve Data');
     const {data:record}=trade.trade_record_id?await supabase.from('trade_records').select('session,rule_snapshot').eq('id',trade.trade_record_id).eq('user_id',user.id).maybeSingle():{data:null};
-    const session=record?.session;const newsValue=snapshot.tradeContext?.highImpactNews??record?.rule_snapshot?.highImpactNews;
+    const snapshotSession=typeof snapshot.tradeContext?.session==='string'?snapshot.tradeContext.session:null;
+    const requestedSession=parsed.data.session??null;
+    const session=record?.session??snapshotSession??requestedSession;const newsValue=snapshot.tradeContext?.highImpactNews??record?.rule_snapshot?.highImpactNews;
     const newsUnknown=typeof newsValue!=='boolean';
-    if(!session)return failure('The original trade session is missing.','MISSING_TRADE_SESSION',422);
+    if(!session)return failure('Select the original trade session to repair this legacy trade.','MISSING_TRADE_SESSION',422,{allowedSessions:policy.allowedSessions});
+    if(!policy.allowedSessions.includes(session))return failure('The original trade session is not enabled in the stored strategy.','INVALID_TRADE_SESSION',422,{session,allowedSessions:policy.allowedSessions});
     const evidence=Object.fromEntries((Object.entries(analysis.evidence) as [EvidenceKey,{value:boolean}][]).map(([key,value])=>[key,value.value]));
     const validationInput={instrument:trade.instrument,direction:trade.direction,entry:entry!,stopLoss:stopLoss!,takeProfit:takeProfit!,accountBalance:finite(trade.balance_at_entry)??1,riskPercent:riskPercent!,tradesToday:0,session,highImpactNews:Boolean(newsValue),...evidence,setupType:analysis.setupType,setupConfidence:analysis.liveAnalysisConfidence} as TradeInput;
     const dailyContext=await loadDailyTradeContext({supabase,userId:user.id,strategy,instrument:trade.instrument,accountId:trade.account_id,timezone:'UTC'});
-    const validation=validateTradeWithStrategy(validationInput,strategy,dailyContext);
+    const baseValidation=validateTradeWithStrategy(validationInput,strategy,dailyContext);
+    const validation=applyTradingDnaRuntime(baseValidation,analysis.tradingDnaReport);
     const riskDistance=Math.abs(entry!-stopLoss!);const currentR=riskDistance?((trade.direction==='BUY'?currentPrice-entry!:entry!-currentPrice)/riskDistance):0;
     const invalidated=trade.direction==='BUY'?currentPrice<=stopLoss!:currentPrice>=stopLoss!;const targetHit=trade.direction==='BUY'?currentPrice>=takeProfit!:currentPrice<=takeProfit!;const aligned=analysis.suggestedDirection===trade.direction;
     let status:GuidanceStatus='HOLD',nextAction='Keep the original plan and do not widen risk.';
@@ -56,9 +68,15 @@ export async function POST(request:Request){
     const reasons=[...validation.vetoes,...validation.observations,...analysis.warnings];
     if(newsUnknown)reasons.unshift('Original news-state snapshot unavailable. News protection could not be verified for this legacy trade.');
     if(!reasons.length)reasons.push('The current market structure remains compatible with the stored trade strategy.');
-    const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict};
+    const personalInterventions=buildTraderInterventions(await learningSnapshotPromise,{stage:'ACTIVE_TRADE',at:new Date(),instrument:trade.instrument,session,strategyId:strategy.id,strategyName:strategy.name,takenAgainstVerdict:trade.taken_against_verdict===true,direction:trade.direction,setupType:trade.setup_type,riskPercent:riskPercent!});
+    const guidance={status,confidence:analysis.liveAnalysisConfidence,currentPrice,reasons:[...new Set(reasons)],nextAction,generatedAt:new Date().toISOString(),strategy:{id:strategy.id,name:strategy.name},setupType:analysis.setupType,waitingFor:[...analysis.breakdown.mandatoryMissing,...analysis.breakdown.contradicted],validationVerdict:validation.verdict,personalIntelligence:{authoritative:false,controlsVerdict:false,interventions:personalInterventions}};
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{stage:'ACTIVE_TRADE',tradeId:trade.id,instrument:trade.instrument,strategyId:strategy.id,generatedAt:guidance.generatedAt});
+    guidance.personalIntelligence.interventions=storedInterventions;
     const {error:eventError}=await supabase.from('active_trade_events').insert({user_id:user.id,trade_id:trade.id,event_type:'REANALYSIS',verdict:status,current_price:currentPrice,current_r:currentR,analysis:guidance});if(eventError)throw eventError;
-    const {error:updateError}=await supabase.from('active_trades').update({current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
+    if(!record?.session&&trade.trade_record_id){const {error:sessionRepairError}=await supabase.from('trade_records').update({session,updated_at:guidance.generatedAt}).eq('id',trade.trade_record_id).eq('user_id',user.id);if(sessionRepairError)throw sessionRepairError;}
+    const repairedSnapshot=snapshotSession?snapshot:{...snapshot,tradeContext:{...(snapshot.tradeContext??{}),session}};
+    const {error:updateError}=await supabase.from('active_trades').update({strategy_snapshot:repairedSnapshot,current_price:currentPrice,current_r:currentR,mfe_r:Math.max(Number(trade.mfe_r??0),currentR),mae_r:Math.min(Number(trade.mae_r??0),currentR),last_verdict:status,last_verdict_reason:nextAction,last_analysis:guidance,last_analyzed_at:guidance.generatedAt,updated_at:guidance.generatedAt}).eq('id',trade.id).eq('user_id',user.id);if(updateError)throw updateError;
+    await recordTraderIntelligenceEvent({userId:user.id,eventType:'TRADE_REANALYZED',route:'/api/trades/reanalyze',dedupeKey:`${trade.id}:${guidance.generatedAt}`,context:{tradeId:trade.id,strategyId:strategy.id,instrument:trade.instrument,direction:trade.direction,session,setupType:trade.setup_type,riskPercent:riskPercent!,currentR,verdict:status}});
     return NextResponse.json({guidance},{headers:{'Cache-Control':'no-store'}});
   }catch(error){
     if(error instanceof StrategyConfigurationError)return failure(error.message,'STRATEGY_CONFIGURATION_ERROR',409,{missingFields:error.missingFields});

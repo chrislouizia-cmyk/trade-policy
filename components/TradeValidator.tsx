@@ -1,24 +1,39 @@
 'use client';
 
+import { publishCompanionContext } from '@/lib/companion-events';
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import LiveMarketPanel from '@/components/LiveMarketPanel';
 import DecisionHero from '@/components/decision/DecisionHero';
+import PersonalIntelligenceNotice, { type PersonalIntelligencePayload } from '@/components/PersonalIntelligenceNotice';
+import DecisionReport from '@/components/decision/DecisionReport';
 import MethodologyAudit from '@/components/MethodologyAudit';
 import ContextualAnalysisFeedback from '@/components/ContextualAnalysisFeedback';
 import ManualConfirmationDrawer from '@/components/ManualConfirmationDrawer';
 import TradingDnaEvidenceReportView from '@/components/TradingDnaEvidenceReport';
-import SetupReadiness from '@/components/SetupReadiness';
+import PlaybookEvaluation from '@/components/PlaybookEvaluation';
+import MarketContextStrip from '@/components/MarketContextStrip';
+import AutomaticAnalysisEvidence from '@/components/AutomaticAnalysisEvidence';
 import { getAiDockStatus, getReadinessInterpretation } from '@/lib/decision-hero';
+import { getDecisionWorkspaceLayoutState } from '@/lib/decision-workspace-layout';
 import { EVIDENCE_LABELS } from '@/lib/ai-commentary';
-import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
+import type { ChartAnalysis, EvidenceAssessment, EvidenceKey, Instrument, ManualConfirmation, ManualConfirmationState, PostTradeAnalysis, StrategyProfile, TradeOutcome, TradeResult } from '@/types/trade';
 import type { DecisionNarrative } from '@/types/intelligence';
 import type { TradingDnaEvidenceReport } from '@/lib/trading-dna/runtime';
 import {strategyTimeframeLayers} from '@/lib/strategy-timeframes';
-import {apiErrorMessage} from '@/lib/api-error';
+import {apiErrorMessage,readApiResponse,redirectExpiredSession} from '@/lib/api-error';
 import {trackBetaEvent} from '@/lib/beta-intelligence';
 import { confirmationList, initialManualConfirmations, ruleLabel } from '@/lib/manual-confirmations';
-
+import {buildDecisionExplanation} from '@/lib/intelligence/decision-explanation';
+import type { TradeAuthorizationEligibility } from '@/lib/trade-authorization';
+import { resolveTradeActivationUiState } from '@/lib/trade-activation-ui';
+import { getSafeTradeActivationError } from '@/lib/trade-action-errors';
+import { activePositionOverlayFromTrade, activatePositionOverlay, assessPositionGeometry, positionOverlayProvenance, proposedPositionFromCandidate, updateProposedGeometry, type PositionGeometry, type PositionOverlayModel } from '@/lib/position-geometry';
+import { formatTradeActivityDateTime, latestTradeActivity } from '@/lib/trade-activity';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import {workspaceText} from '@/lib/i18n/workspace-copy';
+import {deriveValidateExperienceState} from '@/lib/validate-experience-state';
 const checks: [EvidenceKey | 'highImpactNews', string][] = [
   ['h4TrendAligned','Trend timeframe aligned'], ['h1TrendAligned','Confirmation aligned with trend'],
   ['structurePattern','HH/HL or LH/LL structure'], ['liquiditySweep','Liquidity sweep'],
@@ -29,7 +44,8 @@ const checks: [EvidenceKey | 'highImpactNews', string][] = [
 const evidenceKeys = checks.slice(0,9).map(c => c[0]) as EvidenceKey[];
 
 type TradingAccount = { id:string; name:string; currency:string; currentBalance:number; isActive:boolean };
-type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport };
+type ValidationResult = TradeResult & { decisionNarrative?: DecisionNarrative; evidenceReport?:TradingDnaEvidenceReport; reportSourceId?:string; reportSourceExpiresAt?:string; authorizationEligibility?: TradeAuthorizationEligibility; personalIntelligence?:PersonalIntelligencePayload };
+type ReportSaveState={status:'idle'|'saving'|'saved'|'error';message?:string;reportId?:string;reportUrl?:string;savedAt?:string};
 
 type SavedSetup = {
   id:string; createdAt:string; source:'SUGGESTED'|'EXECUTED'; instrument:string; direction:string; setupType:string;
@@ -52,13 +68,50 @@ function ReasoningSection({ label, value, tone = 'neutral', support, children }:
   return <ReasoningCard title={label} value={value} description={support} tone={tone}>{children}</ReasoningCard>;
 }
 
+function applyDefaultTradeFormValues(
+  form: HTMLFormElement | null,
+  {
+    analysis,
+    selectedAccount,
+    accountId,
+    strategy,
+    selectedInstrument,
+  }: {
+    analysis: ChartAnalysis | null;
+    selectedAccount: TradingAccount | null;
+    accountId: string;
+    strategy: StrategyProfile;
+    selectedInstrument: Instrument;
+  },
+) {
+  if (!form) return;
+  const setValue = (name: string, value: string | number | null | undefined) => {
+    const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+    if (!field) return;
+    const nextValue = value == null || value === '' ? '' : String(value);
+    if (field.value === nextValue) return;
+    field.value = nextValue;
+  };
 
-export default function TradeValidator({userId,displayName,initialStrategy}:{userId:string;displayName:string;initialStrategy:StrategyProfile}) {
+  const existingBalance = (form.elements.namedItem('accountBalance') as HTMLInputElement | null)?.value;
+  const existingRisk = (form.elements.namedItem('riskPercent') as HTMLInputElement | null)?.value;
+  const existingTradesToday = (form.elements.namedItem('tradesToday') as HTMLInputElement | null)?.value;
+
+  setValue('analysisId', analysis?.analysisId ?? '');
+  setValue('accountBalance', selectedAccount?.currentBalance ?? (existingBalance ? Number(existingBalance) : accountId ? 0 : 0));
+  setValue('riskPercent', existingRisk ? Number(existingRisk) : (strategy.maximumRiskPercent ?? 0.5));
+  setValue('tradesToday', existingTradesToday ? Number(existingTradesToday) : 0);
+  setValue('session', strategy.allowedSessions[0] ?? 'LONDON');
+}
+
+export default function TradeValidator({userId,displayName,experienceLevel,initialStrategy,initialStrategyRevisionId,initialSelectionMode}:{userId:string;displayName:string;experienceLevel:string|null;initialStrategy:StrategyProfile;initialStrategyRevisionId:string;initialSelectionMode:'ACTIVE'|'REQUESTED'}) {
+  const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
   const [result,setResult]=useState<ValidationResult|null>(null);
   const [analysis,setAnalysis]=useState<ChartAnalysis|null>(null);
   const [loading,setLoading]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
   const [savingTrade,setSavingTrade]=useState(false);
+  const [reportSave,setReportSave]=useState<ReportSaveState>({status:'idle'});
   const [error,setError]=useState('');
   const [autoChecks,setAutoChecks]=useState<Record<string,boolean>>({});
   const [manualEvidence,setManualEvidence]=useState<Record<string,ManualConfirmationState>>(()=>initialManualConfirmations(initialStrategy.rules??[]));
@@ -68,34 +121,112 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const [reviewAcknowledged,setReviewAcknowledged]=useState(false);
   const [showReasoning,setShowReasoning]=useState(false);
   const [overrideConfirmation,setOverrideConfirmation]=useState('');
+  const [tradeActionMode,setTradeActionMode]=useState<'SELECT'|'ACTIVATE'|'OVERRIDE'|'MISSED'|null>(null);
+  const [tradeActionContext,setTradeActionContext]=useState<{againstVerdict:boolean;reason:string|null;confirmed:boolean}>({againstVerdict:false,reason:null,confirmed:false});
+  const [tradeActionError,setTradeActionError]=useState('');
   const [candidateApplied,setCandidateApplied]=useState('');
+  const [activationSuccess,setActivationSuccess]=useState<string| null>(null);
   const [strategy,setStrategy]=useState<StrategyProfile>(initialStrategy);
+  const [activeStrategyRevisionId,setActiveStrategyRevisionId]=useState<string|null>(initialStrategyRevisionId);
+  const [strategySelectionMode,setStrategySelectionMode]=useState<'ACTIVE'|'REQUESTED'>(initialSelectionMode);
+  const [strategyApplying,setStrategyApplying]=useState(false);
+  const [selectedInstrument,setSelectedInstrument]=useState<Instrument>(initialStrategy.instruments[0] || 'XAUUSD');
+  const [positionOverlay,setPositionOverlay]=useState<PositionOverlayModel|null>(null);
+  const [persistedActiveOverlays,setPersistedActiveOverlays]=useState<PositionOverlayModel[]>([]);
   const [accounts,setAccounts]=useState<TradingAccount[]>([]);
   const [accountId,setAccountId]=useState('');
   const [typedMessage,setTypedMessage]=useState('');
   const [sessionHistory,setSessionHistory]=useState<{time:string;headline:string;detail:string}[]>([]);
   const [lastAnalysisInput,setLastAnalysisInput]=useState<Record<string,unknown>|null>(null);
   const [feedbackAnalysisId,setFeedbackAnalysisId]=useState<string|null>(null);
+  useEffect(()=>{publishCompanionContext({context:{...(strategy.id?{strategyId:strategy.id}:{}),...(feedbackAnalysisId?{analysisId:feedbackAnalysisId}:{}),...(result?.reportSourceId?{decisionSourceId:result.reportSourceId}:{})},reason:result?.reportSourceId?'DECISION':feedbackAnalysisId?'ANALYSIS':'CHANGE',instrument:selectedInstrument});},[strategy.id,feedbackAnalysisId,result?.reportSourceId,selectedInstrument]);
+
   const reasoningButtonRef=useRef<HTMLButtonElement>(null);
   const reasoningCloseRef=useRef<HTMLButtonElement>(null);
+  const tradeActionModalRef=useRef<HTMLElement>(null);
+  const tradeActionCloseRef=useRef<HTMLButtonElement>(null);
+  const tradeActionReasonRef=useRef<HTMLTextAreaElement>(null);
+  const tradeSubmissionRef=useRef(false);
   const analysisAttemptActive=useRef(false);
+  const reportSaveStatusRef=useRef<HTMLDivElement>(null);
+  const reportIdempotencyRef=useRef<string>('');
 
-  useEffect(()=>{ void loadHistory(); void loadStrategy(); void loadAccounts(); },[userId]);
+  useEffect(()=>{ void loadAccounts(); },[userId]);
+  useEffect(()=>{
+    const refreshTradeState=()=>{void loadHistory();void loadActiveTradeOverlays();};
+    const refreshVisibleTradeState=()=>{if(document.visibilityState==='visible')refreshTradeState();};
+    refreshTradeState();
+    window.addEventListener('pageshow',refreshTradeState);
+    window.addEventListener('focus',refreshTradeState);
+    document.addEventListener('visibilitychange',refreshVisibleTradeState);
+    return()=>{
+      window.removeEventListener('pageshow',refreshTradeState);
+      window.removeEventListener('focus',refreshTradeState);
+      document.removeEventListener('visibilitychange',refreshVisibleTradeState);
+    };
+  },[userId,strategy.id]);
   useEffect(()=>{const abandon=()=>{if(!analysisAttemptActive.current)return;analysisAttemptActive.current=false;void trackBetaEvent('ANALYSIS_ABANDONED',strategy.id)};window.addEventListener('beforeunload',abandon);return()=>{window.removeEventListener('beforeunload',abandon);abandon()}},[strategy.id]);
   useEffect(()=>{
-    const handler=()=>{ setAnalysis(null);setResult(null);setAutoChecks({});setManualEvidence({});setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');void loadStrategy(); };
+    const handler=(event: Event)=>{
+      const detail = (event as CustomEvent<{ strategy?: StrategyProfile; strategyId?: string | null; deletedStrategyId?: string }>).detail;
+      const nextStrategy = detail?.strategy ?? null;
+      if (detail?.deletedStrategyId) {
+        setStrategyApplying(true);
+        setStrategySelectionMode('ACTIVE');
+        setActiveStrategyRevisionId(null);
+        setAnalysis(null);
+        setResult(null);
+        setAutoChecks({});
+        setSessionHistory([]);
+        setLastAnalysisInput(null);
+        setFeedbackAnalysisId(null);
+        setTypedMessage('');
+        setError('The selected strategy was deleted. Trade Police cleared the previous analysis and is applying the fallback strategy.');
+        void loadStrategy();
+        return;
+      }
+      // A save, archive, or list refresh also emits strategy-changed with only an id.
+      // It must not replace a strategy selected explicitly through /validate?strategy=….
+      // The active-strategy switcher includes the authoritative strategy payload after
+      // the user explicitly activates another strategy.
+      if (!nextStrategy) return;
+      setStrategyApplying(true);
+      setStrategySelectionMode('ACTIVE');
+      setActiveStrategyRevisionId(null);
+      setAnalysis(null);
+      setResult(null);
+      setAutoChecks({});
+      setManualEvidence(nextStrategy ? initialManualConfirmations(nextStrategy.rules ?? []) : {});
+      setSessionHistory([]);
+      setLastAnalysisInput(null);
+      setFeedbackAnalysisId(null);
+      setTypedMessage('');
+      setError('Strategy changed. Trade Police cleared the previous analysis and is applying the newly selected rules.');
+      setStrategy(nextStrategy);
+      setSelectedInstrument((current) => nextStrategy.instruments.includes(current) ? current : nextStrategy.instruments[0] || 'XAUUSD');
+      void loadStrategy();
+    };
     window.addEventListener('trade-police:strategy-changed',handler);
     return()=>window.removeEventListener('trade-police:strategy-changed',handler);
   },[]);
   async function loadStrategy(){
     try{
+      setStrategyApplying(true);
       const response=await fetch('/api/strategies/active',{cache:'no-store'});
-      const data=await response.json();
+      const data=await readApiResponse(response);
+      if(redirectExpiredSession(response,'/validate'))return;
       if(!response.ok)throw new Error(apiErrorMessage(data,'Could not load the active strategy.'));
-      if (!data.strategy) throw new Error('No active strategy was returned.');
-      setStrategy(data.strategy);setManualEvidence(initialManualConfirmations(data.strategy.rules??[]));
+      if (!data||typeof data!=='object'||!('strategy' in data)||(data as any).strategy==null) throw new Error('No active strategy was returned.');
+      const active=(data as any).strategy;
+      const nextRevision = typeof (data as any).strategyRevisionId === 'string' ? (data as any).strategyRevisionId : null;
+      setStrategy(active);
+      setActiveStrategyRevisionId(nextRevision);
+      setManualEvidence(initialManualConfirmations(active.rules??[]));
+      setSelectedInstrument((current) => active.instruments.includes(current) ? current : active.instruments[0] || 'XAUUSD');
     }catch(e:any){
       setError(e.message||'Could not load the active strategy.');
+    } finally {
+      setStrategyApplying(false);
     }
   }
 
@@ -112,13 +243,38 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const selectedAccount=useMemo(()=>accounts.find(account=>account.id===accountId)||null,[accounts,accountId]);
 
   async function loadHistory(){
-    const {data,error}=await createClient().from('trade_records').select('*').order('created_at',{ascending:false}).limit(60);
+    if(!strategy.id){setHistory([]);return;}
+    const {data,error}=await createClient().from('trade_records').select('id,created_at,source,instrument,direction,setup_type,entry,stop_loss,take_profit,rr,result_r,status,outcome,score,chart_analysis,closed_at,post_analysis').eq('user_id',userId).eq('strategy_profile_id',strategy.id).order('created_at',{ascending:false}).limit(60);
     if(error){setError(`Database: ${error.message}`);return;}
     setHistory((data||[]).map((r:any)=>({id:r.id,createdAt:r.created_at,source:r.source,instrument:r.instrument,direction:r.direction,setupType:r.setup_type,entry:r.entry===null?null:Number(r.entry),stopLoss:r.stop_loss===null?null:Number(r.stop_loss),takeProfit:r.take_profit===null?null:Number(r.take_profit),rr:r.rr===null?null:Number(r.rr),resultR:r.result_r===null?null:Number(r.result_r),status:r.status,outcome:r.outcome,confidence:r.chart_analysis?.liveAnalysisConfidence==null?(r.score==null?null:Number(r.score)):Number(r.chart_analysis.liveAnalysisConfidence),closedAt:r.closed_at??null,postAnalysis:r.post_analysis})));
   }
 
+  async function loadActiveTradeOverlays(){
+    const {data,error}=await createClient().from('active_trades').select('id,trade_record_id,instrument,direction,entry,stop_loss,take_profit,initial_rr,opened_at,strategy_snapshot').eq('user_id',userId).eq('status','OPEN').order('opened_at',{ascending:false});
+    if(error){setError(`Active trades: ${error.message}`);return;}
+    setPersistedActiveOverlays((data??[]).map((row:any)=>activePositionOverlayFromTrade(row)).filter((overlay):overlay is PositionOverlayModel=>overlay!==null));
+  }
+
   const activeContext=useMemo(()=>`${strategy.id ?? strategy.name}-${analysis?.instrument ?? 'none'}`,[analysis?.instrument,strategy.id,strategy.name]);
   useEffect(()=>{ setSessionHistory([]); },[activeContext]);
+  useEffect(() => {
+    if (!strategy.instruments.includes(selectedInstrument)) {
+      setSelectedInstrument(strategy.instruments[0] || 'XAUUSD');
+    }
+  }, [selectedInstrument, strategy.instruments]);
+  useEffect(() => {
+    applyDefaultTradeFormValues(document.getElementById('final-risk-check') as HTMLFormElement | null, { analysis, selectedAccount, accountId, strategy, selectedInstrument });
+  }, [analysis, selectedAccount, accountId, strategy, selectedInstrument]);
+  useEffect(() => {
+    if (!analysis) return;
+    if (analysis.instrument && analysis.instrument !== selectedInstrument) {
+      setAnalysis(null);
+      setResult(null);
+      setAutoChecks({});
+      setManualEvidence(initialManualConfirmations(strategy.rules ?? []));
+      setError('Instrument changed. Trade Police cleared the previous analysis and is ready for a fresh market read.');
+    }
+  }, [analysis, selectedInstrument, strategy.rules]);
   useEffect(()=>{
     if(!showReasoning)return;
     const previousOverflow=document.body.style.overflow;
@@ -128,6 +284,27 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     window.addEventListener('keydown',close);
     return()=>{document.body.style.overflow=previousOverflow;window.removeEventListener('keydown',close);reasoningButtonRef.current?.focus()};
   },[showReasoning]);
+  useEffect(()=>{
+    if(!tradeActionMode)return;
+    const previousOverflow=document.body.style.overflow;
+    const previouslyFocused=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    document.body.style.overflow='hidden';
+    window.requestAnimationFrame(()=>{
+      if(tradeActionMode==='OVERRIDE')tradeActionReasonRef.current?.focus({preventScroll:true});
+      else tradeActionCloseRef.current?.focus();
+    });
+    const close=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){event.preventDefault();closeTradeActionModal();return;}
+      if(event.key!=='Tab')return;
+      const focusable=Array.from(tradeActionModalRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')??[]);
+      if(!focusable.length)return;
+      const first=focusable[0],last=focusable[focusable.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    };
+    window.addEventListener('keydown',close);
+    return()=>{document.body.style.overflow=previousOverflow;window.removeEventListener('keydown',close);previouslyFocused?.focus()};
+  },[tradeActionMode]);
   useEffect(()=>{
     if(!analysis?.aiCommentary||!analysis.instrument){ setTypedMessage(''); return; }
     setTypedMessage('');
@@ -166,29 +343,50 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     evidenceKeys.forEach((key) => { next[key] = data.evidence[key].value; });
     setAutoChecks(next);
     setManualEvidence(initialManualConfirmations(strategy.rules??[]));
-    const instrumentEl=document.querySelector('[name=instrument]') as HTMLSelectElement | null;
-    if(instrumentEl) instrumentEl.value=data.instrument;
-    const directionEl=document.querySelector('[name=direction]') as HTMLSelectElement | null;
-    if(data.suggestedDirection && directionEl) directionEl.value=data.suggestedDirection;
+    setSelectedInstrument(data.instrument as Instrument);
   }
 
   function applyLiveAnalysis(data: ChartAnalysis){
+    setReportSave({status:'idle'});reportIdempotencyRef.current='';
     setAnalysis(data);
     syncEvidenceState(data);
+    const candidate = data.candidates.find((item) => item.status === 'READY') ?? data.candidates[0];
+    setPositionOverlay(candidate ? proposedPositionFromCandidate(data.instrument, candidate) : null);
+  }
+
+  function changeGeometry(patch: Partial<PositionGeometry>) {
+    setPositionOverlay((current) => current ? updateProposedGeometry(current, patch) : current);
+    setResult(null);
+    setLastAnalysisInput(null);
+    setActivationSuccess(null);
+  }
+
+  function changeInstrument(instrument: Instrument) {
+    setSelectedInstrument(instrument);
+    if (positionOverlay?.currentGeometry.instrument !== instrument) setPositionOverlay(null);
   }
 
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();
+    console.log('submit:start', { reviewActive, analysis: analysis?.analysisId, selectedAccount: selectedAccount?.id, accountId, strategy: strategy.id });
     if(reviewActive){ setError('Trade Police is in Investigation Mode after the configured loss streak. Complete the review before requesting another authorization.'); return; }
+    if (!positionOverlay) { setError('Select a complete setup candidate before running the final risk check.'); return; }
+    const geometryAssessment = assessPositionGeometry(positionOverlay.currentGeometry);
+    if (!geometryAssessment.valid) { setError(geometryAssessment.reason ?? 'The proposed setup geometry is invalid.'); return; }
+    applyDefaultTradeFormValues(e.currentTarget, { analysis, selectedAccount, accountId, strategy, selectedInstrument });
     setLoading(true);setResult(null);setError('');const fd=new FormData(e.currentTarget);const body:any={};
     ['instrument','direction','session'].forEach(k=>body[k]=fd.get(k)); ['entry','stopLoss','takeProfit','accountBalance','riskPercent','tradesToday'].forEach(k=>body[k]=Number(fd.get(k))); body.accountId=accountId||null; body.userTimezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;
+    evidenceKeys.forEach(k=>body[k]=Boolean(autoChecks[k]));body.manualConfirmations=confirmationList(manualEvidence); body.highImpactNews=fd.get('highImpactNews')==='on'; body.setupType=analysis?.setupType;body.setupConfidence=analysis?.liveAnalysisConfidence;body.analysisId=(fd.get('analysisId') as string | null)?.trim() || analysis?.analysisId || null;
     analysisAttemptActive.current=true;
     void trackBetaEvent('FIRST_ANALYSIS_STARTED',strategy.id);
     try{
+      console.log('submit:fetch', body);
       const res=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const data=await res.json();
-      if(res.ok){setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current);await trackBetaEvent('ANALYSIS_COMPLETED',strategy.id);if(analysis?.analysisId){const eligibility=await fetch(`/api/beta-intelligence/feedback?analysisId=${encodeURIComponent(analysis.analysisId)}`,{cache:'no-store'});if(eligibility.ok){const feedback=await eligibility.json();if(feedback.eligible)setFeedbackAnalysisId(analysis.analysisId)}}}else setError(apiErrorMessage(data,'Please review the form values.'));
+      console.log('submit:response', { status: res.status, ok: res.ok });
+      const data:any=await readApiResponse(res);
+      if(redirectExpiredSession(res,'/validate'))return;
+      if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response. Your trade was not recorded.');
+      if(res.ok){setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data.manualConfirmations??[]) as ManualConfirmation[]}:current);await trackBetaEvent('ANALYSIS_COMPLETED',strategy.id);if(analysis?.analysisId){const eligibility=await fetch(`/api/beta-intelligence/feedback?analysisId=${encodeURIComponent(analysis.analysisId)}`,{cache:'no-store'});if(eligibility.ok){const feedback=await eligibility.json();if(feedback.eligible)setFeedbackAnalysisId(analysis.analysisId)}}}else setError(apiErrorMessage(data,'Please review the form values.'));
     }catch(e:any){
       setError(e.message||'Could not request authorization.');
     }finally{
@@ -197,47 +395,107 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
     }
   }
 
+  async function saveDecisionReport(){
+    if(!result?.reportSourceId)return;
+    if(!reportIdempotencyRef.current)reportIdempotencyRef.current=crypto.randomUUID();
+    setReportSave({status:'saving',message:'Saving Decision Report…'});
+    try{const response=await fetch('/api/decisions/save-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sourceDecisionId:result.reportSourceId,idempotencyKey:reportIdempotencyRef.current})});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,"We couldn't save this report. Your decision is still visible and no additional analysis was used."));if(!data||typeof data!=='object')throw new Error('The report save response was invalid.');const saved=data as {reportId:string;reportUrl:string;savedAt:string;duplicate:boolean};setReportSave({status:'saved',message:saved.duplicate?'This Decision Report was already saved. Opening the existing copy is safe.':'Decision Report saved.',reportId:saved.reportId,reportUrl:saved.reportUrl,savedAt:saved.savedAt});requestAnimationFrame(()=>reportSaveStatusRef.current?.focus())}catch(value){setReportSave({status:'error',message:value instanceof Error?value.message:"We couldn't save this report. Your decision is still visible and no additional analysis was used. Try again."});requestAnimationFrame(()=>reportSaveStatusRef.current?.focus())}
+  }
+
   async function updateManualConfirmation(ruleKey:string,state:ManualConfirmationState){
     const next={...manualEvidence,[ruleKey]:state};setManualEvidence(next);if(!lastAnalysisInput)return;
     const body={...lastAnalysisInput,manualConfirmations:confirmationList(next)};setReevaluatingManual(true);setError('');
-    try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));setResult(data);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:data.manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
+    try{const response=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok)throw new Error(apiErrorMessage(data,'Could not reevaluate manual confirmations.'));if(!data||typeof data!=='object')throw new Error('Trade Police returned an invalid authorization response.');setResult(data as ValidationResult);setLastAnalysisInput(body);setAnalysis(current=>current?{...current,manualConfirmations:(data as any).manualConfirmations??[]}:current)}catch(value){setError(value instanceof Error?value.message:'Could not reevaluate manual confirmations.')}finally{setReevaluatingManual(false)}
   }
 
-  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return; const set=(name:string,val:number|null)=>{if(val!==null){const el=document.querySelector(`[name=${name}]`) as HTMLInputElement;if(el)el.value=String(val)}}; const instrument=document.querySelector('[name=instrument]') as HTMLSelectElement|null;if(instrument)instrument.value=analysis.instrument;set('entry',c.entryLow??c.entryHigh);set('stopLoss',c.stopLoss);set('takeProfit',c.takeProfit);const d=document.querySelector('[name=direction]') as HTMLSelectElement;if(d)d.value=c.direction;setCandidateApplied('Candidate applied.');}
+  function useCandidate(index:number){const c=analysis?.candidates[index];if(!c||!analysis)return;setSelectedInstrument(analysis.instrument as Instrument);setPositionOverlay(proposedPositionFromCandidate(analysis.instrument,c));setResult(null);setLastAnalysisInput(null);setCandidateApplied('Candidate applied.');}
+  function closeTradeActionModal(){setTradeActionMode(null);setTradeActionContext({againstVerdict:false,reason:null,confirmed:false});setTradeActionError('');}
+  function setTradeActionFailure(message:string){setTradeActionError(message);setError(message);}
+  function getFieldValue(name:string){const element=document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null; return element?.value ?? '';}
   async function saveSuggestion(index:number){
     const c=analysis?.candidates[index]; if(!c||!analysis)return;
     const {error}=await createClient().from('trade_records').insert({user_id:userId,source:'SUGGESTED',status:'OPEN',instrument:analysis.instrument,direction:c.direction,setup_type:analysis.setupType,entry:c.entryLow??c.entryHigh,stop_loss:c.stopLoss,take_profit:c.takeProfit,rr:c.rr,chart_analysis:analysis});
     if(error){setError(error.message);return;} await loadHistory();
   }
-  async function saveTakenTrade(againstVerdict:boolean){
-    if(!result){setError('Request authorization before recording the trade.');return;}
-    if(againstVerdict&&result.overrideAllowed===false){setError('This risk-control verdict cannot be overridden with Take Anyway.');return;}
+  async function saveTakenTrade(mode:'ACTIVATE'|'OVERRIDE'){
+    if(tradeSubmissionRef.current)return;
+    if(!result){setTradeActionFailure('Run the final risk check before recording the trade.');return;}
+    if(!activeStrategyRevisionId){setTradeActionFailure('The active strategy revision is unavailable. Reload the strategy before recording the trade.');return;}
+    if(!positionOverlay||positionOverlay.status!=='PROPOSED'){setTradeActionFailure('Select a proposed setup before recording the trade.');return;}
+    const geometryAssessment=assessPositionGeometry(positionOverlay.currentGeometry);
+    if(!geometryAssessment.valid||geometryAssessment.rr==null){setTradeActionFailure(geometryAssessment.reason??'The proposed setup geometry is invalid.');return;}
+    const isOverride=mode==='OVERRIDE';
+    const isReady=authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
+    if(!isOverride && !isReady){setTradeActionFailure(authorizationEligibility?.message ?? 'This setup is not currently eligible for final authorization.');return;}
+    if(isOverride && !['WAIT','BLOCKED'].includes(authorizationEligibility?.state ?? '')){setTradeActionFailure('This decision is not eligible for Take anyway.');return;}
+    if(isOverride && result.overrideEligible!==true){setTradeActionFailure('This risk-control verdict cannot be overridden.');return;}
     const get=(name:string)=>(document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null)?.value||'';
-    let overrideReason:string|null=null;
-    if(againstVerdict){
-      const confirmed=window.confirm(`Trade Police verdict: ${result.verdict}\n\n${result.vetoes[0]||result.observations[0]||'The setup is not authorized.'}\n\nDo you still want to take this trade?`);
-      if(!confirmed)return;
-      overrideReason=window.prompt('Why are you taking this trade against the verdict?');
-      if(!overrideReason?.trim()){setError('A reason is required to take a trade against the verdict.');return;}
-    }
-    setSavingTrade(true);setError('');
+    const overrideReason = tradeActionContext.reason?.trim() || null;
+    if(!tradeActionContext.confirmed){setTradeActionFailure(isOverride?'You must acknowledge that you are overriding your rules.':'You must confirm that you entered this trade in your broker or prop-firm account.');return;}
+    if(isOverride && !overrideReason){setTradeActionFailure('A reason is required to take a trade against the verdict.');return;}
+    tradeSubmissionRef.current=true;
+    setSavingTrade(true);setError('');setTradeActionError('');setActivationSuccess(null);
     try{
+      const acceptedAt=new Date().toISOString();
       const originalReason=result.vetoes[0]||result.observations[0]||(result.verdict==='AUTHORIZED'?'All configured authorization rules passed.':'The setup did not pass final authorization.');
       const balanceAtEntry=selectedAccount?.currentBalance??Number(get('accountBalance'));
       const riskAmount=balanceAtEntry*(Number(get('riskPercent'))/100);
-      const {data:record,error:recordError}=await createClient().from('trade_records').insert({user_id:userId,account_id:accountId||null,balance_at_entry:balanceAtEntry,risk_amount:riskAmount,strategy_profile_id:strategy.id||null,strategy_name_at_entry:strategy.name,source:'EXECUTED',status:'OPEN',instrument:get('instrument'),direction:get('direction'),setup_type:analysis?.setupType||'Manual',session:get('session'),entry:Number(get('entry')),stop_loss:Number(get('stopLoss')),take_profit:Number(get('takeProfit')),rr:result.rr,score:result.score,verdict:result.verdict,chart_analysis:analysis,rule_snapshot:{...strategy,riskPercent:Number(get('riskPercent')),accountBalance:Number(get('accountBalance')),highImpactNews:Boolean(autoChecks.highImpactNews),takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason}}).select().single();
-      if(recordError)throw recordError;
-      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,highImpactNews:Boolean(autoChecks.highImpactNews),tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:againstVerdict,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not start Active Trade Monitor.');
+      const overrideConditions = authorizationEligibility?.missingMandatoryConfirmations?.map((item)=>({label:item.label,reason:item.reason})) ?? [];
+      const response=await fetch('/api/trades/take',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountId:accountId||null,balanceAtEntry,riskAmount,strategyProfileId:strategy.id||null,strategyRevisionId:activeStrategyRevisionId,strategyNameAtEntry:strategy.name,strategySnapshot:strategy,positionOverlay:positionOverlayProvenance(positionOverlay,acceptedAt),session:get('session'),highImpactNews:Boolean(autoChecks.highImpactNews),instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:geometryAssessment.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,takenAgainstVerdict:isOverride,originalVerdict:result.verdict,originalVerdictReason:originalReason,overrideReason,overrideConditions,activationMode:isOverride?'OVERRIDE':'READY',analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:reportSave.reportId ?? undefined,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
+      const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;
+      if(!response.ok){
+        const payload = data as { error?: unknown; rejection?: { reasonCode?: string; message?: string; state?: string } } | null;
+        const message = getSafeTradeActivationError({
+          error: apiErrorMessage(data, 'Trade authorization could not be completed. Please try again.'),
+          rejection: payload?.rejection,
+        });
+        throw new Error(message);
+      }
+      const activation=data as {trade?:{id?:unknown};tradeRecordId?:unknown;acceptedAt?:unknown;lifecycleStatus?:unknown;activeTradeCreated?:unknown}|null;
+      if(!activation||typeof activation.trade?.id!=='string'||activation.lifecycleStatus!=='ACTIVE'||activation.activeTradeCreated!==true)throw new Error('Trade Police could not confirm an active trade was created. The override was not completed; please try again.');
+      const activatedOverlay=activatePositionOverlay(positionOverlay,{activeTradeId:activation.trade.id as string,tradeRecordId:typeof activation.tradeRecordId==='string'?activation.tradeRecordId:null,acceptedAt:typeof activation.acceptedAt==='string'?activation.acceptedAt:acceptedAt});
+      setPositionOverlay(activatedOverlay);
+      setPersistedActiveOverlays(current=>[activatedOverlay,...current.filter(overlay=>overlay.activeTradeId!==activatedOverlay.activeTradeId)]);
       await loadHistory();
-      if(againstVerdict){setOverrideConfirmation('Recorded as taken against the Police Verdict.');window.setTimeout(()=>{window.location.href='/active-trade'},900);}
-      else window.location.href='/active-trade';
-    }catch(e:any){setError(e.message||'Could not save executed trade.');}
-    finally{setSavingTrade(false);}
+      setActivationSuccess('Trade added to Manage Trades.');
+      closeTradeActionModal();
+      if(isOverride)setOverrideConfirmation('Recorded as a non-compliant override trade.');
+      window.location.assign('/active-trade');
+    }catch(e:unknown){setTradeActionFailure(e instanceof Error?e.message:'Could not save executed trade.');}
+    finally{tradeSubmissionRef.current=false;setSavingTrade(false);}
   }
 
-  const suggested=useMemo(()=>history.filter(h=>h.source==='SUGGESTED').slice(0,3),[history]);
-  const executed=useMemo(()=>history.filter(h=>h.source==='EXECUTED').slice(0,3),[history]);
+  async function markTradeMissed(){
+    if(!result){setError('Run the final risk check before recording the missed trade.');return;}
+    setSavingTrade(true);setError('');
+    try {
+      const get=(name:string)=>(document.querySelector(`[name=${name}]`) as HTMLInputElement|HTMLSelectElement|null)?.value||'';
+      const tradeRecordPayload = {
+        user_id:userId,
+        account_id:accountId||null,
+        instrument:get('instrument'),
+        direction:get('direction'),
+        setup_type:analysis?.setupType||'Manual',
+        session:get('session'),
+        entry:Number(get('entry')),
+        stop_loss:Number(get('stopLoss')),
+        take_profit:Number(get('takeProfit')),
+        verdict:'MISSED',
+        status:'CLOSED',
+        source:'SUGGESTED',
+        chart_analysis:analysis,
+        rule_snapshot:{...strategy,riskPercent:Number(get('riskPercent')),accountBalance:Number(get('accountBalance')),highImpactNews:Boolean(autoChecks.highImpactNews)},
+      };
+      const { data: record, error: recordError } = await createClient().from('trade_records').insert(tradeRecordPayload).select().single();
+      if(recordError)throw recordError;
+      const response = await fetch('/api/trades/take', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'MISSED',tradeRecordId:record.id,instrument:get('instrument'),direction:get('direction'),entry:Number(get('entry')),stopLoss:Number(get('stopLoss')),takeProfit:Number(get('takeProfit')),riskPercent:Number(get('riskPercent')),initialRR:result.rr,setupType:analysis?.setupType||'Manual',initialScore:result.score,initialAnalysis:analysis,analysisStatus:analysis?.status ?? 'VALID_ANALYSIS',strategyActive:true,decisionOwnerId:userId,decisionInstrument:get('instrument'),decisionDirection:get('direction'),sourceDecisionId:result.reportSourceId,sourceReportId:reportSave.reportId ?? undefined,alreadyConverted:false,verdict:result.verdict,readinessPercentage:analysis?.setupReadiness?.percentage ?? undefined,missingMandatoryConfirmations:authorizationEligibility?.missingMandatoryConfirmations ?? []})});
+      const data=await readApiResponse(response);if(redirectExpiredSession(response,'/validate'))return;if(!response.ok){const payload = data as { error?: unknown; rejection?: { reasonCode?: string; message?: string; state?: string } } | null;throw new Error(getSafeTradeActivationError({error: typeof payload?.error === 'string' ? payload.error : undefined,rejection: payload?.rejection}));}await loadHistory();window.location.href='/history';
+    } catch (e:any) { setError(e.message||'Could not record the missed trade.'); }
+    finally { setSavingTrade(false); closeTradeActionModal(); }
+  }
+
+  const suggested=useMemo(()=>latestTradeActivity(history,'SUGGESTED'),[history]);
+  const executed=useMemo(()=>latestTradeActivity(history,'EXECUTED'),[history]);
   const hasActiveTrade=useMemo(()=>history.some(h=>h.source==='EXECUTED'&&h.status==='OPEN'),[history]);
   const threshold=strategy.aiBehavior?.confidenceThreshold ?? strategy.waitScore;
   const aiStatus=useMemo(()=>getAiDockStatus({analyzing,analysis,result,threshold}),[analysis,analyzing,result,threshold]);
@@ -279,51 +537,140 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
   const confidenceFill = hasConfidence ? `${Math.max(8, Math.min(100, analysis.liveAnalysisConfidence!))}%` : '0%';
   const readinessInterpretation = useMemo(() => getReadinessInterpretation(analysis, threshold), [analysis, threshold]);
   const nextActionValue = !analysis?'Run the live market read.':analyzing?'Hold while the market is checked.':result?.verdict==='REJECTED'?'Review the policy settings.':result?.verdict==='AUTHORIZED'||analysis.candidates.some(candidate=>candidate.status==='READY')?'Review the trade details.':'Wait for confirmation.';
-  const respectedCount=result?.scoreItems.filter(item=>item.earned>=item.possible).length??0;
-  const violatedCount=result?.scoreItems.filter(item=>item.earned<item.possible).length??0;
+  const violatedCount=result?.vetoes.length??0;
   const evidencePassed=confidenceBreakdown.filter(item=>item.passed).length;
   const evidenceTotal=confidenceBreakdown.length;
-  const narrative=result?.decisionNarrative;
+  const narrative=result?.decisionNarrative ?? null;
+  const canonicalEvidenceReport=result?.evidenceReport??analysis?.tradingDnaReport;
+  const explanation=useMemo(()=>analysis?buildDecisionExplanation({analysis,result,narrative: narrative ?? undefined,evidenceReport:canonicalEvidenceReport,strategy,authorizationEligibility: result?.authorizationEligibility}):null,[analysis,canonicalEvidenceReport,narrative,result,strategy]);
   const manualRules=useMemo(()=>(strategy.rules??[]).filter(rule=>rule.enabled&&rule.evaluationMode==='MANUAL'),[strategy.rules]);
   const pendingManualRules=manualRules.filter(rule=>(manualEvidence[rule.ruleKey]??'PENDING')==='PENDING');
   const requiredMissing=narrative?.missingEvidence.filter(item=>item.mandatory)??[];
   const optionalMissing=narrative?.missingEvidence.filter(item=>!item.mandatory)??[];
-
-  return <div className="validate-page-flow"><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
+  const workspaceLayout = useMemo(() => getDecisionWorkspaceLayoutState({ analysis, explanation, narrative }), [analysis, explanation, narrative]);
+  const isValidAnalysis = analysis?.status === 'VALID_ANALYSIS';
+  const detectorDisplayItems = useMemo(() => analysis?.detectorDisplayItems ?? [], [analysis]);
+  const authorizationEligibility = result?.authorizationEligibility ?? null;
+  const hasExecutableSetup = Boolean(explanation && analysis?.status === 'VALID_ANALYSIS' && analysis?.candidates?.length);
+  const isAuthorizationEligible = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY';
+  const canTakeAnyway = hasExecutableSetup && authorizationEligibility?.reasonCode === 'OVERRIDE_REASON_REQUIRED' && ['WAIT','BLOCKED'].includes(authorizationEligibility.state) && result?.overrideEligible === true;
+  const geometryAssessment = useMemo(() => positionOverlay ? assessPositionGeometry(positionOverlay.currentGeometry) : { valid: false, rr: null, reason: null }, [positionOverlay]);
+  const persistedActiveOverlay=useMemo(()=>persistedActiveOverlays.find(overlay=>overlay.currentGeometry.instrument===selectedInstrument)??null,[persistedActiveOverlays,selectedInstrument]);
+  const chartPositionOverlay=positionOverlay?.status==='ACTIVE'&&positionOverlay.currentGeometry.instrument===selectedInstrument?positionOverlay:persistedActiveOverlay??positionOverlay;
+  const canTakeTrade = authorizationEligibility?.allowed === true && authorizationEligibility?.state === 'READY' && geometryAssessment.valid && positionOverlay?.status === 'PROPOSED';
+  const authorizationMissing = authorizationEligibility?.missingMandatoryConfirmations ?? [];
+  const pendingRequiredManualRules = manualRules.filter(
+    (rule) => rule.mandatory && (manualEvidence[rule.ruleKey] ?? 'PENDING') === 'PENDING',
+  ).length;
+  const technicalCandidateFound = Boolean(analysis?.candidates?.some((candidate)=>candidate.status==='READY'));
+  const setupRuleBlockers = analysis?.setupReadiness?.required.failed ?? 0;
+  const validateExperience = useMemo(() => deriveValidateExperienceState({
+    strategyReady: Boolean(strategy.id && activeStrategyRevisionId),
+    analyzing,
+    analysisStatus: analysis?.status ?? null,
+    hasAnalysis: Boolean(analysis),
+    hasExecutableSetup,
+    hasValidGeometry: geometryAssessment.valid,
+    pendingRequiredConfirmations: pendingRequiredManualRules,
+    finalResult: result ? { verdict: result.verdict } : null,
+    authorizationEligibility: authorizationEligibility ? {
+      allowed: authorizationEligibility.allowed,
+      state: authorizationEligibility.state,
+      reasonCode: authorizationEligibility.reasonCode,
+    } : null,
+    activating: savingTrade && (tradeActionMode === 'ACTIVATE' || tradeActionMode === 'OVERRIDE'),
+    activeTradeCreated: positionOverlay?.status === 'ACTIVE',
+    overrideEligible: result?.overrideEligible === true,
+  }), [
+    activeStrategyRevisionId,
+    analysis,
+    analyzing,
+    authorizationEligibility,
+    geometryAssessment.valid,
+    hasExecutableSetup,
+    pendingRequiredManualRules,
+    positionOverlay?.status,
+    result,
+    savingTrade,
+    strategy.id,
+    tradeActionMode,
+  ]);
+  const authorizationBadgeVerdict = authorizationEligibility?.state === 'READY' ? 'READY' : authorizationEligibility?.state === 'WAIT' ? 'WAIT' : authorizationEligibility?.state === 'BLOCKED' ? 'BLOCKED' : authorizationEligibility?.state === 'DATA_UNAVAILABLE' ? 'DATA_UNAVAILABLE' : explanation?.verdict;
+  const activationUiState = useMemo(() => resolveTradeActivationUiState({
+    authorizationEligibility,
+    hasExecutableSetup,
+    explanation,
+    isAnalyzing: analyzing,
+    isSaving: savingTrade,
+    overrideEligible: result?.overrideEligible === true,
+  }), [authorizationEligibility, hasExecutableSetup, explanation, analyzing, savingTrade, result?.overrideEligible]);
+  const decisionPanel = explanation ? <><DecisionHero
+    analyzing={analyzing}
+    explanation={explanation}
+    narrative={narrative ?? undefined}
+    authoritativeVerdict={authorizationBadgeVerdict}
+    primaryActionLabel={activationUiState.actionLabel ?? 'Take Trade'}
+    primaryActionHint={activationUiState.actionHint ?? 'Create an Active Trade from this decision.'}
+    primaryActionDisabled={analyzing || !analysis || !activationUiState.showCta || activationUiState.primaryActionDisabled}
+    primaryActionTone={activationUiState.showCta ? activationUiState.actionTone : 'neutral'}
+    showPrimaryAction={activationUiState.showCta}
+    onPrimaryAction={()=>setTradeActionMode(activationUiState.activationMode==='READY'?'ACTIVATE':'OVERRIDE')}
+    onViewReport={() => {void trackBetaEvent('DECISION_REPORT_OPENED',strategy.id);setShowReasoning(true)}}
+    reportButtonRef={reasoningButtonRef}
+    showReportButton={Boolean(result)}
+    instrument={analysis?.instrument ?? selectedInstrument}
+    direction={analysis?.suggestedDirection ?? analysis?.candidates?.[0]?.direction ?? null}
+    setupType={analysis?.setupType ?? null}
+    readinessPercent={analysis?.setupReadiness?.percentage ?? null}
+    pendingCount={analysis?.setupReadiness?.required.pending ?? 0}
+    technicalCandidateFound={technicalCandidateFound}
+    manualPendingCount={pendingRequiredManualRules}
+    ruleBlockerCount={setupRuleBlockers}
+    violationsCount={result ? violatedCount : analysis?.setupReadiness?.required.failed ?? 0}
+    decisionStatus={validateExperience.label}
+    experienceGuidance={validateExperience.guidance}
+    experienceLevel={experienceLevel}
+    finalized={Boolean(result)}
+    finalRiskCheckAvailable={!result && isValidAnalysis}
+    finalRiskCheckBusy={loading}
+    finalRiskCheckDisabled={reviewActive || !validateExperience.canRunFinalRiskCheck}
+    authorizationError={error}
+    onMarkMissed={result?()=>setTradeActionMode('MISSED'):undefined}
+    onViewHistory={()=>{window.location.href='/history'}}
+  /><PersonalIntelligenceNotice intelligence={result?.personalIntelligence}/></> : null;
+  return <div className="validate-page-flow" data-validate-state={validateExperience.state}><span className="sr-only">Readiness</span><span className="sr-only">Setup readiness</span><span className="sr-only">Required readiness</span><span className="sr-only">View Decision Report</span>
     {reviewActive&&<div className="card investigation"><span className="badge rejected">INVESTIGATION MODE</span><h2>{strategy.lossStreakLimit} consecutive losses detected</h2><p>Trade Police has suspended new authorizations. This is not proof that the strategy stopped working, but it is enough evidence to pause and diagnose execution, market regime, and setup quality.</p><div className="grid grid-2"><div><h3>Repeated factors</h3>{repeatedFactors.length?repeatedFactors.map(([f,n])=><div className="score-line" key={f}><span>{f}</span><strong>{n}/{strategy.lossStreakLimit}</strong></div>):<p className="muted">Complete post-trade analyses to identify repeated factors.</p>}</div><div><h3>Required review</h3><ul><li>Compare all five losses by instrument and session.</li><li>Check whether entries were early or lacked M30 confirmation.</li><li>Separate valid losses from rule violations.</li><li>Reduce activity until a new A/A+ setup appears.</li></ul></div></div><button onClick={()=>setReviewAcknowledged(true)}>I reviewed the 5 losses — reactivate cautiously</button></div>}
 
-    <LiveMarketPanel strategy={strategy} onApply={applyLiveAnalysis} onLoadingChange={setAnalyzing}/>
+    {strategySelectionMode === 'REQUESTED'&&<section className="card selected-validation-strategy" aria-live="polite">
+      <p className="muted">{w('SAVED STRATEGY SELECTED FOR THIS CHECK')}</p>
+      <h2>{strategy.name}</h2>
+      <p>{w('This market check uses the strategy you just selected without changing your active strategy.')}</p>
+    </section>}
 
-    <div className="validate-workspace-grid">
-    <section className="card mobile-decision-answer" aria-labelledby="mobile-decision-title">
-      <p className="brand">SHOULD I TAKE THIS TRADE?</p>
-      <h2 id="mobile-decision-title">{narrative?.recommendation??aiStatus.label}</h2>
-      <strong>{narrative?.headline??aiStatus.detail}</strong>
-      {narrative?.explanation?<p>{narrative.explanation}</p>:null}
-      <div className="mobile-decision-facts">
-        <span><small>Readiness</small><strong>{narrative?.readiness.currentScore==null?confidenceValue:`${narrative.readiness.currentScore}%`}</strong></span>
-        <span><small>Missing</small><strong>{narrative?.missingEvidence[0]?.label??primaryMissingCondition}</strong></span>
-        <span><small>Next</small><strong>{narrative?.nextActions[0]?.label??nextActionValue}</strong></span>
-      </div>
+    <LiveMarketPanel key={`live-${strategy.id}-${activeStrategyRevisionId ?? 'pending'}`} strategy={strategy} strategyRevisionId={activeStrategyRevisionId} strategyLoading={strategyApplying} selectedInstrument={selectedInstrument} onInstrumentChange={changeInstrument} onApply={applyLiveAnalysis} onReset={()=>{setAnalysis(null);setResult(null);setPositionOverlay(null)}} onLoadingChange={setAnalyzing} decisionContent={decisionPanel} positionOverlay={chartPositionOverlay}/>
+
+    <section className="strategy-trade-activity" aria-labelledby="strategy-trade-activity-title">
+      <header><div><p className="brand">STRATEGY ACTIVITY</p><h2 id="strategy-trade-activity-title">Recent setups · {strategy.name}</h2></div><a href="/history">View all history</a></header>
+      <div className="last-trades-grid"><StrategyTradeActivity title="Proposed" emptyMessage="No proposed setups yet." rows={suggested}/><StrategyTradeActivity title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div>
     </section>
-    <form className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
-        <h2 className="workspace-title">TRADE WORKSPACE</h2>
-        <section className="workspace-section active-strategy-section"><p className="muted">Active strategy: <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer=>layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</p></section>
-        <section className="workspace-section"><h3>Instrument and Direction</h3>
+
+    {analysis&&<div className="validate-workspace-grid" data-workspace-mode={workspaceLayout.mode === 'full-width' ? 'full-width' : 'default'}>
+    <form id="final-risk-check" className="card primary-workspace-surface trade-workspace" onSubmit={submit}>
+        <input name="analysisId" type="hidden" value={analysis?.analysisId ?? ''} />
+        <h2 className="workspace-title">{w('STEP 2 · REVIEW TRADE DETAILS')}</h2>
+        <section className="workspace-section active-strategy-section"><p className="muted">{strategyApplying ? 'Applying strategy…' : <><span>Strategy for this check:</span> <strong>{strategy.name}</strong> · {strategyTimeframeLayers(strategy).map(layer => layer.timeframe).join('/')} · RR ≥ 1:{strategy.minimumRR} · Risk ≤ {strategy.maximumRiskPercent}%</>}</p></section>
+        <section className="workspace-section"><h3>{w('Instrument and Direction')}</h3>
         <div className="grid grid-2">
-          <label>Instrument<select name="instrument">{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
-          <label>Direction<select name="direction"><option>BUY</option><option>SELL</option></select></label>
+          <label>Instrument<select name="instrument" value={selectedInstrument} onChange={(event)=>changeInstrument(event.target.value as Instrument)}>{strategy.instruments.map(x=><option key={x}>{x}</option>)}</select></label>
+          <label>Direction<select name="direction" value={positionOverlay?.currentGeometry.direction ?? 'BUY'} onChange={(event)=>changeGeometry({direction:event.target.value as 'BUY'|'SELL'})} disabled={positionOverlay?.status==='ACTIVE'}><option>BUY</option><option>SELL</option></select></label>
         </div>
         </section>
-        <section className="workspace-section probable-setup-section"><h3>Probable Setup</h3>{!analysis?<p className="muted compact-empty-state">No candidate yet. Run the live market analysis.</p>:<><p>{analysis.summary}</p>{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>{c.status} · {analysis.instrument} · {c.direction}</strong><span>Readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><div className="candidate-evidence">{analysis.layerAnalysis?.map(layer=><small key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</small>)}<small>Structure {analysis.evidence.structurePattern.value?'confirmed':'pending'}</small><small>Liquidity {analysis.evidence.liquiditySweep.value?'swept':'pending'}</small><small>ChoCH {analysis.evidence.chochConfirmed.value?'confirmed':'pending'}</small><small>BoS {analysis.evidence.bosConfirmed.value?'confirmed':'pending'}</small><small>Retest {analysis.evidence.retestConfirmed.value?'confirmed':'pending'}</small></div><small>{c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Use</button><button type="button" onClick={()=>saveSuggestion(i)}>Save</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
-        {error&&<p className="error">{error}</p>}
-        {analysis&&<SetupReadiness analysis={analysis}/>}
-        {analysis&&<><div className="analysis-strip"><strong>{analysis.status==='NO_RELEVANT_EVIDENCE'?'No setup detected':analysis.status==='STRATEGY_UNSUPPORTED'?'Strategy rules not supported by live analysis':analysis.status==='STRATEGY_INCOMPLETE'?'Strategy configuration incomplete':analysis.setupType}</strong>{hasConfidence&&<><span>Setup readiness {analysis.liveAnalysisConfidence}%</span><span>Required readiness {analysis.strategyConfidenceThreshold}%</span></>}{analysis.layerAnalysis?.map(layer=><span key={layer.role+'-'+layer.timeframe}>{layer.role} {layer.timeframe} {layer.bias}</span>)}</div><p className="readiness-disclaimer">Readiness reflects completion of your configured playbook rules. It is not a probability of profit.</p></>}
-        <section className="workspace-section"><h3>Price</h3><div className="grid price-field-grid">
-          <label>Entry<input name="entry" type="number" step="any" required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" required/></label>
-          <label>Take profit<input name="takeProfit" type="number" step="any" required/></label>
-        </div></section>
-        <section className="workspace-section"><h3>Account and Risk</h3><div className="grid grid-2">
+        <section className="workspace-section probable-setup-section"><h3>{w('Probable Setup')}</h3>{!analysis?<p className="muted compact-empty-state">No market read yet. Run the live market analysis so Trade Police can show the next step clearly.</p>:<><p>{analysis.summary}</p>{detectorDisplayItems.length>0&&<details className="detector-review-card"><summary>Automatic detector evidence · {detectorDisplayItems.length}</summary><ul>{detectorDisplayItems.map((item)=><li key={`${item.title}-${item.humanLabel}`}><strong>{item.humanLabel}</strong>{item.timeframe&&<span> · {item.timeframe}</span>}</li>)}</ul></details>}{analysis.warnings.filter(w=>!w.startsWith('Manual confirmation required:')&&!w.startsWith('Automatic detector review required.')).map((w,index)=><p className="warning" key={`warning-${index}-${w}`}>{w}</p>)}{analysis.candidates.length===0?<p className="muted compact-empty-state">No defensible candidate detected yet. Try a fresh market read or adjust the strategy rules before asking for a final verdict.</p>:analysis.candidates.map((c,i)=><div className="candidate candidate-inset" key={`candidate-${i}-${c.id ?? c.direction}`}><div><strong>TECHNICAL CANDIDATE · {c.status==='READY'?'FOUND':'WAITING'} · {analysis.instrument} · {c.direction}</strong><span>Final rule readiness {analysis.liveAnalysisConfidence}% · Entry {c.entryLow??'—'}{c.entryHigh&&c.entryHigh!==c.entryLow?`–${c.entryHigh}`:''} · SL {c.stopLoss??'—'} · TP {c.takeProfit??'—'} · RR {c.rr?`1:${c.rr}`:'—'}</span><small>{c.status==='READY'&&analysis.setupReadiness?.state!=='READY'?'Market geometry is present. Mandatory confirmations still control the final decision.':c.rationale}</small></div><div><button type="button" onClick={()=>useCandidate(i)}>Apply to order ticket</button><button type="button" onClick={()=>saveSuggestion(i)}>{w('Save setup')}</button></div></div>)}</>}{candidateApplied&&<p className="candidate-applied" role="status">{candidateApplied}</p>}</section>
+        <section className={`workspace-section ${positionOverlay&&!geometryAssessment.valid?'position-geometry-invalid':''}`} id="position-geometry-fields"><h3>Price</h3><div className="grid price-field-grid">
+          <label>Entry<input name="entry" type="number" step="any" value={positionOverlay?.currentGeometry.entry ?? ''} onChange={(event)=>changeGeometry({entry:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label><label>Stop loss<input name="stopLoss" type="number" step="any" value={positionOverlay?.currentGeometry.stopLoss ?? ''} onChange={(event)=>changeGeometry({stopLoss:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label>
+          <label>Take profit<input name="takeProfit" type="number" step="any" value={positionOverlay?.currentGeometry.takeProfit ?? ''} onChange={(event)=>changeGeometry({takeProfit:Number(event.target.value)})} readOnly={positionOverlay?.status==='ACTIVE'} required/></label>
+        </div>{positionOverlay?<p className={geometryAssessment.valid?'position-geometry-summary':'error'}>{geometryAssessment.valid&&geometryAssessment.rr!=null?`${positionOverlay.status} ${positionOverlay.currentGeometry.direction} · Planned R:R 1:${geometryAssessment.rr.toFixed(2)}`:geometryAssessment.reason}</p>:<p className="muted">Select a setup candidate to populate the position geometry.</p>}</section>
+        <section className="workspace-section"><h3>{w('Account and Risk')}</h3><div className="grid grid-2">
           <label>Trading account<select value={accountId} onChange={e=>setAccountId(e.target.value)}><option value="">Manual balance</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.name} · {account.currency} {account.currentBalance.toLocaleString()}</option>)}</select></label>
           <label>Account balance<input key={selectedAccount?.id||'manual'} name="accountBalance" type="number" defaultValue={selectedAccount?.currentBalance} readOnly={Boolean(selectedAccount)} required/></label>
           <label>Risk %<input name="riskPercent" type="number" step="0.01" defaultValue={strategy.maximumRiskPercent} required/></label><label>Trades today<input name="tradesToday" type="number" defaultValue="0" min="0" required/></label>
@@ -331,78 +678,70 @@ export default function TradeValidator({userId,displayName,initialStrategy}:{use
         </div>
         </section>
         {accounts.length===0&&<p className="warning">No trading account yet. You can validate with a manual balance, or create an auditable account from Accounts.</p>}
-        {manualRules.length>0&&<section className="workspace-section manual-confirmation-summary"><div><h3>Manual confirmations</h3><strong>{pendingManualRules.length} pending</strong></div>{pendingManualRules.length?<ul>{pendingManualRules.map(rule=><li key={rule.ruleKey}>{ruleLabel(rule.ruleKey,rule.label)}</li>)}</ul>:<p className="success">All manual confirmations have an answer.</p>}<button type="button" onClick={()=>setShowManualConfirmations(true)}>{pendingManualRules.length?'Complete manual confirmations':'Review confirmations'}</button></section>}
-        <section className="workspace-section confirmation-section"><h3>Automatic Confirmation Checklist</h3>
-        <div className="grid grid-2">
-          {checks.filter(([name])=>name==='highImpactNews'||(strategy.rules?.find(item=>item.ruleKey===name&&item.enabled)?.evaluationMode??'AUTOMATIC')==='AUTOMATIC').map(([name,label])=>{const ai=name!=='highImpactNews'?analysis?.evidence[name as EvidenceKey]:null;const detail=name==='highImpactNews'?'Trade-specific news conflict':ai?'Automatic · '+ai.confidence+'% · '+ai.reason:'Automatic · run market analysis';return <label key={name} className="check-row"><input name={name} type="checkbox" checked={!!autoChecks[name]} disabled={name!=='highImpactNews'} onChange={e=>setAutoChecks(v=>({...v,[name]:e.target.checked}))}/><span>{label}<small>{detail}</small></span></label>})}
-        </div>
-        </section>
-        <section className="workspace-section authorization-section"><button className="primary" disabled={loading||reviewActive}>{reviewActive?'Authorization suspended':loading?'Reviewing…':'Request authorization'}</button></section>
+        {manualRules.length>0&&<section className="workspace-section manual-confirmation-summary"><div><h3>{w('Manual confirmations')}</h3><strong>{pendingManualRules.length} pending</strong></div>{pendingManualRules.length?<ul>{pendingManualRules.map(rule=><li key={rule.ruleKey}>{ruleLabel(rule.ruleKey,rule.label)}</li>)}</ul>:<p className="success">All manual confirmations have an answer.</p>}<button type="button" onClick={()=>setShowManualConfirmations(true)}>{pendingManualRules.length?'Complete manual confirmations':'Review confirmations'}</button></section>}
+        <section className="workspace-section confirmation-section"><h3>{w('Trade-specific check')}</h3><label className="check-row"><input name="highImpactNews" type="checkbox" checked={!!autoChecks.highImpactNews} onChange={e=>setAutoChecks(v=>({...v,highImpactNews:e.target.checked}))}/><span>High-impact news conflict<small>Confirm only for this proposed trade.</small></span></label></section>
       </form>
 
-    <aside className="decision-workspace-column">
+    <details className="validate-supporting-evidence">
+      <summary>What Trade Police checked</summary>
+      <div className="validate-supporting-evidence-content">
+        <MarketContextStrip analysis={analysis}/>
+        <PlaybookEvaluation rules={strategy.rules??[]} analysis={analysis} manualEvidence={manualEvidence}/>
+      </div>
+    </details>
+
+    {workspaceLayout.showDecisionColumn&&<aside className="decision-workspace-column">
       <div className="decision-workspace-sticky">
-      <DecisionHero
-        analyzing={analyzing}
-        analysis={analysis}
-        result={result}
-        narrative={narrative}
-        strategy={strategy}
-        threshold={threshold}
-        primaryMissingCondition={primaryMissingCondition}
-        nextActionValue={nextActionValue}
-        readinessInterpretation={readinessInterpretation}
-        onViewReport={() => setShowReasoning(true)}
-        reportButtonRef={reasoningButtonRef}
-      />
+    <details className="card primary-workspace-surface decision-report-workspace narrative-workspace validate-decision-details">
+      <summary className="validate-decision-details-summary"><span>Decision details and records</span><small>Explanation, coaching, and advanced evidence</small></summary>
+      <div className="validate-decision-details-content">
+      <p className="narrative-provenance">{narrative?.source==='AI_ENHANCED'?'Deterministic decision · coaching added':'Deterministic decision'}</p>
 
-    <div className="card primary-workspace-surface decision-report-workspace narrative-workspace">
-      <div className="narrative-workspace-head"><div><p className="brand">YOUR ANSWER</p><h2>Decision breakdown</h2></div><span className="narrative-provenance">{narrative?.source==='AI_ENHANCED'?'Deterministic decision · coaching added':'Deterministic decision'}</span></div>
+      {!narrative ? <section className="narrative-empty" aria-live="polite"><strong>{w('Complete the trade details')}</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section> : <>
+      <details className="narrative-section decision-explanation-accordion"><summary>Why this decision?</summary><div className="decision-explanation-accordion-body"><div className="narrative-section-head"><span>01</span><div><h3 id="narrative-why-title">Why?</h3><p>The engine reasons behind this answer.</p></div></div><div className="narrative-list">{narrative.reasons.length?narrative.reasons.map(reason=><div className={`narrative-item ${reason.blocking?'blocking':'advisory'}`} key={reason.id}><span className="narrative-item-icon" aria-hidden="true">{reason.blocking?'!':'·'}</span><div><strong>{reason.message}</strong><small>{reason.blocking?'Blocking condition':'Context to review'}</small></div></div>):<div className="narrative-item clear"><span className="narrative-item-icon" aria-hidden="true">✓</span><div><strong>No blocking reasons</strong><small>The configured deterministic checks passed.</small></div></div>}</div></div></details>
 
-      {!narrative?<section className="narrative-empty" aria-live="polite"><strong>Complete the trade details</strong><p>Run the market read, review the setup, then request authorization for a direct answer.</p></section>:<>
-      <section className="narrative-section narrative-why" aria-labelledby="narrative-why-title"><div className="narrative-section-head"><span>01</span><div><h3 id="narrative-why-title">Why?</h3><p>The engine reasons behind this answer.</p></div></div><div className="narrative-list">{narrative.reasons.length?narrative.reasons.map(reason=><div className={`narrative-item ${reason.blocking?'blocking':'advisory'}`} key={reason.id}><span className="narrative-item-icon" aria-hidden="true">{reason.blocking?'!':'·'}</span><div><strong>{reason.message}</strong><small>{reason.blocking?'Blocking condition':'Context to review'}</small></div></div>):<div className="narrative-item clear"><span className="narrative-item-icon" aria-hidden="true">✓</span><div><strong>No blocking reasons</strong><small>The configured deterministic checks passed.</small></div></div>}</div></section>
+      <details className="narrative-section decision-explanation-accordion"><summary>What's missing?</summary><div className="decision-explanation-accordion-body"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{requiredMissing.length?<><h4>Still required</h4><div className="narrative-list">{requiredMissing.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div></>:<p className="narrative-clear-copy">No required playbook evidence is pending.</p>}{optionalMissing.length?<><h4>Additional confirmations that could strengthen this setup</h4><div className="narrative-list">{optionalMissing.map(item=><div className="narrative-item evidence optional" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}</small></div></div>)}</div></>:null}</div></details>
 
-      <section className="narrative-section" aria-labelledby="narrative-missing-title"><div className="narrative-section-head"><span>02</span><div><h3 id="narrative-missing-title">What is missing?</h3><p>Evidence still needed before the answer can improve.</p></div></div>{requiredMissing.length?<><h4>Still required</h4><div className="narrative-list">{requiredMissing.map(item=><div className="narrative-item evidence" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}{item.timeframe?` · ${item.timeframe}`:''}</small></div></div>)}</div></>:<p className="narrative-clear-copy">No required playbook evidence is pending.</p>}{optionalMissing.length?<><h4>Additional confirmations that could strengthen this setup</h4><div className="narrative-list">{optionalMissing.map(item=><div className="narrative-item evidence optional" key={item.id}><span className={`evidence-mode ${item.evaluationMode.toLowerCase()}`}>{item.evaluationMode==='MANUAL'?'Manual':item.evaluationMode==='EXTERNAL'?'External':'Auto'}</span><div><strong>{item.label}</strong><small>{item.reason}</small></div></div>)}</div></>:null}</section>
-
-      <section className="narrative-section" aria-labelledby="narrative-next-title"><div className="narrative-section-head"><span>03</span><div><h3 id="narrative-next-title">What should I do next?</h3><p>Follow these steps in order.</p></div></div><ol className="narrative-actions">{narrative.nextActions.map(action=><li key={action.id}><div><strong>{action.label}</strong><p>{action.rationale}</p></div>{action.blocking?<span>Required</span>:null}</li>)}</ol></section>
+      <details className="narrative-section decision-explanation-accordion"><summary>What should I do next?</summary><div className="decision-explanation-accordion-body"><div className="narrative-section-head"><span>03</span><div><h3 id="narrative-next-title">What should I do next?</h3><p>Follow these steps in order.</p></div></div><ol className="narrative-actions">{narrative.nextActions.map(action=><li key={action.id}><div><strong>{action.label}</strong><p>{action.rationale}</p></div>{action.blocking?<span>Required</span>:null}</li>)}</ol></div></details>
 
       {(narrative.educationalExplanation||narrative.coachingMessage||narrative.learningTip)?<section className="narrative-coaching" aria-label="Educational coaching"><span>COACHING · EDUCATIONAL ONLY</span>{narrative.educationalExplanation?<p>{narrative.educationalExplanation}</p>:null}{narrative.coachingMessage?<p>{narrative.coachingMessage}</p>:null}{narrative.learningTip?<small>{narrative.learningTip}</small>:null}</section>:null}
       </>}
 
-      <section className="workspace-section discipline-card"><h3>Override / Discipline</h3>{!result?<p className="muted compact-empty-state">Request authorization to review discipline controls.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div><div><span className="muted">Discipline score</span><strong>{result.score}</strong></div><div><span className="muted">Rules respected</span><strong>{respectedCount}</strong></div><div><span className="muted">Rules violated</span><strong>{violatedCount}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Take Anyway is disabled because the daily limit is a hard risk-control rule.</p>:null}<div className="discipline-action-row"><button type="button" onClick={()=>saveTakenTrade(result.verdict!=='AUTHORIZED')} disabled={savingTrade||result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'}>{savingTrade?'Saving trade…':result.verdict==='AUTHORIZED'?'Trade taken':'Take anyway'}</button><button type="button" onClick={()=>{window.location.href='/active-trade'}} disabled={!hasActiveTrade}>View Active Trade</button></div>{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section>
-    </div>
+      <details className="advanced-evidence-hub"><summary>ADVANCED EVIDENCE</summary><div className="deep-evidence-hub"><p>Decision evidence, methodology, detector output, and historical detail.</p><details className="deep-evidence-item"><summary>Decision Record</summary><section className="workspace-section discipline-card"><h3>Decision record</h3>{!result?<p className="muted compact-empty-state">Run the final risk check to review limits and record the decision.</p>:<><div className="discipline-summary-grid"><div><span className="muted">Strategy trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.strategyTradesToday}/${result.dailyLimits.strategyLimit}`:'—'}</strong></div><div><span className="muted">Instrument trades today</span><strong>{result.dailyLimits?`${result.dailyLimits.instrumentTradesToday}/${result.dailyLimits.instrumentLimit}`:'—'}</strong></div><div><span className="muted">Realized daily P&amp;L</span><strong>{result.dailyLimits?`$${result.dailyLimits.realizedDailyPnl.toFixed(2)}`:'—'}</strong></div></div>{result.overrideAllowed===false&&result.verdict!=='AUTHORIZED'?<p className="error">Recording against this result is disabled because a hard risk limit was reached.</p>:null}{activationSuccess?<div className="reasoning-section" aria-live="polite"><strong>{activationSuccess}</strong><p>You can open the active trade from Manage Trades.</p></div>:null}{isAuthorizationEligible?null:<div className="reasoning-section" aria-live="polite"><strong>{authorizationEligibility?.message ?? 'This decision is not currently eligible to be activated.'}</strong>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}</div>}{overrideConfirmation&&<p className="override-confirmation" role="status">{overrideConfirmation}</p>}</>}</section></details>
+      {analysis&&<AutomaticAnalysisEvidence analysis={analysis}/>}<details className="deep-evidence-item"><summary>Historical Decision Report</summary><section className="workspace-section save-report-card"><p className="muted">Save this completed decision as an immutable snapshot. Saving does not run another analysis or use additional analysis usage.</p><button type="button" onClick={()=>void saveDecisionReport()} disabled={!result?.reportSourceId||reportSave.status==='saving'||reportSave.status==='saved'}>{reportSave.status==='saving'?'Saving report…':reportSave.status==='saved'?'Report saved':'Save Decision Report'}</button>{reportSave.status!=='idle'&&<div ref={reportSaveStatusRef} tabIndex={-1} role="status" aria-live="polite" className={`report-save-status ${reportSave.status}`}><p>{reportSave.message}</p>{reportSave.reportUrl&&<><a className="button-link" href={reportSave.reportUrl}>Open saved report</a><small>Report ID: {reportSave.reportId} · Saved {reportSave.savedAt?new Date(reportSave.savedAt).toLocaleString():''}</small></>}</div>}</section></details>{result?.evidenceReport&&<details className="deep-evidence-item"><summary>Full rule evaluation</summary><TradingDnaEvidenceReportView report={result.evidenceReport}/></details>}{narrative&&lastAnalysisInput&&<details className="deep-evidence-item"><summary>Playbook Trace and Methodology Applied</summary><MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/></details>}</div></details>
       </div>
-    </aside>
-    </div>
+    </details>
+      </div>
+    </aside>}
+    </div>}
 
-    {result?.evidenceReport&&<TradingDnaEvidenceReportView report={result.evidenceReport}/>}
-    {narrative&&lastAnalysisInput&&<MethodologyAudit rules={strategy.rules??[]} input={lastAnalysisInput} analysis={analysis} narrative={narrative}/>}
     {feedbackAnalysisId&&!hasActiveTrade&&<ContextualAnalysisFeedback analysisId={feedbackAnalysisId} playbookId={strategy.id} onDismiss={()=>setFeedbackAnalysisId(null)}/>}
     <ManualConfirmationDrawer open={showManualConfirmations} rules={manualRules} states={manualEvidence} busy={reevaluatingManual} onChange={(ruleKey,state)=>void updateManualConfirmation(ruleKey,state)} onClose={()=>setShowManualConfirmations(false)}/>
 
-    <div className="card primary-workspace-surface recent-activity-card">
-      <h2 className="workspace-title">RECENT ACTIVITY</h2>
-      <section className="workspace-section compact-history-card"><h3>LAST 3 TRADES</h3><div className="last-trades-grid"><History title="Suggested" emptyMessage="No suggested trades yet." rows={suggested}/><History title="Executed" emptyMessage="No executed trades yet." rows={executed}/></div></section>
-    </div>
-
-    {showReasoning&&<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
-      <section className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="decision-report-title">
-      <header className="reasoning-modal-header"><div><p className="brand" id="decision-report-title">DECISION REPORT</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
-      <div className="reasoning-modal-body"><div className="trade-reasoning-grid">
-        <ReasoningSection label="Decision" value={decisionLabel} tone={result?.verdict === 'AUTHORIZED' ? 'positive' : result?.verdict === 'REJECTED' || result?.verdict === 'WAIT' ? 'warning' : 'neutral'} support={decisionCopy} />
-        <ReasoningSection label="Readiness" value={confidenceValue} tone={hasConfidence && analysis.liveAnalysisConfidence! >= threshold ? 'positive' : 'warning'} support={hasConfidence ? `Required readiness ${threshold}%` : readinessInterpretation}>{hasConfidence&&<div className="copilot-confidence-bar"><span className={`copilot-confidence-fill ${aiStatus.variant}`} style={{width:confidenceFill}} /></div>}</ReasoningSection>
-        <ReasoningSection label="Missing confirmation" value={missingRules.length ? `${missingRules.length} pending` : 'Clear'} tone={missingRules.length ? 'warning' : 'positive'} support={missingRules.length ? undefined : 'No missing confirmation.'}>{missingRules.length?<div className="reasoning-list">{missingRules.map((item,index)=><span className="reasoning-pill" key={`missing-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Evidence" value={inspectorHighlights[0]?.label ? 'Recent signals' : 'No evidence yet'} tone={inspectorHighlights.length ? 'neutral' : 'info'} support={inspectorHighlights.length ? 'The latest read is carrying the following signals.' : 'No evidence yet.'}>{inspectorHighlights.length?<div className="reasoning-list">{inspectorHighlights.map((item,index)=><div className="reasoning-row" key={`evidence-${index}-${item.key??'unknown'}`}><div><strong>{item.label}</strong><small>{item.reason}</small></div><span>{item.passed?'✓':'•'} {item.confidence}%</span></div>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Satisfied rules" value={satisfiedRules.length ? `${satisfiedRules.length} met` : 'None yet'} tone={satisfiedRules.length ? 'positive' : 'neutral'} support={satisfiedRules.length ? undefined : 'No rules have been satisfied yet.'}>{satisfiedRules.length?<div className="reasoning-list">{satisfiedRules.map((item,index)=><span className="reasoning-pill positive" key={`satisfied-${index}-${item??'unknown'}`}>✓ {item}</span>)}</div>:null}</ReasoningSection>
-        <ReasoningSection label="Risk checks" value={riskChecks.length ? `${riskChecks.length} active` : 'Clear'} tone={riskChecks.length ? 'warning' : 'positive'} support={riskChecks.length ? undefined : 'No risk checks are currently blocking the setup.'}>{riskChecks.length?<div className="reasoning-list">{riskChecks.map((item,index)=><span className="reasoning-pill" key={`risk-${index}-${item??'unknown'}`}>{item}</span>)}</div>:null}</ReasoningSection>
-        <div className="timeline-section"><ReasoningSection label="Timeline" value={sessionHistory.length ? 'Recent reads' : 'No updates'} tone={sessionHistory.length ? 'neutral' : 'info'} support={sessionHistory.length ? 'The latest market updates are listed below.' : 'No timeline updates yet.'}>{sessionHistory.length?<div className="ai-history-list">{sessionHistory.map((entry,index)=><div className="ai-history-item" key={`history-${index}-${entry.time}-${entry.headline}`}><div className="ai-history-marker"/><div><strong>{entry.time}</strong><span>{entry.headline}</span><small>{entry.detail}</small></div></div>)}</div>:null}</ReasoningSection></div>
-      </div></div>
+{tradeActionMode&&createPortal(<div className="reasoning-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)closeTradeActionModal();}}>
+      <section ref={tradeActionModalRef} className="reasoning-modal" role="dialog" aria-modal="true" aria-labelledby="trade-action-title">
+        <header className="reasoning-modal-header"><div><p className="brand" id="trade-action-title">{w('TRADE ACTION')}</p><p className="reasoning-panel-copy">Choose whether this decision becomes an active trade or is recorded as missed.</p></div><button ref={tradeActionCloseRef} className="reasoning-modal-close" type="button" aria-label="Close trade action" onClick={closeTradeActionModal}>×</button></header>
+        <div className="reasoning-modal-body">
+          <p className="muted">This action is recorded server-side and linked to the originating decision report. Applying the setup parameters only updates the order ticket and never activates the trade.</p>
+          {tradeActionMode==='SELECT'&&<div className="reasoning-section"><h3>Was the trade taken or missed?</h3><p className="muted">Choose the next step. The primary decision CTA is trade activation, not setup reuse.</p><div className="discipline-action-row"><button type="button" onClick={()=>setTradeActionMode(activationUiState.activationMode==='READY'?'ACTIVATE':'OVERRIDE')} disabled={savingTrade || (!canTakeTrade && !canTakeAnyway)}>{activationUiState.activationMode==='READY'?'Take Trade':'Take Anyway'}</button><button type="button" onClick={()=>setTradeActionMode('MISSED')} disabled={savingTrade}>{w('Mark as missed')}</button></div></div>}
+          {tradeActionMode==='ACTIVATE'&&<div className="reasoning-section"><h3>{w('Take trade confirmation')}</h3><div className="trade-confirmation-summary"><p><strong>Account</strong> {selectedAccount?.name ?? 'Manual'}</p><p><strong>Instrument</strong> {getFieldValue('instrument')}</p><p><strong>Direction</strong> {getFieldValue('direction')}</p><p><strong>Entry</strong> {getFieldValue('entry')}</p><p><strong>Stop loss</strong> {getFieldValue('stopLoss')}</p><p><strong>Take profit</strong> {getFieldValue('takeProfit')}</p><p><strong>Risk/reward</strong> {result?.rr ? `1:${result.rr}` : '—'}</p><p><strong>Source</strong> {result?.reportSourceId ? `Decision ${result.reportSourceId}` : 'Pending'}</p></div><label className="check-row"><input type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I confirm that I entered this trade in my broker or prop-firm account.</span></label><div className="discipline-action-row"><button type="button" onClick={()=>void saveTakenTrade('ACTIVATE')} disabled={savingTrade || !tradeActionContext.confirmed}>{w('Confirm take trade')}</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
+          {tradeActionMode==='OVERRIDE'&&<div className="reasoning-section take-anyway-confirmation"><h3>{w('Take anyway confirmation')}</h3><div className="take-anyway-warning" id="take-anyway-warning" role="alert"><span aria-hidden="true">!</span><div><strong>You are overriding your strategy rules.</strong><p>This trade does not satisfy the current strategy verdict. It will be recorded as an override and linked to the originating decision report.</p></div></div>{tradeActionError?<p className="take-anyway-submit-error" role="alert">{tradeActionError}</p>:null}<div className="discipline-action-row take-anyway-actions"><button className="danger take-anyway-confirm-button" type="button" aria-describedby="take-anyway-warning take-anyway-reason-help" aria-busy={savingTrade} onClick={()=>void saveTakenTrade('OVERRIDE')} disabled={savingTrade || !tradeActionContext.confirmed || !tradeActionContext.reason?.trim()}>{savingTrade?'Taking trade…':'Confirm take anyway'}<span aria-hidden="true">→</span></button><button className="secondary" type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div>{authorizationMissing.length>0?<ul>{authorizationMissing.map((item)=><li key={`${item.label}-${item.reason}`}><strong>{item.label}</strong> — {item.reason}</li>)}</ul>:null}<label htmlFor="take-anyway-reason">Why are you taking this trade despite the current verdict?<textarea ref={tradeActionReasonRef} id="take-anyway-reason" aria-describedby="take-anyway-reason-help take-anyway-warning" value={tradeActionContext.reason ?? ''} onChange={(event)=>setTradeActionContext(current=>({...current,reason:event.target.value}))} rows={4} placeholder="Describe the override reason and the conditions you are accepting." required/></label><small id="take-anyway-reason-help" className="take-anyway-help">A reason and acknowledgement are required before this trade can be recorded.</small><label className="check-row take-anyway-acknowledgement"><input id="take-anyway-acknowledgement" type="checkbox" checked={tradeActionContext.confirmed} onChange={(event)=>setTradeActionContext(current=>({...current,confirmed:event.target.checked}))}/><span>I acknowledge that I am overriding my rules and accepting the non-compliant outcome.</span></label></div>}
+          {tradeActionMode==='MISSED'&&<div className="reasoning-section"><h3>{w('Mark as missed confirmation')}</h3><p>This records the lifecycle outcome as missed without creating an active trade.</p><div className="discipline-action-row"><button type="button" onClick={()=>void markTradeMissed()} disabled={savingTrade}>{w('Confirm missed trade')}</button><button type="button" onClick={closeTradeActionModal} disabled={savingTrade}>Cancel</button></div></div>}
+        </div>
       </section>
-    </div>}
+    </div>,document.body)}
+
+    {showReasoning&&createPortal(<div className="full-report-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)setShowReasoning(false)}}>
+      <section className="full-report-modal" role="dialog" aria-modal="true" aria-labelledby="full-report-title">
+      <header className="full-report-header"><div><p className="brand" id="full-report-title">{w('DECISION REPORT')}</p><p className="reasoning-panel-copy">What Trade Police detected, what your strategy requires, and what happens next.</p></div><button ref={reasoningCloseRef} className="reasoning-modal-close" type="button" aria-label="Close Decision Report" onClick={()=>setShowReasoning(false)}>×</button></header>
+      <span className="sr-only">AI explanation cannot override the result.</span>
+      <div className="full-report-body">{explanation&&analysis?<DecisionReport explanation={explanation} analysis={analysis} result={result} narrative={narrative ?? undefined} strategy={strategy}/>:<p>No completed decision is available yet.</p>}</div>
+      </section>
+    </div>,document.body)}
 
   </div>;
 }
 
-function History({title,emptyMessage,rows}:{title:string;emptyMessage:string;rows:SavedSetup[]}){
-  return <section className="trade-history-column"><h4>{title}</h4><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map((row,index)=><div className="trade-history-row" key={`${title}-${index}-${row.id ?? row.createdAt}`}><strong>{index+1}. {row.instrument} {row.direction}</strong><small>Entry {new Date(row.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}{row.closedAt?` · Exit ${new Date(row.closedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</small></div>)}</div></section>;
+function StrategyTradeActivity({title,emptyMessage,rows}:{title:string;emptyMessage:string;rows:SavedSetup[]}){
+  return <section className="trade-history-column"><h3>{title}</h3><div className="trade-history-rows">{rows.length===0?<div className="trade-history-row empty"><p className="muted">{emptyMessage}</p></div>:rows.map(row=><div className="trade-history-row" key={`${title}-${row.id}`}><strong>{row.instrument} · {row.direction}</strong><small><time dateTime={row.createdAt}>{formatTradeActivityDateTime(row.createdAt)}</time>{row.rr==null?'':` · 1:${row.rr.toFixed(2)}`}{row.outcome?` · ${row.outcome}`:''}</small></div>)}</div></section>;
 }

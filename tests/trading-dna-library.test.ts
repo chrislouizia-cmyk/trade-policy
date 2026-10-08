@@ -6,11 +6,12 @@ import type { TradingDnaRuleDefinition } from '../lib/trading-dna/types.ts';
 
 const catalog=readFileSync(new URL('../components/TradingDnaLibrary.tsx',import.meta.url),'utf8');
 const builder=readFileSync(new URL('../components/StrategyBuilder.tsx',import.meta.url),'utf8');
+const persistence=readFileSync(new URL('../lib/strategy-rule-persistence.ts',import.meta.url),'utf8');
 const ruleBuilder=readFileSync(new URL('../components/RuleBuilder.tsx',import.meta.url),'utf8');
 
 test('registry contains the complete Phase 1 vocabulary with unique IDs',()=>{
-  assert.equal(TRADING_DNA_RULES.length,53);
-  assert.equal(new Set(TRADING_DNA_RULES.map(rule=>rule.id)).size,53);
+  assert.equal(TRADING_DNA_RULES.length,54);
+  assert.equal(new Set(TRADING_DNA_RULES.map(rule=>rule.id)).size,54);
   assert.deepEqual(validateTradingDnaRegistry(),[]);
 });
 
@@ -24,7 +25,7 @@ test('search matches names, descriptions, tags, and category labels',()=>{
   assert.ok(searchTradingDnaRules('EMA').some(rule=>rule.id==='trend.ema'));
   assert.ok(searchTradingDnaRules('evidence required').length>0);
   assert.ok(searchTradingDnaRules('institutional benchmark').some(rule=>rule.id==='trend.vwap'));
-  assert.equal(searchTradingDnaRules('Smart Money').length,10);
+  assert.equal(searchTradingDnaRules('Smart Money').length,11);
   assert.deepEqual(new Set(searchTradingDnaRules('liquidity','SMART_MONEY').map(rule=>rule.id)),new Set(['smart-money.order-block','smart-money.breaker-block','smart-money.mitigation-block','smart-money.fair-value-gap','smart-money.liquidity-sweep','smart-money.equal-high','smart-money.equal-low','smart-money.premium','smart-money.discount']));
 });
 
@@ -63,5 +64,6 @@ test('catalog UI is driven by the registry and composer consumes the same regist
 test('legacy playbook rules remain unchanged and compatible',()=>{
   assert.match(ruleBuilder,/\['h4TrendAligned','Trend alignment','TREND'\]/);
   assert.match(ruleBuilder,/\['orderBlock','Order block','CONFIRMATION'\]/);
-  assert.match(builder,/evaluation_mode:rule\.evaluationMode\?\?'AUTOMATIC'/);
+  assert.match(builder,/strategyRulePersistenceRows\(saveRules\)/);
+  assert.match(persistence,/evaluation_mode: rule\.evaluationMode \?\? 'AUTOMATIC'/);
 });

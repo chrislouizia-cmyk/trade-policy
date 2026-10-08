@@ -1,6 +1,8 @@
 import 'server-only';
 
-import type { StrategyProfile } from '@/types/trade';
+import type { StrategyProfile } from '../../types/trade.ts';
+import { isCountableDailyTradeExecution as isCountableDailyTradeExecutionCore } from '../daily-trade-context-core.ts';
+import { isTradeLifecycleSimulationRecord } from './trade-lifecycle-v2.ts';
 
 type SupabaseServerClient = any;
 
@@ -10,7 +12,17 @@ export type DailyTradeContext = {
   extraTradesUsed: number;
   realizedDailyPnl: number;
   openRisk: number;
+  consecutiveLosses: number;
 };
+
+export function isCountableDailyTradeExecution(
+  row: { id?: string | null; source?: string | null; status?: string | null; created_at?: string | null; strategy_snapshot?: Record<string, unknown> | null; simulation_mode?: string | null },
+  successfulActivatedTradeRecordIds: Set<string>,
+): boolean {
+  const baseResult = isCountableDailyTradeExecutionCore(row, successfulActivatedTradeRecordIds);
+  if (!baseResult) return false;
+  return !isTradeLifecycleSimulationRecord(row);
+}
 
 function localDayKey(value: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -49,21 +61,38 @@ export async function loadDailyTradeContext({
   if (strategy.id) recordsQuery = recordsQuery.eq('strategy_profile_id', strategy.id);
   if (accountId) recordsQuery = recordsQuery.eq('account_id', accountId);
 
-  let openQuery = supabase
+  let activeTradeQuery = supabase
     .from('active_trades')
-    .select('id,risk_amount,opened_at')
+    .select('id,risk_amount,opened_at,trade_record_id,status')
+    .eq('user_id', userId);
+
+  if (accountId) activeTradeQuery = activeTradeQuery.eq('account_id', accountId);
+
+  let streakQuery = supabase
+    .from('active_trades')
+    .select('id,result_r,outcome,closed_at,strategy_snapshot')
     .eq('user_id', userId)
-    .eq('status', 'OPEN');
+    .eq('status', 'CLOSED')
+    .order('closed_at', { ascending: false })
+    .limit(50);
+  if (strategy.id) streakQuery = streakQuery.eq('strategy_profile_id', strategy.id);
+  if (accountId) streakQuery = streakQuery.eq('account_id', accountId);
 
-  if (accountId) openQuery = openQuery.eq('account_id', accountId);
-
-  const [recordsResult, openResult] = await Promise.all([recordsQuery, openQuery]);
+  const [recordsResult, activeTradeResult, streakResult] = await Promise.all([recordsQuery, activeTradeQuery, streakQuery]);
   if (recordsResult.error) throw recordsResult.error;
-  if (openResult.error) throw openResult.error;
+  if (activeTradeResult.error) throw activeTradeResult.error;
+  if (streakResult.error) throw streakResult.error;
 
-  const todayRecords = (recordsResult.data ?? []).filter(
-    (row: any) => localDayKey(new Date(row.created_at), timezone) === dayKey,
+  const activatedTradeRecordIds: Set<string> = new Set(
+    (activeTradeResult.data ?? [])
+      .map((row: any) => row.trade_record_id)
+      .filter((value: unknown): value is string => typeof value === 'string' && value.length > 0),
   );
+
+  const todayRecords = (recordsResult.data ?? []).filter((row: any) => {
+    const isSameDay = localDayKey(new Date(row.created_at), timezone) === dayKey;
+    return isSameDay && isCountableDailyTradeExecution(row, activatedTradeRecordIds);
+  });
 
   const strategyTradesToday = todayRecords.length;
   const instrumentTradesToday = todayRecords.filter(
@@ -73,10 +102,24 @@ export async function loadDailyTradeContext({
     (sum: number, row: any) => sum + Number(row.realized_pnl ?? 0),
     0,
   );
-  const openRisk = (openResult.data ?? []).reduce(
-    (sum: number, row: any) => sum + Math.max(0, Number(row.risk_amount ?? 0)),
-    0,
-  );
+  const openRisk = (activeTradeResult.data ?? [])
+    .filter((row: any) => row.status === 'OPEN')
+    .reduce(
+      (sum: number, row: any) => sum + Math.max(0, Number(row.risk_amount ?? 0)),
+      0,
+    );
+  let consecutiveLosses = 0;
+  for (const row of streakResult.data ?? []) {
+    if (isTradeLifecycleSimulationRecord(row)) continue;
+    if (!row.closed_at || localDayKey(new Date(row.closed_at), timezone) !== dayKey) break;
+    const resultR = Number(row.result_r);
+    const outcome = String(row.outcome ?? '').toUpperCase();
+    if ((Number.isFinite(resultR) && resultR < 0) || outcome === 'LOSS') {
+      consecutiveLosses += 1;
+      continue;
+    }
+    break;
+  }
 
   return {
     strategyTradesToday,
@@ -84,5 +127,6 @@ export async function loadDailyTradeContext({
     extraTradesUsed: Math.max(0, strategyTradesToday - strategy.maximumTradesPerDay),
     realizedDailyPnl,
     openRisk,
+    consecutiveLosses,
   };
 }

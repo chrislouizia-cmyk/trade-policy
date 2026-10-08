@@ -20,7 +20,25 @@ test('permission profiles own independent permission bundles',()=>{
 });
 test('management UI supports creating editing archiving and choosing permissions',()=>{
  assert.match(workspace,/PermissionProfileManager/);assert.match(manager,/New profile/);assert.match(manager,/Edit permission profile/);
- assert.match(manager,/permissionKeys/);assert.match(manager,/name="active"/);assert.match(manager,/manage_permission_profile_v1/);
+ assert.match(manager,/permissionKeys/);assert.match(manager,/Active permission profile/);assert.match(manager,/manage_permission_profile_v1/);
+});
+test('permission profile editor has an isolated, dismissible lifecycle',()=>{
+ assert.match(manager,/createPortal/);assert.match(manager,/permission-profile-editor-backdrop/);assert.match(manager,/permission-profile-editor/);
+ assert.match(manager,/onMouseDown=\{event=>\{if\(event\.target===event\.currentTarget\)closeEditor\(\)\}\}/);
+ assert.match(manager,/event\.key==='Escape'/);assert.match(manager,/document\.body\.style\.overflow='hidden'/);
+ assert.match(manager,/aria-label="Close permission profile editor"/);assert.match(manager,/onClick=\{closeEditor\}/);
+ assert.match(manager,/setEditing\(undefined\);setDraft\(emptyDraft\);setEditorError\(''\)/);
+});
+test('permission profile editor swaps profiles and only closes after successful persistence',()=>{
+ assert.match(manager,/const openEditor=\(profile:ManagedProfile\|null\)=>\{setEditing\(profile\);setDraft\(draftFromProfile\(profile\)\)/);
+ assert.match(manager,/if\(error\)\{setEditorError\(error\.message/);
+ assert.match(manager,/setSaving\(false\);if\(error\)/);
+ assert.match(manager,/setEditing\(undefined\);setDraft\(emptyDraft\);setEditorError\(''\);setNotice/);
+ assert.match(manager,/disabled=\{saving\}/);assert.match(manager,/Saving changes…/);
+});
+test('permission profile editor groups permissions and explains routing without changing grants',()=>{
+ assert.match(manager,/permissionArea/);assert.match(manager,/permission-profile-permissions-heading/);
+ assert.match(manager,/Sensitive permissions are marked/);assert.match(manager,/Routing determines where staff land in HQ\. It does not grant permissions\./);
 });
 test('profile changes are authorized validated protected and audited',()=>{
  assert.match(migration,/has_staff_permission\('staff\.manage'\)/);assert.match(migration,/Unknown permission supplied/);

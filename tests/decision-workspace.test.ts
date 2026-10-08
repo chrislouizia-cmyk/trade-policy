@@ -47,7 +47,7 @@ test('Decision Hero component exists in validate workspace', () => {
   assert.match(decisionHero, /export default function DecisionHero/);
 });
 
-test('visible decision UI uses Readiness instead of Confidence', () => {
+test('visible decision panel owns setup readiness without a duplicate live-panel summary', () => {
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
   const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
   const livePanel = readFileSync(`${root}/components/LiveMarketPanel.tsx`, 'utf8');
@@ -57,17 +57,21 @@ test('visible decision UI uses Readiness instead of Confidence', () => {
   assert.match(tradeValidator, />Readiness</);
   assert.match(tradeValidator, />Setup readiness/);
   assert.match(tradeValidator, />Required readiness/);
-  assert.match(livePanel, />Setup readiness/);
-  assert.match(livePanel, />Required readiness/);
-  assert.doesNotMatch(tradeValidator, />Confidence</);
-  assert.doesNotMatch(decisionHero, />Confidence</);
+  assert.match(livePanel, /decisionContent/);
+  assert.doesNotMatch(livePanel, /<SetupReadiness analysis=\{analysis\}/);
+  assert.doesNotMatch(livePanel, /buildSetupReadinessMetadata/);
+  assert.match(decisionHero, />Setup evidence</);
+  assert.match(decisionHero, />Final risk controls</);
+  assert.match(decisionHero, /readinessPercent/);
+  assert.match(decisionHero, /NEXT STEP · \{decisionStatus\}/);
+  assert.match(decisionHero, /experienceGuidance/);
 });
 
 test('Decision Report replaces Trade Reasoning in user-facing copy', () => {
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
   const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
 
-  assert.match(tradeValidator, />DECISION REPORT</);
+  assert.match(tradeValidator, /w\('DECISION REPORT'\)/);
   assert.match(tradeValidator, />View Decision Report</);
   assert.match(decisionHero, />View Decision Report</);
   assert.match(
@@ -85,7 +89,7 @@ test('low readiness does not render Analysis unavailable', () => {
   assert.notEqual(interpretation, 'Analysis unavailable');
 
   const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
-  assert.doesNotMatch(tradeValidator, /Analysis unavailable/);
+  assert.doesNotMatch(tradeValidator, /liveAnalysisConfidence[^\n]+Analysis unavailable/);
 });
 
 test('deterministic verdict logic remains unchanged through shared dock status', () => {
@@ -155,13 +159,33 @@ test('decision hero maps deterministic states to primary verdicts', () => {
     analysis: baseAnalysis({ candidates: [{ ...baseAnalysis().candidates[0], status: 'READY' }] }),
     result: null,
     threshold: 40,
+  }).verdict, 'WAIT');
+  assert.equal(getDecisionHeroState({
+    analyzing: false,
+    analysis: baseAnalysis({
+      liveAnalysisConfidence: 100,
+      candidates: [{ ...baseAnalysis().candidates[0], status: 'READY' }],
+      setupReadiness: {percentage:100,state:'READY',required:{passed:2,failed:0,pending:0},optional:{passed:0,failed:0,pending:0},totalRequiredWeight:20,passingRequiredWeight:20,formula:'fixture',blockers:[],pendingConfirmations:[]},
+    }),
+    result: null,
+    threshold: 75,
   }).verdict, 'READY');
+});
+
+test('technical candidates are presented separately from final confirmations and blockers',()=>{
+  const tradeValidator = readFileSync(`${root}/components/TradeValidator.tsx`, 'utf8');
+  const decisionHero = readFileSync(`${root}/components/decision/DecisionHero.tsx`, 'utf8');
+  assert.match(tradeValidator,/TECHNICAL CANDIDATE/);
+  assert.match(tradeValidator,/Mandatory confirmations still control the final decision/);
+  assert.match(decisionHero,/>Technical candidate</);
+  assert.match(decisionHero,/>Manual confirmations</);
+  assert.match(decisionHero,/>Rule blockers</);
 });
 
 test('Analyze page is framed around the trade decision question', () => {
   const page = readFileSync(`${root}/app/validate/page.tsx`, 'utf8');
-  assert.match(page, /TRADE POLICE \/ ANALYZE/);
-  assert.match(page, /Should I take this trade\?/);
+  assert.match(page, /c\.eyebrow/);
+  assert.match(page, /c\.description/);
   assert.doesNotMatch(page, /VALIDATION DESK/);
 });
 
@@ -176,7 +200,7 @@ test('Analyze consumes the additive Decision Narrative contract without recreati
   assert.match(tradeValidator, /optionalMissing\.map/);
   assert.match(tradeValidator, /narrative\.nextActions\.map/);
   assert.match(tradeValidator, /educationalExplanation/);
-  assert.match(decisionHero, /SHOULD I TAKE THIS TRADE\?/);
+  assert.match(decisionHero, /SHOULD I RISK MY MONEY RIGHT NOW\?/);
   assert.match(decisionHero, /narrative\?\.recommendation/);
   assert.doesNotMatch(tradeValidator, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(decisionHero, /dangerouslySetInnerHTML/);

@@ -1,0 +1,49 @@
+# Private Beta Launch Checklist
+
+- [ ] Apply `043_private_beta_operational_observability.sql`, set server-only `CRON_SECRET`, run cleanup in dry-run mode, then verify the scheduled deletion count.
+- [ ] Confirm `/api/hq/health` and `/api/hq/historical-reports/audit` reject clients and return no secrets or raw errors.
+
+- [ ] Apply `042_historical_decision_reports.sql`; verify browsers can read only their own reports and cannot write reports or market scans.
+- [ ] Verify the server-only Supabase key supports analysis capture and atomic report promotion.
+- [ ] Smoke-test save, duplicate save, owner reopen, cross-user denial, unknown schema handling, and AI-unavailable save.
+
+## Configuration
+
+- [ ] Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the production Supabase project.
+- [ ] Set `SUPABASE_SERVICE_ROLE_KEY` only in server-side Vercel environment variables. Never expose it to the browser.
+- [ ] Set `NEXT_PUBLIC_APP_URL` to the canonical HTTPS origin.
+- [ ] Set `TWELVE_DATA_API_KEY`; confirm quotas, provider symbols, request timeout behavior, and fresh-candle timestamps.
+- [ ] Set `OPENAI_API_KEY` and `OPENAI_VISION_MODEL` only if optional explanations/chart interpretation are enabled. Confirm the deterministic result remains usable when AI is unavailable.
+- [ ] Apply all Supabase migrations in order and verify RLS, authenticated redirect URLs, and the production Site URL.
+- [ ] Add `${NEXT_PUBLIC_APP_URL}/auth/callback` to Supabase Auth redirect URLs.
+- [ ] Configure a production SMTP provider, sender domain, confirmation template, recovery template, SPF, DKIM, and DMARC; test confirmation and password reset delivery.
+- [ ] Apply migrations 039 and 041, verify the active $29 USD monthly Test Price, configure the Customer Portal and webhook events, and complete the test-mode procedure in `docs/STRIPE_SETUP.md`.
+- [ ] Confirm Checkout rejects an inactive, wrong-currency, wrong-amount, non-monthly, or mode-mismatched Price before creating a Session.
+- [ ] Replay concurrent, failed, duplicate, and out-of-order webhooks; confirm customer-binding conflicts and unexpected Prices never grant Pro and logs contain no payment or secret data.
+- [ ] Link the Vercel project, select the production Supabase environment, add every variable separately for Preview and Production, and leave secrets unexposed.
+- [ ] Add the production domain in Vercel, configure DNS, confirm TLS, set `NEXT_PUBLIC_APP_URL`, and update Supabase URL allowlists.
+
+## Release verification
+
+- [ ] Review `/legal` with qualified counsel and publish privacy, terms, cookie, and jurisdiction-specific disclosures before accepting paid users.
+- [ ] Create a new customer account, confirm email, sign in, sign out, reset password, and verify a requested client destination survives login.
+- [ ] Complete onboarding on desktop and 375 px mobile; refresh mid-flow and confirm stored profile fields remain.
+- [ ] Create, save, reopen, duplicate, and activate a Strategy DNA. Confirm all fields are unchanged and unsupported mandatory rules do not pass.
+- [ ] Run analysis during an open market and confirm instrument, active strategy, data timestamp, evidence, readiness, and decision status.
+- [ ] Test a closed-market response: no 0% readiness and no READY result.
+- [ ] Disable or invalidate the market-data provider key and confirm DATA UNAVAILABLE, no 0%, and never READY.
+- [ ] Save a decision, open History, and confirm date, instrument, setup, decision, readiness, and result state.
+- [ ] Test 375, 430, 768, 1024, and desktop widths: no horizontal overflow, clipped dialog, covered content, or touch target below 44 px on primary paths.
+- [ ] Complete Checkout, verified webhook activation, duplicate-event replay, payment failure, cancellation, and Customer Portal tests; verify the Account page cannot change entitlement client-side.
+- [ ] Sign in as a normal customer and request every `/hq`, `/admin`, `/staff`, `/api/hq`, and `/api/admin` route. Confirm no internal data is returned.
+- [ ] Sign in as each staff permission profile and verify only granted HQ routes and actions work.
+- [ ] Run `npm test`, `npx tsc --noEmit`, `npm run build`, and `git diff --check`.
+- [ ] Deploy a Vercel Preview and repeat account, strategy, analysis, provider-failure, mobile, and HQ permission smoke tests against production-like services.
+
+## Rollback
+
+1. In Vercel, open Deployments and promote the last verified production deployment.
+2. Disable beta invitations and analysis traffic if data integrity is uncertain.
+3. Do not reverse an applied database migration destructively. Apply a reviewed forward-fix migration or restore the Supabase project to a verified point-in-time backup.
+4. Rotate any credential suspected of exposure and update Vercel Preview and Production environments.
+5. Record the incident, affected window, rollback deployment ID, database action, and customer communication decision.

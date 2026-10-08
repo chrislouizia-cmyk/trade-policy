@@ -4,6 +4,7 @@ import type {
   DetectorResult,
   MarketContext,
   MarketDataSnapshot,
+  OrderBlockContextObservation,
 } from '../contracts.ts';
 import type { DetectorRunSummary } from '../types/detector.ts';
 
@@ -82,12 +83,32 @@ function freezeContext(context: MarketContext): MarketContext {
   Object.freeze(context.detectorResults);
   Object.values(context.detectorResultsByTimeframe).forEach(Object.freeze);
   Object.freeze(context.detectorResultsByTimeframe);
+  if (context.orderBlocksByTimeframe) {
+    Object.values(context.orderBlocksByTimeframe).forEach((value) => { Object.freeze(value.blocks); Object.freeze(value); });
+    Object.freeze(context.orderBlocksByTimeframe);
+  }
   Object.freeze(context.warnings);
   context.conflicts.forEach((conflict) => {
     Object.freeze(conflict.detectorIds); Object.freeze(conflict.timeframes); Object.freeze(conflict.evidenceIds); Object.freeze(conflict);
   });
   Object.freeze(context.conflicts);
   return Object.freeze(context);
+}
+
+function orderBlocksByTimeframe(results: readonly DetectorResult[]): NonNullable<MarketContext['orderBlocksByTimeframe']> {
+  const output: NonNullable<MarketContext['orderBlocksByTimeframe']> = {};
+  for (const result of results.filter(item => item.detectorId === 'order-block' && item.payload && typeof item.payload === 'object')) {
+    const payload = result.payload as unknown as { orderBlocks?: unknown; selected?: unknown };
+    if (!Array.isArray(payload.orderBlocks)) continue;
+    const blocks = payload.orderBlocks.filter((value): value is Omit<OrderBlockContextObservation, 'evidenceId'> => {
+      if (!value || typeof value !== 'object') return false;
+      const block = value as Record<string, unknown>;
+      return typeof block.id === 'string' && (block.direction === 'BULLISH' || block.direction === 'BEARISH') && typeof block.sourceCandleTime === 'string' && typeof block.confirmationTime === 'string' && typeof block.zoneLow === 'number' && typeof block.zoneHigh === 'number' && typeof block.eligible === 'boolean' && ['ACTIVE', 'PARTIALLY_MITIGATED', 'MITIGATED', 'INVALIDATED'].includes(String(block.status));
+    }).map(block => ({ ...block, evidenceId: block.id }));
+    const selectedId = payload.selected && typeof payload.selected === 'object' ? (payload.selected as { id?: unknown }).id : null;
+    output[result.timeframe] = { blocks, selected: blocks.find(block => block.id === selectedId) ?? null };
+  }
+  return output;
 }
 
 export class AnalysisContextBuilder {
@@ -113,7 +134,7 @@ export class AnalysisContextBuilder {
       provider: snapshot.provider, providerVersion: snapshot.providerVersion,
       timeframes: unique([snapshot.timeframe, ...results.map((result) => result.timeframe).filter((timeframe) => timeframe !== 'GLOBAL')]),
       snapshotId: snapshot.id, snapshotVersion: snapshot.snapshotVersion, snapshotFreshness: snapshot.freshness,
-      detectorRunId: summary.runId, detectorResults: results, detectorResultsByTimeframe, warnings, conflicts: deriveConflicts(snapshot, summary),
+      detectorRunId: summary.runId, detectorResults: results, detectorResultsByTimeframe, orderBlocksByTimeframe: orderBlocksByTimeframe(results), warnings, conflicts: deriveConflicts(snapshot, summary),
       overallFreshness: overallFreshness(snapshot, results), overallConfidence: aggregateConfidence(results),
       dataAsOf: snapshot.dataAsOf, requestedAt: snapshot.requestedAt, generatedAt: this.#now?.() ?? snapshot.requestedAt,
     });

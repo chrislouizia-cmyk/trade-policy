@@ -1,9 +1,102 @@
 import { notFound } from "next/navigation";
 import { getHQContext, HQShell } from "@/lib/hq-page";
 import Link from "next/link";
+import CustomerNotesPanel from "@/components/hq/CustomerNotesPanel";
+import CustomerWorkspaceTabs from "@/components/hq/CustomerWorkspaceTabs";
+
+const HQ_CUSTOMER_STEP_TIMEOUT_MS = 12_000;
+
+class HQCustomerStepTimeoutError extends Error {
+  constructor(operation: string) {
+    super(`${operation} exceeded ${HQ_CUSTOMER_STEP_TIMEOUT_MS}ms`);
+    this.name = "HQCustomerStepTimeoutError";
+  }
+}
+
+function readableStepError(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown customer-profile failure";
+}
+
+async function traceCustomerStep<T>(
+  operation: string,
+  customerId: string,
+  action: () => PromiseLike<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  console.info("[HQ_CUSTOMER_STEP_STARTED]", { operation, customerId });
+
+  try {
+    const result = await Promise.race([
+      Promise.resolve(action()),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new HQCustomerStepTimeoutError(operation)),
+          HQ_CUSTOMER_STEP_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    console.info("[HQ_CUSTOMER_STEP_COMPLETED]", {
+      operation,
+      customerId,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    console.error("[HQ_CUSTOMER_STEP_FAILED]", {
+      operation,
+      customerId,
+      durationMs: Date.now() - startedAt,
+      timedOut: error instanceof HQCustomerStepTimeoutError,
+      message: readableStepError(error),
+    });
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function unavailableCustomerRpcResult(error: unknown) {
+  return {
+    data: null,
+    error: {
+      code: error instanceof HQCustomerStepTimeoutError ? "HQ_STEP_TIMEOUT" : "HQ_STEP_FAILED",
+      message: readableStepError(error),
+    },
+  };
+}
+
+function logCustomerRpcFailure(
+  operation: string,
+  customerId: string,
+  error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined,
+) {
+  console.error("[HQ_CUSTOMER_RPC_FAILED]", {
+    operation,
+    customerId,
+    code: error?.code ?? "UNKNOWN",
+    message: error?.message ?? "Unknown Supabase error",
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+  });
+}
 
 function Empty({ children = "Not available yet" }: { children?: string }) {
   return <p className="muted customer-overview-empty">{children}</p>;
+}
+
+function formatDate(value: unknown, dateOnly = false) {
+  if (!value) return dateOnly ? "Date unavailable" : "No recorded activity";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return dateOnly ? date.toLocaleDateString() : date.toLocaleString();
+}
+
+function humanize(value: unknown) {
+  return String(value || "Not available")
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 function List({
   rows,
@@ -30,21 +123,59 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { supabase, role, displayName, permissions } = await getHQContext(
-    "customers.view_metadata",
+  const { supabase, role, displayName, permissions } = await traceCustomerStep(
+    "get_hq_context",
+    id,
+    () => getHQContext("customers.view_metadata"),
   );
-  const [{ data, error }, { data: operations, error: operationsError }] =
-    await Promise.all([
-      supabase.rpc("staff_customer_360", { p_customer_id: id }),
-      supabase.rpc("staff_customer_operational_detail", { p_customer_id: id }),
-    ]);
-  if (error) throw new Error("Customer profile could not be loaded.");
-  if (operationsError)
-    throw new Error("Customer operations could not be loaded.");
+  const { data: assurance } = await traceCustomerStep(
+    "get_mfa_assurance",
+    id,
+    () => supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+  );
+  const hasAal2 = assurance?.currentLevel === "aal2";
+  const canViewTrading = permissions.includes("customers.view_trading") && hasAal2;
+  const canViewFeedback = permissions.includes("feedback.view") && hasAal2;
+  const canViewNotes = permissions.includes("support.view") || permissions.includes("sales.view");
+  const canManageNotes = hasAal2 && (
+    permissions.includes("support.manage") || permissions.includes("sales.manage")
+  );
+  const canViewCompliance = permissions.includes("compliance.view");
+  const { data, error } = await traceCustomerStep(
+    "staff_customer_360",
+    id,
+    () => supabase.rpc("staff_customer_360", { p_customer_id: id }),
+  );
+  if (error) {
+    logCustomerRpcFailure("staff_customer_360", id, error);
+    throw new Error("Customer profile could not be loaded.");
+  }
   if (!data) notFound();
-  const customer: any = { ...data, ...operations };
+  const [operationalResult, feedbackResult] = await Promise.all([
+    canViewTrading
+      ? traceCustomerStep("staff_customer_operational_detail", id, () =>
+          supabase.rpc("staff_customer_operational_detail", { p_customer_id: id }),
+        ).catch(unavailableCustomerRpcResult)
+      : Promise.resolve(null),
+    canViewFeedback
+      ? traceCustomerStep("staff_customer_feedback_detail", id, () =>
+          supabase.rpc("staff_customer_feedback_detail", { p_customer_id: id }),
+        ).catch(unavailableCustomerRpcResult)
+      : Promise.resolve(null),
+  ]);
+  if (operationalResult?.error)
+    logCustomerRpcFailure("staff_customer_operational_detail", id, operationalResult.error);
+  if (feedbackResult?.error)
+    logCustomerRpcFailure("staff_customer_feedback_detail", id, feedbackResult.error);
+  const operationsUnavailable = Boolean(operationalResult?.error);
+  const customer: any = {
+    ...data,
+    ...(operationalResult?.data ?? {}),
+    ...(feedbackResult?.data ?? {}),
+  };
   const salesDraftResult = permissions.includes("sales.view")
-    ? await supabase.rpc("staff_sales_email_drafts_v2", {
+    ? await traceCustomerStep("staff_sales_email_drafts_v2", id, () =>
+        supabase.rpc("staff_sales_email_drafts_v2", {
           p_query: "",
           p_page: 1,
           p_page_size: 25,
@@ -52,17 +183,65 @@ export default async function Page({
           p_template: "ALL",
           p_language: "ALL",
           p_customer_id: id,
-        })
+        }),
+      ).catch(unavailableCustomerRpcResult)
     : null;
   if (salesDraftResult?.error)
-    throw new Error("Customer Sales drafts could not be loaded.");
-  const salesDrafts = salesDraftResult ? salesDraftResult.data?.rows ?? [] : null;
+    logCustomerRpcFailure("staff_sales_email_drafts_v2", id, salesDraftResult.error);
+  const salesDrafts = salesDraftResult
+    ? salesDraftResult.error
+      ? undefined
+      : salesDraftResult.data?.rows ?? []
+    : null;
   const accounts = customer.accounts ?? [],
     strategies = customer.strategies ?? [],
     analyses = customer.analyses ?? [],
     trades = customer.trades ?? [],
     feedback = customer.feedback,
-    timeline = customer.timeline ?? [];
+    timeline = customer.timeline ?? [],
+    notes = customer.notes ?? [],
+    flags = customer.flags ?? [];
+
+  const operationalTimeline = [
+    ...timeline.filter((item: any) => item.type !== "NOTE"),
+    ...analyses.map((analysis: any) => ({
+      id: `analysis-${analysis.id}`,
+      type: "ANALYSIS",
+      title: `${analysis.instrument || "Market"} analysis ${humanize(analysis.outcome)}`,
+      detail: [analysis.direction, analysis.confidence ? `${analysis.confidence}% confidence` : null]
+        .filter(Boolean)
+        .join(" · ") || "Analysis completed",
+      created_at: analysis.created_at,
+    })),
+    ...trades.map((trade: any) => ({
+      id: `trade-${trade.id}`,
+      type: "TRADE",
+      title: `${trade.instrument || "Trade"} · ${humanize(trade.status_label || trade.status)}`,
+      detail: trade.record_kind === "LEGACY_EVIDENCE"
+        ? "Preserved historical evidence; not counted as an active position."
+        : [trade.direction, trade.outcome, trade.result_r != null ? `${trade.result_r}R` : null]
+            .filter(Boolean)
+            .join(" · ") || "Canonical trade lifecycle event",
+      created_at: trade.closed_at || trade.opened_at,
+    })),
+    ...((feedback ?? []) as any[]).map((item: any) => ({
+      id: `feedback-${item.id}`,
+      type: "FEEDBACK",
+      title: `${humanize(item.type)} feedback`,
+      detail: `${humanize(item.status)} · ${item.message || "No detail"}`,
+      created_at: item.created_at,
+    })),
+    ...((salesDrafts ?? []) as any[]).map((draft: any) => ({
+      id: `draft-${draft.id}`,
+      type: "SALES_DRAFT",
+      title: draft.subject || "Untitled sales draft",
+      detail: `${humanize(draft.status)} · ${humanize(draft.template_type)}`,
+      created_at: draft.updated_at,
+    })),
+  ]
+    .filter((item) => item.created_at)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 60);
   return (
     <HQShell displayName={displayName} role={role} permissions={permissions}>
       <main className="customer-overview-page">
@@ -72,28 +251,29 @@ export default async function Page({
             <h1>{customer.display_name || "Unnamed customer"}</h1>
             <p>{customer.email || "No email provided"}</p>
           </div>
-          <a
-            className="button-link secondary"
-            href={`/api/hq/customers/${id}/report`}
-          >
-            Download Customer Report
-          </a>
-          {permissions.includes("sales.manage") && (
-            <Link className="button-link primary" href={`/hq/sales/drafts/new?customer=${id}`}>
-              Draft email
-            </Link>
-          )}
+          <div className="customer-360-actions">
+            {canViewTrading && !operationsUnavailable && (
+              <a className="button-link secondary" href={`/api/hq/customers/${id}/report`}>
+                Download report
+              </a>
+            )}
+            {permissions.includes("sales.manage") && (
+              <Link className="button-link primary" href={`/hq/sales/drafts/new?customer=${id}`}>
+                Draft email
+              </Link>
+            )}
+          </div>
         </header>
         <section
           className="customer-overview-summary"
           aria-label="Customer summary"
         >
           {[
-            ["Trading accounts", accounts.length],
-            ["Strategies", strategies.length],
-            ["Analyses", customer.analysis_count ?? 0],
-            ["Open trades", customer.open_trades ?? 0],
-            ["Closed trades", customer.closed_trades ?? 0],
+            ["Trading accounts", canViewTrading ? customer.account_count ?? 0 : "Restricted"],
+            ["Strategies", canViewTrading ? customer.strategy_count ?? 0 : "Restricted"],
+            ["Analyses", canViewTrading ? customer.analysis_count ?? 0 : "Restricted"],
+            ["Open trades", canViewTrading ? customer.open_trades ?? 0 : "Restricted"],
+            ["Closed trades", canViewTrading ? customer.closed_trades ?? 0 : "Restricted"],
           ].map(([label, value]) => (
             <div key={String(label)}>
               <span>{label}</span>
@@ -101,6 +281,8 @@ export default async function Page({
             </div>
           ))}
         </section>
+        <CustomerWorkspaceTabs
+          overview={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Profile</h2>
           <dl className="customer-profile-grid">
@@ -130,9 +312,15 @@ export default async function Page({
             </div>
           </dl>
         </section>
+          </div>}
+          trading={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Trading Accounts</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Customer trading access is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Trading data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={accounts}
             empty="No trading accounts"
             render={(account) => (
@@ -156,11 +344,15 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Strategies</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Strategy configuration is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Strategy data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={strategies}
             empty="No strategies"
             render={(strategy) => (
@@ -191,11 +383,15 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Recent Analyses</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Customer analyses are restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Analysis data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={analyses}
             empty="No analyses yet"
             render={(analysis) => (
@@ -219,18 +415,25 @@ export default async function Page({
                 </small>
               </>
             )}
-          />
+          />}
         </section>
         <section className="customer-overview-section">
           <h2>Trade History</h2>
-          <List
+          {!canViewTrading ? (
+            <Empty>Trade history is restricted to explicitly authorized staff with MFA.</Empty>
+          ) : operationsUnavailable ? (
+            <Empty>Trade data is temporarily unavailable. No values have been assumed.</Empty>
+          ) : <List
             rows={trades}
             empty="No trades yet"
             render={(trade) => (
               <>
-                <strong>
-                  {trade.instrument} · {trade.direction} · {trade.status}
-                </strong>
+                <div className="customer-360-row-heading">
+                  <strong>{trade.instrument} · {trade.direction}</strong>
+                  <span className={`customer-360-state ${trade.is_currently_active ? "active" : "historical"}`}>
+                    {trade.status_label || humanize(trade.status)}
+                  </span>
+                </div>
                 <small>
                   Entry {trade.entry ?? "—"} · SL {trade.stop_loss ?? "—"} · TP{" "}
                   {trade.take_profit ?? "—"}
@@ -243,14 +446,44 @@ export default async function Page({
                     ? ` · Closed ${new Date(trade.closed_at).toLocaleString()}`
                     : ""}
                 </small>
+                {trade.record_kind === "LEGACY_EVIDENCE" ? (
+                  <small className="customer-360-evidence-note">
+                    Preserved historical evidence; not counted as an active position.
+                  </small>
+                ) : null}
               </>
             )}
-          />
+          />}
         </section>
+          </div>}
+          activity={<div className="customer-360-grid single">
+            <section className="customer-overview-section customer-360-timeline">
+              <div className="section-title">
+                <h2>Activity Timeline</h2>
+                <small className="muted">Analyses, trades, feedback and customer operations</small>
+              </div>
+              <List
+                rows={operationalTimeline}
+                empty="No authorized customer activity is available."
+                render={(item) => (
+                  <>
+                    <div className="customer-360-row-heading">
+                      <strong>{item.title || humanize(item.type)}</strong>
+                      <span className="customer-360-event-type">{humanize(item.type)}</span>
+                    </div>
+                    <small>{item.detail || "No detail"} · {formatDate(item.created_at)}</small>
+                  </>
+                )}
+              />
+            </section>
+          </div>}
+          relationship={<div className="customer-360-grid">
         <section className="customer-overview-section">
           <h2>Feedback</h2>
-          {feedback === null ? (
+          {!canViewFeedback ? (
             <Empty>You do not have permission to view customer feedback.</Empty>
+          ) : feedbackResult?.error ? (
+            <Empty>Customer feedback is temporarily unavailable. No records were assumed.</Empty>
           ) : (
             <List
               rows={feedback ?? []}
@@ -282,6 +515,8 @@ export default async function Page({
           </div>
           {salesDrafts === null ? (
             <Empty>You do not have permission to view Sales drafts.</Empty>
+          ) : salesDrafts === undefined ? (
+            <Empty>Sales drafts are temporarily unavailable. The rest of this customer profile remains available.</Empty>
           ) : (
             <List
               rows={salesDrafts}
@@ -290,9 +525,9 @@ export default async function Page({
                 <>
                   <strong>{draft.subject || "Untitled draft"}</strong>
                   <small>
-                    {draft.template_type} · {draft.status} · {draft.language}
+                    {humanize(draft.template_type)} · {humanize(draft.status)} · {humanize(draft.language)}
                     {draft.generated_by_ai ? " · AI-generated" : ""}
-                    {draft.created_by ? ` · Author ${draft.created_by}` : ""}
+                    {!draft.generated_by_ai ? " · Staff-authored" : ""}
                     {draft.updated_at
                       ? ` · Updated ${new Date(draft.updated_at).toLocaleString()}`
                       : ""}
@@ -305,49 +540,36 @@ export default async function Page({
             />
           )}
         </section>
-        <section className="customer-overview-section">
-          <h2>Activity Timeline</h2>
-          <List
-            rows={timeline}
-            empty="No customer activity recorded"
-            render={(item) => (
-              <>
-                <strong>{item.title || item.type}</strong>
-                <small>
-                  {item.detail || "No detail"}
-                  {item.created_at
-                    ? ` · ${new Date(item.created_at).toLocaleString()}`
-                    : ""}
-                </small>
-              </>
-            )}
+        {canViewNotes ? (
+          <CustomerNotesPanel
+            customerId={id}
+            initialNotes={notes}
+            canManage={canManageNotes}
           />
-        </section>
-        <section className="customer-overview-section">
-          <h2>Notes</h2>
-          <List
-            rows={timeline.filter((item: any) => item.type === "NOTE")}
-            empty="Not available yet"
-            render={(item) => (
-              <>
-                <strong>{item.title || "Internal note"}</strong>
-                <small>
-                  {item.detail}
-                  {item.created_at
-                    ? ` · ${new Date(item.created_at).toLocaleString()}`
-                    : ""}
-                </small>
-              </>
-            )}
-          />
-        </section>
-        <section className="customer-overview-section">
-          <h2>Internal Flags</h2>
-          <Empty>
-            No permitted internal flags are available under the current data
-            contract.
-          </Empty>
-        </section>
+        ) : null}
+        {canViewCompliance ? (
+          <section className="customer-overview-section">
+            <h2>Compliance Flags</h2>
+            <List
+              rows={flags}
+              empty="No compliance cases recorded for this customer."
+              render={(item) => (
+                <>
+                  <strong>{item.title || item.type}</strong>
+                  <small>
+                    {item.severity} · {item.status}
+                    {item.created_at
+                      ? ` · ${new Date(item.created_at).toLocaleString()}`
+                      : ""}
+                  </small>
+                  <Link href={`/hq/compliance/cases/${item.id}`}>Open case</Link>
+                </>
+              )}
+            />
+          </section>
+        ) : null}
+          </div>}
+        />
       </main>
     </HQShell>
   );

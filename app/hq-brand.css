@@ -1,0 +1,164 @@
+/*
+ * Trade Police Headquarters identity.
+ * The shield and wordmark remain canonical; the gold/mint operational accent
+ * differentiates the employee workspace from the blue/mint customer portal.
+ */
+body:has(.hq-container) {
+  --hq-canvas: #05080c;
+  --hq-surface: rgba(13, 19, 27, .88);
+  --hq-surface-strong: rgba(8, 13, 19, .96);
+  --hq-line: rgba(232, 238, 233, .13);
+  --hq-line-soft: rgba(232, 238, 233, .075);
+  --hq-ink: #f5f7f4;
+  --hq-muted: #97a39e;
+  --hq-gold: #d8bf79;
+  --hq-mint: #70d5b5;
+  --hq-danger: #ff8f96;
+  --bg: var(--hq-canvas);
+  --panel: var(--hq-surface);
+  --panel-2: rgba(20, 27, 36, .9);
+  --text: var(--hq-ink);
+  --muted: var(--hq-muted);
+  --border: var(--hq-line);
+  --green: var(--hq-mint);
+  --yellow: var(--hq-gold);
+  --red: var(--hq-danger);
+  color: var(--hq-ink);
+  background:
+    radial-gradient(ellipse 56rem 34rem at 2% -10%, rgba(216, 191, 121, .12), transparent 67%),
+    radial-gradient(ellipse 52rem 34rem at 100% 8%, rgba(112, 213, 181, .09), transparent 70%),
+    linear-gradient(180deg, #091019 0%, var(--hq-canvas) 48%, #04070a 100%);
+}
+
+body:has(.hq-container) .hq-shell-header {
+  overflow: visible;
+  border-color: var(--hq-line) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .065), transparent 33%),
+    radial-gradient(circle at 88% 0, rgba(112, 213, 181, .095), transparent 30%),
+    linear-gradient(150deg, rgba(16, 23, 31, .96), var(--hq-surface-strong)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .075), 0 24px 72px rgba(0, 0, 0, .3) !important;
+  backdrop-filter: blur(30px) saturate(135%);
+  -webkit-backdrop-filter: blur(30px) saturate(135%);
+}
+
+body:has(.hq-container) .hq-brand-row {
+  border-bottom-color: var(--hq-line-soft);
+}
+
+body:has(.hq-container) .hq-brand {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+body:has(.hq-container) .hq-logo-wordmark {
+  width: auto;
+  height: 40px;
+  max-width: 190px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .24));
+}
+
+body:has(.hq-container) .hq-brand-caption {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px 0 3px 14px;
+  border-left: 1px solid rgba(216, 191, 121, .35);
+}
+
+body:has(.hq-container) .hq-brand-caption::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: -1px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--hq-gold), var(--hq-mint));
+  box-shadow: 0 0 12px rgba(216, 191, 121, .2);
+}
+
+body:has(.hq-container) .hq-brand-caption strong {
+  color: #f2e7c4;
+  font-size: 10px;
+  font-weight: 880;
+  letter-spacing: .16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body:has(.hq-container) .hq-brand-caption small {
+  color: var(--hq-muted) !important;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .07em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body:has(.hq-container) .hq-executive-greeting strong {
+  color: var(--hq-ink);
+}
+
+body:has(.hq-container) .hq-executive-greeting span {
+  color: var(--hq-muted);
+}
+
+body:has(.hq-container) :is(.hq-command-home, .hq-command-group > summary) {
+  border-color: var(--hq-line-soft);
+  background: rgba(255, 255, 255, .025);
+  color: #a8b1ad;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+body:has(.hq-container) :is(.hq-command-home, .hq-command-group > summary) > span {
+  color: var(--hq-gold);
+}
+
+body:has(.hq-container) :is(.hq-command-home.active, .hq-command-group > summary.active) {
+  border-color: rgba(216, 191, 121, .34);
+  background: linear-gradient(145deg, rgba(216, 191, 121, .105), rgba(112, 213, 181, .055));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 10px 26px rgba(0, 0, 0, .16);
+}
+
+body:has(.hq-container) .hq-command-group > div {
+  border-color: var(--hq-line);
+  background: rgba(10, 16, 23, .98);
+  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+}
+
+body:has(.hq-container) .hq-command-group > div a:hover,
+body:has(.hq-container) .hq-command-group > div a.active {
+  background: linear-gradient(145deg, rgba(216, 191, 121, .105), rgba(112, 213, 181, .055));
+}
+
+body:has(.hq-container) :is(.card, .hq-command-panel, .hq-command-metric, .hq-command-departments > a) {
+  border-color: var(--hq-line-soft) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .045), transparent 36%),
+    linear-gradient(155deg, rgba(15, 22, 30, .87), rgba(7, 11, 16, .9)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 17px 52px rgba(0, 0, 0, .18) !important;
+}
+
+body:has(.hq-container) :is(.eyebrow, .brand) {
+  color: #cbbd94;
+}
+
+body:has(.hq-container) :is(a, .hq-command-heading > a, .hq-command-departments b) {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body:has(.hq-container) :is(.hq-shell-header, .card, .hq-command-panel, .hq-command-metric) {
+    background: #0d151d !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}

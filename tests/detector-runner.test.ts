@@ -58,13 +58,44 @@ test('runner executes registered detectors and returns a complete timed summary'
 });
 
 test('runner uses all-settled isolation so one failure does not stop another detector', async () => {
+  let started = 0;
+  let release!: () => void;
+  const resumed = new Promise<void>((resolve) => {
+    release = () => {
+      if (++started === 2) resolve();
+    };
+  });
+
+  class BarrierDetector implements MarketDetector {
+    readonly metadata;
+    readonly id: string;
+    constructor(id: string) {
+      this.id = id;
+      this.metadata = { id, version: '1.2.3', displayName: id, deterministic: true, supportedTimeframes: ['H1'], supportsReplay: true, experimental: false, enabledByDefault: true, description: 'Test fixture.' };
+    }
+    get version() { return this.metadata.version; }
+    get displayName() { return this.metadata.displayName; }
+    get deterministic() { return this.metadata.deterministic; }
+    get supportedTimeframes(): readonly string[] { return this.metadata.supportedTimeframes; }
+    async execute(value: MarketDataSnapshot): Promise<DetectorResult> {
+      release();
+      await resumed;
+      if (this.id === 'fast-failure') throw new Error('fast-failure failed');
+      return { detectorId: this.id, detectorVersion: this.version, runId: 'detector-local', instrument: value.instrument, timeframe: value.timeframe, observedAt: timestamp, dataAsOf: value.dataAsOf, status: 'NOT_DETECTED', confidence: 100, payload: {}, evidence: [], freshness: value.freshness, warnings: [] };
+    }
+  }
+
   const registry = new DetectorRegistry()
-    .register(new FixtureDetector('slow-success', 'PASS', 30))
-    .register(new FixtureDetector('fast-failure', 'THROW', 1))
+    .register(new BarrierDetector('slow-success'))
+    .register(new BarrierDetector('fast-failure'))
     .freeze();
-  const started = Date.now();
-  const summary = await new DetectorRunner(registry, { createRunId: () => 'parallel-run' }).execute(snapshot, ['slow-success', 'fast-failure']);
-  assert.ok(Date.now() - started < 100, 'detectors should execute concurrently');
+
+  const task = new DetectorRunner(registry, { createRunId: () => 'parallel-run' }).execute(snapshot, ['slow-success', 'fast-failure']);
+  const summary = await Promise.race([
+    task,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('detectors did not begin concurrently')), 250)),
+  ]);
+
   assert.equal(summary.detectorResults.length, 2);
   assert.equal(summary.detectorResults.find((result) => result.detectorId === 'slow-success')?.status, 'NOT_DETECTED');
   assert.equal(summary.detectorResults.find((result) => result.detectorId === 'fast-failure')?.status, 'ERROR');

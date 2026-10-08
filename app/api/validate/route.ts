@@ -1,19 +1,43 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { loadActiveStrategy } from '@/lib/server/active-strategy';
+import { loadStrategyById } from '@/lib/server/active-strategy';
 import { loadDailyTradeContext } from '@/lib/server/daily-trade-context';
 import { validateTradeWithStrategy } from '@/lib/server/decision-engine';
 import { buildDecisionNarrative } from '@/lib/intelligence/decision-narrative';
 import { enhanceDecisionNarrative } from '@/lib/server/decision-narrative-ai';
 import { apiError } from '@/lib/server/public-error';
-import type { TradeInput } from '@/types/trade';
+import type { ChartAnalysis, TradeInput } from '@/types/trade';
 import { confirmationState } from '@/lib/manual-confirmations';
 import { applyTradingDnaRuntime, buildTradingDnaRuntimeContext, evaluateTradingDnaRuntime } from '@/lib/trading-dna/runtime';
+import { preserveLiveSetupEvidence } from '@/lib/trading-dna/live-readiness';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { buildDecisionExplanation } from '@/lib/intelligence/decision-explanation';
+import { buildHistoricalDecisionSnapshot } from '@/lib/historical-decisions/build';
+import { historicalDecisionSnapshotV1Schema } from '@/lib/historical-decisions/schema';
+import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
+import { recordReportFailure } from '@/lib/historical-decisions/operations';
+import { evaluateTradeAuthorizationEligibility } from '@/lib/trade-authorization';
+import { buildTraderInterventions } from '@/lib/trader-intelligence';
+import { loadTraderLearningSnapshot, recordTraderInterventions } from '@/lib/server/trader-intelligence-state';
+import { refreshTraderLearning } from '@/lib/server/trader-context';
+import { recordTraderIntelligenceEvent } from '@/lib/server/trader-intelligence-events';
 
 export const dynamic = 'force-dynamic';
 
+function safeValidationError(error: unknown) {
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const safeText = (field: unknown) => typeof field === 'string' && field.trim() ? field.slice(0, 2000) : undefined;
+  return {
+    message: error instanceof Error ? error.message : safeText(value?.message) ?? 'Unknown validation error',
+    ...(safeText(value?.code) ? { code: safeText(value?.code) } : {}),
+    ...(safeText(value?.details) ? { details: safeText(value?.details) } : {}),
+    ...(safeText(value?.hint) ? { hint: safeText(value?.hint) } : {}),
+  };
+}
+
 const schema = z.object({
+  analysisId: z.string().uuid(),
   instrument: z.string().trim().min(1).max(30),
   direction: z.enum(['BUY', 'SELL']),
   entry: z.number().finite(),
@@ -41,6 +65,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const requestId=crypto.randomUUID();
   try {
     const supabase = await createClient();
     const {
@@ -51,12 +76,17 @@ export async function POST(request: Request) {
       return apiError('UNAUTHORIZED','Unauthorized.',401);
     }
 
-    const parsed = schema.safeParse(await request.json());
+    const parsed = schema.safeParse(await request.json().catch(()=>null));
     if (!parsed.success) {
       return apiError('INVALID_TRADE','Some trade values are invalid.',400,parsed.error.flatten());
     }
-
-    const strategy = await loadActiveStrategy(supabase, user.id);
+    const {data:scan,error:scanError}=await supabase.from('market_scans').select('id,user_id,strategy_profile_id,strategy_revision_id,instrument,analysis,server_created').eq('id',parsed.data.analysisId).eq('user_id',user.id).maybeSingle();
+    if(scanError||!scan||!scan.server_created)return apiError('ANALYSIS_NOT_FOUND','The verified market analysis could not be found. Run the market check again.',409);
+    if(typeof scan.strategy_profile_id!=='string'||!scan.strategy_profile_id)return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis is missing its strategy identity. Run the market check again.',409);
+    const strategy = await loadStrategyById(supabase,user.id,scan.strategy_profile_id);
+    if(scan.strategy_profile_id!==strategy.id||scan.strategy_revision_id!==strategyRevisionId(strategy)||scan.instrument!==parsed.data.instrument){await recordReportFailure({reasonCode:'STRATEGY_REVISION_MISMATCH',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('ANALYSIS_CONTEXT_CHANGED','The market analysis no longer matches the selected trading rules. Run the market check again.',409)}
+    const authoritativeAnalysis=scan.analysis as ChartAnalysis;
+    if(!authoritativeAnalysis||!['VALID_ANALYSIS','NO_RELEVANT_EVIDENCE'].includes(authoritativeAnalysis.analysisStatus)||authoritativeAnalysis.instrument!==parsed.data.instrument)return apiError('ANALYSIS_NOT_VALID','A completed verified market analysis is required.',409);
     const dailyContext = await loadDailyTradeContext({
       supabase,
       userId: user.id,
@@ -69,12 +99,15 @@ export async function POST(request: Request) {
     const invalidManual=parsed.data.manualConfirmations.find(item=>!manualRuleKeys.has(item.evidenceKey));
     if(invalidManual)return apiError('INVALID_MANUAL_CONFIRMATION',invalidManual.evidenceKey+' is not configured as a manual rule.',400);
     const normalizedConfirmations=parsed.data.manualConfirmations.map(item=>({...item,state:confirmationState(item)}));
-    const input={...parsed.data,manualConfirmations:normalizedConfirmations} as TradeInput;
+    const input={...parsed.data,setupType:authoritativeAnalysis.setupType,setupConfidence:authoritativeAnalysis.liveAnalysisConfidence??undefined,manualConfirmations:normalizedConfirmations} as TradeInput;
+    for(const key of ['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','orderBlock','fairValueGap','retestConfirmed'] as const)input[key]=authoritativeAnalysis.evidence[key].value;
     const evidenceKeys=new Set(['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','orderBlock','fairValueGap','retestConfirmed']);
     for(const item of normalizedConfirmations)if(evidenceKeys.has(item.evidenceKey))(input as unknown as Record<string,unknown>)[item.evidenceKey]=item.state==='CONFIRMED';
     const legacyDecisionStrategy={...strategy,rules:(strategy.rules??[]).filter(rule=>!rule.ruleKey.startsWith('dna.v1.'))};
     const baseResult = validateTradeWithStrategy(input, legacyDecisionStrategy, dailyContext);
-    const evidenceReport=evaluateTradingDnaRuntime(strategy.rules,buildTradingDnaRuntimeContext(input,strategy));
+    const baseRuntimeContext=buildTradingDnaRuntimeContext(input,strategy);
+    const finalRuntimeContext=authoritativeAnalysis.tradingDnaReport?preserveLiveSetupEvidence(baseRuntimeContext,authoritativeAnalysis.tradingDnaReport):baseRuntimeContext;
+    const evidenceReport=evaluateTradingDnaRuntime(strategy.rules,finalRuntimeContext);
     const result=applyTradingDnaRuntime(baseResult,evidenceReport);
     const deterministicNarrative = buildDecisionNarrative({
       result,
@@ -88,6 +121,53 @@ export async function POST(request: Request) {
       console.error('Decision narrative error:', narrativeError);
     }
 
+    const authorizationEligibility=evaluateTradeAuthorizationEligibility({
+      verdict: result.verdict,
+      analysisStatus: authoritativeAnalysis.analysisStatus,
+      strategyActive: true,
+      alreadyConverted: false,
+      readinessPercentage: authoritativeAnalysis.setupReadiness?.percentage ?? undefined,
+      missingMandatoryConfirmations: decisionNarrative.missingEvidence.filter((item)=>item.mandatory).map((item)=>({label:item.label,reason:item.reason})),
+      allowOverride: true,
+    });
+    const explanation=buildDecisionExplanation({analysis:authoritativeAnalysis,result,narrative:decisionNarrative,evidenceReport,strategy,authorizationEligibility});
+    let snapshot:ReturnType<typeof buildHistoricalDecisionSnapshot>,validatedSnapshot:ReturnType<typeof historicalDecisionSnapshotV1Schema.parse>;
+    try{snapshot=buildHistoricalDecisionSnapshot({userId:user.id,analysis:authoritativeAnalysis,strategy,input,result,explanation});validatedSnapshot=historicalDecisionSnapshotV1Schema.parse(snapshot)}catch{await recordReportFailure({reasonCode:'FINGERPRINT_FAILURE',requestId,userId:user.id,sourceAnalysisId:scan.id,retryable:false});return apiError('REPORT_SNAPSHOT_FAILED','The decision was completed but its historical snapshot could not be prepared. No report was saved.',503)}
+    const aiParts=decisionNarrative.source==='AI_ENHANCED'?[decisionNarrative.educationalExplanation,decisionNarrative.coachingMessage,decisionNarrative.learningTip].filter((part):part is string=>Boolean(part?.trim())):[];
+    const aiExplanation=aiParts.length?{reportId:snapshot.reportId,explanationVersion:'1',provider:'OpenAI',...(process.env.OPENAI_MODEL?{model:process.env.OPENAI_MODEL}:{}),prose:aiParts.join('\n\n'),createdAt:new Date().toISOString(),sourceVerdict:snapshot.verdict,sourceDeterministicFingerprint:snapshot.deterministicFingerprint,authoritative:false}:null;
+    const admin=createAdminClient();
+    const {data:source,error:sourceError}=await admin.from('decision_report_sources').insert({user_id:user.id,source_analysis_id:scan.id,strategy_id:strategy.id,schema_version:snapshot.schemaVersion,deterministic_fingerprint:snapshot.deterministicFingerprint,snapshot_json:validatedSnapshot,ai_explanation_json:aiExplanation}).select('id,expires_at').single();
+    if(sourceError||!source){
+      const failure=sourceError??new Error('Decision report source was not created.');
+      console.error('Validation error', {requestId,operation:'decision_report_sources.insert',...safeValidationError(failure)});
+      throw failure;
+    }
+    await recordTraderIntelligenceEvent({
+      userId:user.id,
+      eventType:'DECISION_CREATED',
+      route:'/api/validate',
+      dedupeKey:source.id,
+      context:{analysisId:scan.id,sourceId:source.id,strategyId:strategy.id,instrument:parsed.data.instrument,direction:parsed.data.direction,session:parsed.data.session,setupType:authoritativeAnalysis.setupType,verdict:result.verdict,riskPercent:parsed.data.riskPercent,initialRR:result.rr},
+    });
+    await refreshTraderLearning(admin,user.id);
+    const personalInterventions=buildTraderInterventions(await loadTraderLearningSnapshot(user.id),{
+      stage:'PRE_TRADE',
+      instrument:parsed.data.instrument,
+      session:parsed.data.session,
+      strategyId:strategy.id,
+      strategyName:strategy.name,
+      direction:parsed.data.direction,
+      setupType:authoritativeAnalysis.setupType,
+      riskPercent:parsed.data.riskPercent,
+    });
+    const storedInterventions=await recordTraderInterventions(user.id,personalInterventions,{
+      stage:'PRE_TRADE',
+      sourceId:source.id,
+      analysisId:scan.id,
+      instrument:parsed.data.instrument,
+      strategyId:strategy.id,
+    });
+
     return NextResponse.json(
       {
         ...result,
@@ -99,11 +179,22 @@ export async function POST(request: Request) {
         manualConfirmations:normalizedConfirmations,
         evidenceReport,
         decisionNarrative,
+        authorizationEligibility,
+        reportSourceId:source.id,
+        reportSourceExpiresAt:source.expires_at,
+        personalIntelligence:{
+          authoritative:false,
+          controlsVerdict:false,
+          interventions:storedInterventions,
+        },
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    console.error('Validation error:', error);
-    return apiError('VALIDATION_FAILED',error instanceof Error?error.message:'Trade authorization could not be completed.',500);
+    console.error('Validation error', {requestId,operation:'validate.POST',...safeValidationError(error)});
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Validation error stack:', error instanceof Error ? error.stack : undefined);
+    }
+    return apiError('VALIDATION_FAILED','Trade authorization could not be completed. Your trade data was not changed.',503);
   }
 }

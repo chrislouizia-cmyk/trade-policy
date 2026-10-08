@@ -1,0 +1,187 @@
+{
+  "id": "xauusd-structure-pullback",
+  "version": "1.0.0",
+  "status": "DETECTOR_IMPLEMENTATION_REQUIRED",
+  "instrument": "XAUUSD",
+  "primaryTimeframe": "M15",
+  "direction": "BOTH",
+  "hypothesis": "A completed, session-qualified market-structure shift with displacement followed by a retracement into its originating unmitigated imbalance or structural zone has positive expected-cost out-of-sample expectancy when risk is invalidated structurally and reward targets opposing confirmed liquidity.",
+  "dependencies": [
+    {
+      "concept": "swing-high",
+      "status": "UNSUPPORTED",
+      "implementation": null,
+      "reason": "The engine has rolling highs but no right-confirmed structural swing with an explicit known-at timestamp.",
+      "required": true
+    },
+    {
+      "concept": "swing-low",
+      "status": "UNSUPPORTED",
+      "implementation": null,
+      "reason": "The engine has rolling lows but no right-confirmed structural swing with an explicit known-at timestamp.",
+      "required": true
+    },
+    {
+      "concept": "break-of-structure",
+      "status": "PARTIALLY_SUPPORTED",
+      "implementation": "break-of-structure@1.0.0",
+      "reason": "The existing detector closes beyond a seven-candle rolling range; it does not break a confirmed swing or maintain prevailing structure state.",
+      "required": true
+    },
+    {
+      "concept": "market-structure-shift",
+      "status": "UNSUPPORTED",
+      "implementation": null,
+      "reason": "No detector establishes prior structure state and then detects a close beyond the opposing confirmed swing.",
+      "required": true
+    },
+    {
+      "concept": "fair-value-gap",
+      "status": "PARTIALLY_SUPPORTED",
+      "implementation": "fair-value-gap@1.0.0",
+      "reason": "The existing detector identifies only the latest strict three-candle gap and has no configurable minimum size, origin association, or mitigation lifecycle.",
+      "required": true
+    },
+    {
+      "concept": "liquidity-sweep",
+      "status": "PARTIALLY_SUPPORTED",
+      "implementation": "liquidity-sweep@1.0.0",
+      "reason": "The existing detector sweeps a rolling reference window, not a confirmed structural liquidity level.",
+      "required": true
+    },
+    {
+      "concept": "structural-stop-placement",
+      "status": "UNSUPPORTED",
+      "implementation": null,
+      "reason": "The executable backtester supports fixed, percent, and ATR distances but cannot place a stop beyond the strategy's structural origin.",
+      "required": true
+    },
+    {
+      "concept": "liquidity-target-detection",
+      "status": "UNSUPPORTED",
+      "implementation": null,
+      "reason": "No detector selects the nearest valid opposing confirmed liquidity objective without future information.",
+      "required": true
+    }
+  ],
+  "entry": {
+    "timing": "NEXT_M15_OPEN_AFTER_CONFIRMATION",
+    "displacementDefinition": {
+      "detector": "displacement@1.0.0",
+      "atrPeriod": 14,
+      "atrMethod": "SIMPLE_TRUE_RANGE_COMPLETED_CANDLES",
+      "minimumBodyAtrMultipleExclusive": 1.1,
+      "minimumBodyRangeRatioExclusive": 0.65,
+      "formula": "bodySize > max(ATR14 * 1.1, candleRange * 0.65)"
+    },
+    "long": {
+      "structure": "A bullish market-structure shift closes above the most recent confirmed opposing swing high.",
+      "displacement": "The shift candle satisfies the frozen displacementDefinition.",
+      "retraceZone": "Price trades into the unmitigated bullish fair-value gap created by or immediately following the shift.",
+      "trigger": "The first completed M15 candle that rejects the zone and closes above its open.",
+      "session": "Trigger and next-open entry must both be inside an allowed session."
+    },
+    "short": {
+      "structure": "A bearish market-structure shift closes below the most recent confirmed opposing swing low.",
+      "displacement": "The shift candle satisfies the frozen displacementDefinition.",
+      "retraceZone": "Price trades into the unmitigated bearish fair-value gap created by or immediately following the shift.",
+      "trigger": "The first completed M15 candle that rejects the zone and closes below its open.",
+      "session": "Trigger and next-open entry must both be inside an allowed session."
+    },
+    "zoneExpiryBars": 20,
+    "oneEntryPerStructureEvent": true
+  },
+  "stop": {
+    "long": "Below the minimum of the confirmed structural origin swing low and retracement-zone low, minus the ATR buffer.",
+    "short": "Above the maximum of the confirmed structural origin swing high and retracement-zone high, plus the ATR buffer.",
+    "atrBuffer": {
+      "period": 14,
+      "multiple": 0.1,
+      "method": "SIMPLE_TRUE_RANGE_COMPLETED_CANDLES"
+    },
+    "fallback": null
+  },
+  "target": {
+    "primary": "Nearest confirmed opposing liquidity target beyond entry that provides at least the configured minimum reward-to-risk.",
+    "eligibleLiquidity": [
+      "CONFIRMED_SWING_HIGH_FOR_LONG",
+      "CONFIRMED_SWING_LOW_FOR_SHORT"
+    ],
+    "selection": "Nearest eligible price by absolute distance from entry.",
+    "fallback": null
+  },
+  "invalidation": {
+    "intrabar": "The structural stop price is touched.",
+    "close": "A completed M15 candle closes beyond the structural origin in the adverse direction.",
+    "entryCancellation": "Cancel before entry if the structural origin is invalidated, the zone expires, or session eligibility ends."
+  },
+  "maximumHolding": {
+    "bars": 32,
+    "timeframe": "M15",
+    "exitAt": "CLOSE_OF_32ND_COMPLETED_BAR_AFTER_ENTRY"
+  },
+  "exitPrecedence": [
+    "STRUCTURAL_CLOSE_INVALIDATION",
+    "STOP",
+    "TARGET",
+    "MAXIMUM_HOLDING"
+  ],
+  "sessions": {
+    "timezone": "UTC",
+    "allowed": [
+      {
+        "id": "LONDON",
+        "start": "07:00",
+        "end": "16:00"
+      },
+      {
+        "id": "NEW_YORK",
+        "start": "13:00",
+        "end": "22:00"
+      }
+    ],
+    "overlapAllowed": true,
+    "dstPolicy": "FIXED_UTC_RESEARCH_WINDOWS"
+  },
+  "minimumRewardToRisk": 2,
+  "executionAssumptions": {
+    "source": "EXPLICIT_IMMUTABLE_STRATEGY",
+    "assumptionsVersion": "xauusd-structure-pullback-execution@1.0.0",
+    "entryTiming": "NEXT_OPEN",
+    "expectedSpreadPrice": 0.2,
+    "expectedSlippagePricePerSide": 0.05,
+    "commissionRRoundTrip": 0.02,
+    "sameBarConflictPolicy": "ADVERSE_PRECEDENCE",
+    "sameBarPrecedence": [
+      "STRUCTURAL_CLOSE_INVALIDATION_IF_KNOWN_AT_BAR_CLOSE",
+      "STOP",
+      "TARGET"
+    ],
+    "positionOverlapPolicy": "NO_OVERLAPPING_POSITIONS",
+    "priceRepresentation": "MIDPOINT_OHLC_WITH_EXPLICIT_SPREAD_COST",
+    "partialFills": "NOT_MODELED",
+    "gapAtEntry": "FILL_AT_NEXT_AVAILABLE_OPEN",
+    "gapThroughStop": "FILL_AT_FIRST_AVAILABLE_OPEN_WITH_SLIPPAGE"
+  },
+  "supportedMarketConcepts": [
+    "CONFIRMED_SWING_STRUCTURE",
+    "MARKET_STRUCTURE_SHIFT",
+    "DISPLACEMENT",
+    "FAIR_VALUE_GAP",
+    "SESSION",
+    "STRUCTURAL_INVALIDATION",
+    "OPPOSING_LIQUIDITY_TARGET"
+  ],
+  "researchMetadata": {
+    "immutable": true,
+    "researchStatus": "DETECTOR_IMPLEMENTATION_REQUIRED",
+    "createdAt": "2026-07-26T00:00:00.000Z",
+    "author": "Trade Police Research",
+    "schemaVersion": "1.0.0",
+    "profitabilityClaim": false,
+    "derivedFromRejectedStrategyPerformance": false,
+    "parameterOptimizationPerformed": false
+  },
+  "substitutions": [],
+  "executableMapping": null
+}

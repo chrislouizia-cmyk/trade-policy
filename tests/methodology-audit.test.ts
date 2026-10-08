@@ -31,7 +31,7 @@ test('unknown automatic and unconfirmed manual rules are visibly not evaluated',
 });
 
 test('completed analyses render Methodology Applied and collapsible Decision Evidence',()=>{
-  assert.match(validator,/narrative&&lastAnalysisInput&&<MethodologyAudit/);
+  assert.match(validator,/narrative&&lastAnalysisInput&&<details className="deep-evidence-item"><summary>Playbook Trace and Methodology Applied<\/summary><MethodologyAudit/);
   assert.match(component,/Methodology Applied/);
   assert.match(component,/<AuditGroup title="Required checks"/);
   assert.match(component,/<AuditGroup title="Optional confirmations"/);

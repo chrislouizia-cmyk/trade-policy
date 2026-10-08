@@ -1,0 +1,60 @@
+{
+  "metadata": {
+    "instrument": "XAUUSD",
+    "provider": "Twelve Data",
+    "providerSymbol": "XAU/USD",
+    "timeframe": "M15",
+    "timezone": "UTC",
+    "pricePrecision": 5,
+    "datasetStart": "2023-05-01T00:00:00.000Z",
+    "datasetEnd": "2023-10-31T23:45:00.000Z",
+    "candleCount": 12049,
+    "importTimestamp": "2026-07-22T02:46:04.236Z",
+    "sourceFilename": "candles.json",
+    "sha256FileHash": "e8c66629b6f83c765685a73704eef868ca5e52269ad0f4f2c8e867ddcf704388",
+    "missingCandlePolicy": "PRESERVE_AND_REPORT",
+    "duplicateTimestampPolicy": "REJECT",
+    "priceRepresentation": "UNKNOWN",
+    "status": "VERIFIED_SOURCE",
+    "sourceVerificationReference": "TP-REP certification 12eab8818982d8c9"
+  },
+  "validation": {
+    "valid": true,
+    "malformedRows": 0,
+    "invalidOhlcRelationships": 0,
+    "duplicateTimestamps": 0,
+    "outOfOrderCandles": 0,
+    "gapsInExpectedTimestamps": 5615,
+    "zeroOrNegativePrices": 0,
+    "impossibleValues": 0,
+    "missingVolume": 12049,
+    "timezoneAmbiguity": 0,
+    "weekendCandles": 200,
+    "suspiciousDiscontinuities": 0,
+    "findings": [
+      {
+        "code": "TIME_GAPS",
+        "severity": "WARNING",
+        "row": null,
+        "message": "Missing expected candle intervals: 5615."
+      },
+      {
+        "code": "MISSING_VOLUME",
+        "severity": "WARNING",
+        "row": null,
+        "message": "Candles without volume: 12049."
+      },
+      {
+        "code": "WEEKEND_CANDLES",
+        "severity": "WARNING",
+        "row": null,
+        "message": "Weekend candles: 200."
+      }
+    ],
+    "transformations": [
+      "Parsed source file.",
+      "Normalized timestamps to ISO-8601 UTC.",
+      "Sorted candles chronologically."
+    ]
+  }
+}

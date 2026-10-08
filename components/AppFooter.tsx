@@ -1,8 +1,11 @@
-export default function AppFooter() {
+import { getServerTranslator } from '@/lib/i18n/server';
+
+export default async function AppFooter() {
+  const { t } = await getServerTranslator();
   return (
     <footer className="app-footer">
       <div className="app-footer-inner">
-        <span>© 2026 Trade Police. All rights reserved.</span>
+        <span>{t('footer.rights')}</span>
       </div>
     </footer>
   );

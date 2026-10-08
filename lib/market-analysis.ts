@@ -2,15 +2,17 @@ import type { Direction, EvidenceKey, Instrument, StrategyProfile } from '@/type
 import {strategyTimeframeLayers,strategyTimeframes} from './strategy-timeframes.ts';
 import {evaluateLiveTradingDna, type LiveSetupReadiness} from './trading-dna/live-readiness.ts';
 import type {TradingDnaEvidenceReport} from './trading-dna/runtime.ts';
+import { buildDetectorDisplayItems } from './decision-presentation/detector-display.ts';
+import { normalizeActiveStrategyEvidenceKey, normalizeStrategyRuleToken } from './active-strategy-evidence.ts';
 
 export type Candle={datetime:string;open:number;high:number;low:number;close:number;volume?:number};
 export type AnalysisStatus='DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
 export type TimeframeAnalysis={timeframe:string;bias:'BULLISH'|'BEARISH'|'RANGE'|'UNCLEAR';lastPrice:number;atr:number;lastSwingHigh:number|null;lastSwingLow:number|null;bosUp:boolean;bosDown:boolean;sweepHigh:boolean;sweepLow:boolean;fvgBullish:boolean;fvgBearish:boolean;retest:boolean;};
-export type LiveCandidate={id:string;direction:Direction;entryLow:number;entryHigh:number;stopLoss:number;takeProfit:number;rr:number;status:'READY'|'WAIT'|'INVALID';rationale:string};
+export type LiveCandidate={id:string;createdAt:string;direction:Direction;entryLow:number;entryHigh:number;stopLoss:number;takeProfit:number;rr:number;status:'READY'|'WAIT'|'INVALID';rationale:string};
 export type EvidenceAssessment={value:boolean;confidence:number;reason:string};
 export type ConfidenceBreakdown={mandatoryConfirmed:string[];mandatoryMissing:string[];optionalConfirmed:string[];contradicted:string[];unsupported:string[];manual:string[];external:string[]};
 export type ConfidenceComponents={mandatoryScore:number;optionalScore:number;alignmentScore:number;contradictionPenalty:number};
-export type LiveMarketAnalysis={status:AnalysisStatus;analysisStatus:AnalysisStatus;instrument:Instrument;timeframe:string;strategyId:string|null;strategySchemaVersion:number;methodologyIds:string[];primaryMethodology:string|null;provider:string;providerSymbol:string;calculatedAt:string;latestCandleTimestamp:string;liveAnalysisConfidence:number|null;strategyConfidenceThreshold:number;setupReadiness:LiveSetupReadiness;tradingDnaReport:TradingDnaEvidenceReport;detectedTimeframes:string[];layerAnalysis:Array<{role:'MACRO'|'TREND'|'CONFIRMATION'|'ENTRY'|'TRIGGER';timeframe:string;bias:TimeframeAnalysis['bias'];confirmedEvidence:string[];missingEvidence:string[];confidence:number|null}>;timeframeBiases:Record<string,TimeframeAnalysis['bias']>;h4Bias:TimeframeAnalysis['bias'];h1Bias:TimeframeAnalysis['bias'];timeframeAligned:boolean;timeframes:Record<string,TimeframeAnalysis>;suggestedDirection:Direction|null;direction:Direction|null;setupType:string;evidence:Record<string,EvidenceAssessment>;breakdown:ConfidenceBreakdown;components:ConfidenceComponents;candidates:LiveCandidate[];warnings:string[];summary:string;};
+export type LiveMarketAnalysis={status:AnalysisStatus;analysisStatus:AnalysisStatus;instrument:Instrument;timeframe:string;strategyId:string|null;strategySchemaVersion:number;methodologyIds:string[];primaryMethodology:string|null;provider:string;providerSymbol:string;calculatedAt:string;latestCandleTimestamp:string;liveAnalysisConfidence:number|null;strategyConfidenceThreshold:number;setupReadiness:LiveSetupReadiness;tradingDnaReport:TradingDnaEvidenceReport;detectedTimeframes:string[];layerAnalysis:Array<{role:'MACRO'|'TREND'|'CONFIRMATION'|'ENTRY'|'TRIGGER';timeframe:string;bias:TimeframeAnalysis['bias'];confirmedEvidence:string[];missingEvidence:string[];confidence:number|null}>;timeframeBiases:Record<string,TimeframeAnalysis['bias']>;h4Bias:TimeframeAnalysis['bias'];h1Bias:TimeframeAnalysis['bias'];timeframeAligned:boolean;timeframes:Record<string,TimeframeAnalysis>;suggestedDirection:Direction|null;direction:Direction|null;setupType:string;evidence:Record<string,EvidenceAssessment>;breakdown:ConfidenceBreakdown;components:ConfidenceComponents;candidates:LiveCandidate[];warnings:string[];summary:string;detectorDisplayItems:Array<{title:string;status:'pending'|'warning'|'info';humanLabel:string;timeframe?:string;explanation?:string}>;};
 
 export class MarketAnalysisError extends Error {
   status:'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'ANALYSIS_FAILED';
@@ -19,8 +21,8 @@ export class MarketAnalysisError extends Error {
 
 export const DETECTOR_EVIDENCE_IDS=['h4TrendAligned','h1TrendAligned','structurePattern','liquiditySweep','chochConfirmed','bosConfirmed','fairValueGap','retestConfirmed','displacement','premiumDiscount','rejectionCandle','volumeConfirmation','volatilityRequirement'] as const;
 export const UNREACHABLE_EVIDENCE_IDS=['orderBlock','sessionRequirement','newsFilter','correlationFilter','spreadFilter'] as const;
-const aliases:Record<string,string>={support_resistance:'structurePattern',SUPPORT_RESISTANCE:'structurePattern',market_structure:'structurePattern',MARKET_STRUCTURE:'structurePattern',BREAK_OF_STRUCTURE:'bosConfirmed',fvg:'fairValueGap',FAIR_VALUE_GAP:'fairValueGap',breakout_close:'bosConfirmed',CLOSE_BEYOND_LEVEL:'bosConfirmed',trend_alignment:'h4TrendAligned',HTF_TREND_ALIGNMENT:'h4TrendAligned',liquidity_sweep:'liquiditySweep',LIQUIDITY_GRAB:'liquiditySweep'};
-export function normalizeEvidenceId(id:string){return aliases[id]??id;}
+const analysisAliases:Record<string,string>={displacement:'displacement',premiumdiscount:'premiumDiscount',rejectioncandle:'rejectionCandle',volumeconfirmation:'volumeConfirmation',volatilityrequirement:'volatilityRequirement'};
+export function normalizeEvidenceId(id:string){return normalizeActiveStrategyEvidenceKey(id)??analysisAliases[normalizeStrategyRuleToken(id)]??id;}
 const avg=(v:number[])=>v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
 const round=(n:number,d=5)=>Number(n.toFixed(d));
 function atr(c:Candle[],p=14){const xs=c.slice(-p-1);const tr=xs.slice(1).map((x,i)=>Math.max(x.high-x.low,Math.abs(x.high-xs[i].close),Math.abs(x.low-xs[i].close)));return avg(tr);}
@@ -34,7 +36,7 @@ function analyzeTf(timeframe:string,c:Candle[]):TimeframeAnalysis{
   return {timeframe,bias,lastPrice:last.close,atr:round(a),lastSwingHigh:round(recentHigh),lastSwingLow:round(recentLow),bosUp,bosDown,sweepHigh,sweepLow,fvgBullish,fvgBearish,retest};
 }
 
-function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>){
+function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>,referenceTimeMs=Date.now()){
   const frames=strategyTimeframes(strategy);
   for(const frame of frames){
     const candles=series[frame];
@@ -45,7 +47,7 @@ function validateSeries(strategy:StrategyProfile,series:Record<string,Candle[]>)
     if(!Number.isFinite(latest))throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} has an invalid latest candle timestamp.`);
     const minutes:Record<string,number>={M1:1,M3:3,M5:5,M15:15,M30:30,H1:60,H2:120,H4:240,H6:360,H8:480,H12:720,D1:1440,W1:10080,MN:43200};
     if(!minutes[frame])throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} is not supported by the market-data provider.`);
-    if(Date.now()-latest>minutes[frame]*60_000*4+72*60*60_000)throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} market data is stale.`);
+    if(referenceTimeMs-latest>minutes[frame]*60_000*4+72*60*60_000)throw new MarketAnalysisError('DATA_UNAVAILABLE',`${frame} market data is stale.`);
   }
   const requiresVolume=JSON.stringify(strategy.strategyMethodologies??[]).toLowerCase().includes('volume');
   if(requiresVolume&&frames.some(frame=>series[frame].some(x=>!Number.isFinite(x.volume))))throw new MarketAnalysisError('DATA_UNAVAILABLE','This strategy requires volume, but the provider did not return it.');
@@ -81,8 +83,10 @@ function scoreConfidence(strategy:StrategyProfile,evidence:Record<string,Evidenc
   return {liveAnalysisConfidence,components,breakdown:{mandatoryConfirmed:confirmedMandatory,mandatoryMissing:missingMandatory,optionalConfirmed:confirmedOptional,contradicted,unsupported,manual,external},relevant};
 }
 
-export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile,series:Record<string,Candle[]>,provider:string,normalizedProviderSymbol=instrument):LiveMarketAnalysis{
-  validateSeries(strategy,series);
+export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile,series:Record<string,Candle[]>,provider:string,normalizedProviderSymbol=instrument,analysisAt?:string):LiveMarketAnalysis{
+  const analysisTimeMs = analysisAt ? Date.parse(analysisAt) : Date.now();
+  if (!Number.isFinite(analysisTimeMs)) throw new MarketAnalysisError('DATA_UNAVAILABLE','Historical analysis timestamp is invalid.');
+  validateSeries(strategy,series,analysisTimeMs);
   const layers=strategyTimeframeLayers(strategy);const timeframes=Object.fromEntries(strategyTimeframes(strategy).map(frame=>[frame,analyzeTf(frame,series[frame])]));
   const t=timeframes[strategy.trendTimeframe];const c=timeframes[strategy.confirmationTimeframe];const e=timeframes[strategy.entryTimeframe];const trigger=strategy.triggerTimeframe?timeframes[strategy.triggerTimeframe]:e;
   const directional=layers.filter(layer=>['MACRO','TREND','CONFIRMATION'].includes(layer.role)).map(layer=>timeframes[layer.timeframe].bias);
@@ -94,13 +98,18 @@ export function buildLiveAnalysis(instrument:Instrument,strategy:StrategyProfile
   const scored=scoreConfidence(strategy,evidence,aligned);
   const liveDna=evaluateLiveTradingDna(strategy,evidence);
   const status:AnalysisStatus=liveDna.readiness.state==='CONFIGURATION_REQUIRED'?'STRATEGY_INCOMPLETE':'VALID_ANALYSIS';
-  const warnings=[...scored.breakdown.contradicted];if(scored.breakdown.unsupported.length)warnings.push(`Automatic detector review required: ${scored.breakdown.unsupported.join(', ')}.`);if(scored.breakdown.manual.length)warnings.push(`Manual confirmation required: ${scored.breakdown.manual.join(', ')}.`);if(scored.breakdown.external.length)warnings.push(`External evidence required: ${scored.breakdown.external.join(', ')}.`);if(!direction)warnings.push('No directional setup is currently supported by the configured evidence.');
-  const candidates:LiveCandidate[]=[]; if(direction){const entry=e.lastPrice;const stopBase=direction==='BUY'?(e.lastSwingLow??entry-e.atr):(e.lastSwingHigh??entry+e.atr);const maxStop=strategy.stopLimits[instrument]??Math.max(e.atr*2,e.lastPrice*.01);const dist=Math.min(Math.abs(entry-stopBase)||e.atr||maxStop,maxStop);candidates.push({id:'live-primary',direction,entryLow:round(entry),entryHigh:round(entry),stopLoss:round(direction==='BUY'?entry-dist:entry+dist),takeProfit:round(direction==='BUY'?entry+dist*strategy.minimumRR:entry-dist*strategy.minimumRR),rr:strategy.minimumRR,status:aligned&&bos&&retest?'READY':'WAIT',rationale:aligned&&bos&&retest?'Trend, break, and retest conditions are aligned.':'Directional context exists, but the configured entry evidence is incomplete.'});}
+  const warnings=[...scored.breakdown.contradicted];
+  const detectorDisplayItems = buildDetectorDisplayItems(scored.breakdown.unsupported);
+  if(scored.breakdown.unsupported.length)warnings.push('Automatic detector review required.');
+  if(scored.breakdown.manual.length)warnings.push(`Manual confirmation required: ${scored.breakdown.manual.join(', ')}.`);
+  if(scored.breakdown.external.length)warnings.push(`External evidence required: ${scored.breakdown.external.join(', ')}.`);
+  if(!direction)warnings.push('No directional setup is currently supported by the configured evidence.');
+  const candidates:LiveCandidate[]=[]; if(direction){const entry=e.lastPrice;const stopBase=direction==='BUY'?(e.lastSwingLow??entry-e.atr):(e.lastSwingHigh??entry+e.atr);const maxStop=strategy.stopLimits[instrument]??Math.max(e.atr*2,e.lastPrice*.01);const dist=Math.min(Math.abs(entry-stopBase)||e.atr||maxStop,maxStop);const proposalCreatedAt = new Date(analysisTimeMs).toISOString();candidates.push({id:'live-primary',createdAt:proposalCreatedAt,direction,entryLow:round(entry),entryHigh:round(entry),stopLoss:round(direction==='BUY'?entry-dist:entry+dist),takeProfit:round(direction==='BUY'?entry+dist*strategy.minimumRR:entry-dist*strategy.minimumRR),rr:strategy.minimumRR,status:aligned&&bos&&retest?'READY':'WAIT',rationale:aligned&&bos&&retest?'Trend, break, and retest conditions are aligned.':'Directional context exists, but the configured entry evidence is incomplete.'});}
   const latestCandleTimestamp=[...Object.values(series).map(v=>v.at(-1)!.datetime)].sort().at(-1)!;
   const methodologyIds=(strategy.strategyMethodologies??[]).flatMap(item=>[item.category,...item.rules]);
   const summary=status==='STRATEGY_INCOMPLETE'?'Configure at least one weighted required methodology condition before using live analysis.':direction?`${instrument} has a ${direction} bias under the active strategy.`:`${instrument} has no aligned directional bias under the active strategy.`;
   const timeframeBiases=Object.fromEntries(Object.entries(timeframes).map(([frame,value])=>[frame,value.bias]));
   const layerAnalysis=layers.map(layer=>{const layerRules=(strategy.rules??[]).filter(rule=>rule.enabled&&rule.timeframeRole===layer.role&&(rule.evaluationMode??'AUTOMATIC')==='AUTOMATIC').map(rule=>normalizeEvidenceId(rule.ruleKey)).filter(id=>(DETECTOR_EVIDENCE_IDS as readonly string[]).includes(id));const confirmedEvidence=layerRules.filter(id=>evidence[id]?.value);return {...layer,bias:timeframes[layer.timeframe].bias,confirmedEvidence,missingEvidence:layerRules.filter(id=>!confirmedEvidence.includes(id)),confidence:layerRules.length?Math.round(confirmedEvidence.length/layerRules.length*100):null}});
   const readinessComponents={mandatoryScore:liveDna.readiness.percentage??0,optionalScore:0,alignmentScore:0,contradictionPenalty:0};
-  return {status,analysisStatus:status,instrument,timeframe:strategy.confirmationTimeframe,strategyId:strategy.id??null,strategySchemaVersion:strategy.engineVersion??((strategy.rules??[]).length?2:1),methodologyIds,primaryMethodology:methodologyIds[0]??strategy.preferredSetups?.[0]??null,provider,providerSymbol:normalizedProviderSymbol,calculatedAt:new Date().toISOString(),latestCandleTimestamp,liveAnalysisConfidence:liveDna.readiness.percentage,strategyConfidenceThreshold:strategy.aiBehavior?.confidenceThreshold??strategy.waitScore,setupReadiness:liveDna.readiness,tradingDnaReport:liveDna.report,detectedTimeframes:strategyTimeframes(strategy),layerAnalysis,timeframeBiases,h4Bias:t.bias,h1Bias:c.bias,timeframeAligned:aligned,timeframes,suggestedDirection:direction,direction,setupType:sweep&&bos?'Liquidity Sweep + ChoCH + BoS':fvg?'FVG Retest':aligned?'Continuation':'Unclear',evidence,breakdown:scored.breakdown,components:readinessComponents,candidates:status==='VALID_ANALYSIS'?candidates:[],warnings,summary};
+  return {status,analysisStatus:status,instrument,timeframe:strategy.confirmationTimeframe,strategyId:strategy.id??null,strategySchemaVersion:strategy.engineVersion??((strategy.rules??[]).length?2:1),methodologyIds,primaryMethodology:methodologyIds[0]??strategy.preferredSetups?.[0]??null,provider,providerSymbol:normalizedProviderSymbol,calculatedAt:new Date(analysisTimeMs).toISOString(),latestCandleTimestamp,liveAnalysisConfidence:liveDna.readiness.percentage,strategyConfidenceThreshold:strategy.aiBehavior?.confidenceThreshold??strategy.waitScore,setupReadiness:liveDna.readiness,tradingDnaReport:liveDna.report,detectedTimeframes:strategyTimeframes(strategy),layerAnalysis,timeframeBiases,h4Bias:t.bias,h1Bias:c.bias,timeframeAligned:aligned,timeframes,suggestedDirection:direction,direction,setupType:sweep&&bos?'Liquidity Sweep + ChoCH + BoS':fvg?'FVG Retest':aligned?'Continuation':'Unclear',evidence,breakdown:scored.breakdown,components:readinessComponents,candidates:status==='VALID_ANALYSIS'?candidates:[],warnings,summary,detectorDisplayItems};
 }

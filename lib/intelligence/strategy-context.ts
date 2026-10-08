@@ -15,7 +15,7 @@ export function buildStrategyContext(strategy: StrategyProfile): StrategyContext
 
   if (!strategy.id) missingFields.push('strategy id');
   if (!strategy.name?.trim()) missingFields.push('strategy name');
-  if (layers.length !== 5) missingFields.push('five-layer timeframe model');
+  if (layers.length !== 5 || layers.some((layer) => layer.timeframe === 'Not configured')) missingFields.push('five-layer timeframe model');
   if (!Number.isFinite(threshold)) missingFields.push('confidence threshold');
   if (!Number.isFinite(maxRisk)) missingFields.push('maximum risk percentage');
   if (!Number.isFinite(minimumRR)) missingFields.push('minimum risk-reward ratio');

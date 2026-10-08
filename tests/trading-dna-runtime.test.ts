@@ -17,7 +17,7 @@ test('every Trading DNA registry rule is executable',()=>{
   let tree=createComposerGroup();const facts:Record<string,unknown>={};
   TRADING_DNA_RULES.forEach((rule,index)=>{const fixture=executableCondition(rule.id,index);tree=appendComposerNode(tree,'root',fixture.condition);facts[fixture.condition.id]=fixture.actual});
   const report=evaluateTradingDnaRuntime(strategyRulesFromComposerTree(tree),{facts},()=> '2026-01-01T00:00:00.000Z');
-  assert.equal(report.conditions.length,53);
+  assert.equal(report.conditions.length,TRADING_DNA_RULES.length);
   assert.equal(report.counts.pending,0);
   assert.ok(report.conditions.every(item=>item.reason.length>0));
 });
@@ -68,6 +68,25 @@ test('optional failures remain visible but do not block entry',()=>{
   const report=evaluateTradingDnaRuntime([rule],{facts:{'structure.bos':false}});
   assert.equal(report.conditions[0].status,'FAIL');assert.equal(report.conditions[0].required,false);assert.equal(report.status,'PASS');
   assert.equal(applyTradingDnaRuntime(baseResult,report).verdict,'AUTHORIZED');
+});
+
+test('optional pending evidence cannot turn an authorized result into WAIT',()=>{
+  const report={status:'PENDING' as const,summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[
+    {id:'required',ruleId:'required',label:'Required rule',status:'PASS' as const,required:true,evaluationType:'AUTOMATIC' as const,operator:'IS_TRUE' as const,actual:true,expected:[],reason:'Confirmed.',groupPath:['root']},
+    {id:'optional',ruleId:'optional',label:'Optional rule',status:'PENDING' as const,required:false,evaluationType:'EXTERNAL' as const,operator:'EXISTS' as const,actual:null,expected:[],reason:'Optional integration pending.',groupPath:['root']},
+  ]};
+  const applied=applyTradingDnaRuntime(baseResult,report);
+  assert.equal(applied.verdict,'AUTHORIZED');
+  assert.equal(applied.observations.some(item=>/Optional integration pending/.test(item)),false);
+});
+
+test('optional displacement cannot create a final risk block, while required displacement can',()=>{
+  const required={id:'required',ruleId:'required',label:'Required rule',status:'PASS' as const,required:true,evaluationType:'AUTOMATIC' as const,operator:'IS_TRUE' as const,actual:true,expected:[],reason:'Confirmed.',groupPath:['root']};
+  const optionalDisplacement={id:'displacement',ruleId:'displacement',label:'Displacement',status:'PENDING' as const,required:false,evaluationType:'AUTOMATIC' as const,operator:'CONFIRMED' as const,actual:null,expected:[],reason:'Displacement has not supplied evidence yet.',groupPath:['root']};
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'PENDING',summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[required,optionalDisplacement]}).verdict,'AUTHORIZED');
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'FAIL',summary:'',generatedAt:'',counts:{passed:1,failed:1,pending:0},groups:[],conditions:[required,{...optionalDisplacement,status:'FAIL' as const,actual:false}]}).vetoes.length,0);
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'PENDING',summary:'',generatedAt:'',counts:{passed:1,failed:0,pending:1},groups:[],conditions:[required,{...optionalDisplacement,required:true}]}).verdict,'WAIT');
+  assert.equal(applyTradingDnaRuntime(baseResult,{status:'FAIL',summary:'',generatedAt:'',counts:{passed:1,failed:1,pending:0},groups:[],conditions:[required,{...optionalDisplacement,required:true,status:'FAIL' as const,actual:false}]}).verdict,'REJECTED');
 });
 
 test('validation API returns the runtime report before Decision Narrative generation',()=>{

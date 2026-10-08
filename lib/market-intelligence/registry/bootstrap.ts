@@ -6,6 +6,7 @@ import { RangeLevelsDetector } from '../detectors/range-levels/range-levels-dete
 import { BreakOfStructureDetector } from '../detectors/break-of-structure/break-of-structure-detector.ts';
 import { LiquiditySweepDetector } from '../detectors/liquidity-sweep/liquidity-sweep-detector.ts';
 import { FairValueGapDetector } from '../detectors/fair-value-gap/fair-value-gap-detector.ts';
+import { OrderBlockDetector } from '../detectors/order-block-detector.ts';
 import { RejectionCandleDetector } from '../detectors/rejection-candle/rejection-candle-detector.ts';
 import { VolumeExpansionDetector } from '../detectors/volume-expansion/volume-expansion-detector.ts';
 import { DisplacementDetector } from '../detectors/displacement/displacement-detector.ts';
@@ -24,6 +25,7 @@ export function createDetectorRegistry(): DetectorRegistry {
     .register(new BreakOfStructureDetector())
     .register(new LiquiditySweepDetector())
     .register(new FairValueGapDetector())
+    .register(new OrderBlockDetector())
     .register(new RejectionCandleDetector())
     .register(new VolumeExpansionDetector())
     .register(new DisplacementDetector())

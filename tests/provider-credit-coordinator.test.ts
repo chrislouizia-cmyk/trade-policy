@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+
+const migration=fs.readFileSync('supabase/migrations/098_coordinate_twelve_data_credits.sql','utf8');
+const rollingMigration=fs.readFileSync('supabase/migrations/099_align_provider_rolling_credit_window.sql','utf8');
+const protectedCapacityMigration=fs.readFileSync('supabase/migrations/100_protect_daily_live_market_capacity.sql','utf8');
+const reconciliationMigration=fs.readFileSync('supabase/migrations/101_reconcile_twelve_data_credit_usage.sql','utf8');
+const settlementRepairPath='supabase/migrations/102_repair_provider_credit_settlement.sql';
+const settlementRepairMigration=fs.existsSync(settlementRepairPath)?fs.readFileSync(settlementRepairPath,'utf8'):'';
+const coordinator=fs.readFileSync('lib/server/provider-credit-coordinator.ts','utf8');
+const market=fs.readFileSync('lib/market-data.ts','utf8');
+const analyze=fs.readFileSync('app/api/market/analyze/route.ts','utf8');
+const reanalyze=fs.readFileSync('app/api/trades/reanalyze/route.ts','utf8');
+const backtest=fs.readFileSync('lib/server/backtest-historical-cache.ts','utf8');
+const health=fs.readFileSync('app/api/hq/health/route.ts','utf8');
+
+test('provider reservations are atomic, global, UTC-windowed, and service-role only',()=>{
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/date_trunc\('minute', v_now\)/);
+  assert.match(migration,/date_trunc\('day', v_now\)/);
+  assert.match(migration,/p_minute_limit integer default 8/);
+  assert.match(migration,/p_daily_limit integer default 800/);
+  assert.doesNotMatch(migration,/allowed_request_uidx|duplicate.*true/);
+  assert.match(migration,/revoke all on function[\s\S]*public, anon, authenticated/);
+  assert.match(migration,/grant execute on function[\s\S]*service_role/);
+});
+
+test('the latest coordinator migration rejects provider replays inside the global lock',()=>{
+  const replayMigration=fs.readFileSync('supabase/migrations/103_secure_marketplace_metrics_and_provider_replays.sql','utf8');
+  const lock=replayMigration.indexOf("pg_advisory_xact_lock(hashtextextended('provider-credit:'");
+  const lookup=replayMigration.indexOf('select * into v_existing');
+  const insert=replayMigration.indexOf('insert into public.provider_credit_events');
+  assert.ok(lock>=0&&lookup>lock&&insert>lookup);
+  assert.match(replayMigration,/'duplicate', true/);
+  assert.match(replayMigration,/'settlementStatus', v_existing\.settlement_status/);
+  assert.match(replayMigration,/settlement_status = 'CONSUMED'/);
+  assert.match(replayMigration,/settlement_status = 'PENDING' and created_at > v_now - interval '2 minutes'/);
+  assert.match(coordinator,/if\(reservation\.duplicate\)throw new ProviderRequestReplayError\(\)/);
+});
+
+test('live operations reserve the complete request before parallel provider calls',()=>{
+  assert.match(analyze,/credits:timeframes\.length/);
+  assert.match(analyze,/priority:'LIVE'/);
+  assert.match(analyze,/withTwelveDataCredits[\s\S]*Promise\.all\(timeframes\.map/);
+  assert.match(reanalyze,/credits:timeframes\.length\+1/);
+  assert.match(reanalyze,/credits:timeframes\.length\+1[\s\S]*fetchPriceWithTelemetry\(trade\.instrument\)/);
+});
+
+test('server entry points pass through the coordinator without contaminating shared market utilities',()=>{
+  assert.doesNotMatch(market,/provider-credit-coordinator/);
+  assert.match(fs.readFileSync('app/api/market/candles/route.ts','utf8'),/withTwelveDataCredits/);
+  assert.match(fs.readFileSync('app/api/market/quote/route.ts','utf8'),/withTwelveDataCredits/);
+  assert.match(fs.readFileSync('app/api/trades/price/route.ts','utf8'),/withTwelveDataCredits/);
+  assert.match(coordinator,/p_minute_limit:8,p_daily_limit:800/);
+});
+
+test('background backtests preserve live capacity and retry without losing the run',()=>{
+  assert.match(rollingMigration,/v_now - interval '60 seconds'/);
+  assert.match(protectedCapacityMigration,/p_priority='BACKGROUND'.*p_minute_limit-7/);
+  assert.match(protectedCapacityMigration,/p_priority='BACKGROUND'.*p_daily_limit-720/);
+  assert.match(backtest,/priority:'BACKGROUND'/);
+  assert.match(backtest,/Historical data is paused to preserve live decision capacity/);
+});
+
+test('health reads coordinator telemetry without spending a provider credit',()=>{
+  assert.doesNotMatch(health,/api\.twelvedata\.com/);
+  assert.match(health,/provider_credit_events/);
+  assert.match(health,/rolling minute/);
+  assert.match(health,/recentOperations/);
+});
+
+test('reservations settle to provider-confirmed usage or are released',()=>{
+  assert.match(reconciliationMigration,/settlement_status.*PENDING/);
+  assert.match(reconciliationMigration,/settlement_status='CONSUMED'/);
+  assert.match(reconciliationMigration,/then 'RELEASED'/);
+  assert.match(reconciliationMigration,/created_at>v_now-interval '2 minutes'/);
+  assert.match(coordinator,/settle_provider_credits/);
+  assert.match(coordinator,/telemetry\.requestCredits\?\?input\.credits/);
+  assert.match(market,/api-credits-used/);
+  assert.match(market,/api-credits-left/);
+  assert.match(market,/api-credits-request/);
+});
+
+test('provider settlement uses the bigint identity type from the credit event table',()=>{
+  assert.match(migration,/id bigint generated always as identity primary key/);
+  assert.match(settlementRepairMigration,/declare\s+v_id bigint/);
+  assert.doesNotMatch(settlementRepairMigration,/declare\s+v_id uuid/);
+  assert.match(settlementRepairMigration,/where id\s*=\s*v_id/);
+});

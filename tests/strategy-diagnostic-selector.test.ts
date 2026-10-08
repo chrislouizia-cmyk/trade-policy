@@ -7,8 +7,8 @@ const component=readFileSync(new URL('../components/hq/StrategyCompatibilityInsp
 const endpoint=readFileSync(new URL('../app/api/admin/diagnostics/strategies/route.ts',import.meta.url),'utf8');
 
 test('selector labels distinguish owner, state, archive and instrument',()=>{
-  const label=strategyOptionLabel({id:'1',name:'London Gold',ownerName:'Ada Owner',active:false,archived:true,instruments:['XAUUSD']});
-  assert.equal(label,'London Gold — Ada Owner · Inactive · Archived · XAUUSD');
+  const label=strategyOptionLabel({id:'1',name:'London Gold',customer:{id:'owner-1',name:'Ada Owner'},state:'ARCHIVED',instruments:['XAUUSD'],engineVersion:2});
+  assert.equal(label,'London Gold — Ada Owner · ARCHIVED · XAUUSD · Engine v2');
 });
 
 test('UUID fallback validates supported UUIDs',()=>{
@@ -16,22 +16,22 @@ test('UUID fallback validates supported UUIDs',()=>{
   assert.equal(STRATEGY_UUID.test('not-a-strategy-id'),false);
 });
 
-test('strategy discovery preserves owner and system.health authorization',()=>{
+test('strategy directory preserves authorization and returns the sanitized DTO boundary',()=>{
   assert.match(endpoint,/has_staff_permission.*p_permission:'system\.health'/s);
-  assert.match(endpoint,/if\(!staffAllowed\)optionsQuery=optionsQuery\.eq\('user_id',user\.id\)/);
-  assert.match(endpoint,/pageSize=20/);
-  assert.match(endpoint,/ownerEmail:staffAllowed\?/);
+  assert.match(endpoint,/loadHQStrategyDirectory/);
+  assert.match(endpoint,/ownerId:staffAllowed\?undefined:user\.id/);
   assert.match(endpoint,/createAdminClient/);
 });
 
-test('selector supports loading, empty, denied, failure and automatic single selection states',()=>{
-  for(const copy of ['Loading strategies…','No accessible strategies found.','Strategies could not be loaded.','You do not have permission to load strategies.'])assert.match(component,new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
-  assert.match(component,/items\.length===1&&Number\(body\.total\)===1/);
+test('directory supports loading, empty, denied and failure states',()=>{
+  for(const copy of ['Loading strategy directory…','No strategies match these filters.','The strategy directory could not be loaded. Please retry.','You do not have permission to inspect strategies.'])assert.match(component,new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
 });
 
-test('selection and advanced fallback call the existing diagnostic endpoint',()=>{
-  assert.match(component,/diagnostics\/strategies\/\$\{encodeURIComponent\(strategyId\)\}/);
+test('directory is searchable and UUID remains an advanced-only fallback',()=>{
+  assert.match(component,/Search customer or strategy name/);
+  assert.match(component,/Methodology \/ category/);
+  assert.match(component,/Advanced · open by UUID/);
   assert.match(component,/if\(!STRATEGY_UUID\.test\(id\)\)/);
   assert.match(component,/initialStrategyId/);
-  assert.match(component,/strategyId=\$\{encodeURIComponent\(strategyId\)\}/);
+  assert.match(component,/strategyId=\$\{encodeURIComponent\(item\.id\)\}/);
 });

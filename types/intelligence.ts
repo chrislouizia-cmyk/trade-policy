@@ -104,3 +104,57 @@ export type DecisionNarrative = {
   generatedAt: string;
   fallbackUsed: boolean;
 };
+
+export type DecisionExplanationState =
+  | 'CONFIRMED'
+  | 'MISSING'
+  | 'BLOCKED'
+  | 'NOT_AVAILABLE'
+  | 'NOT_REQUIRED';
+
+export type DecisionExplanationVerdict =
+  | 'READY'
+  | 'WAIT'
+  | 'BLOCKED'
+  | 'NO_SETUP'
+  | 'MARKET_CLOSED'
+  | 'DATA_UNAVAILABLE'
+  | 'STRATEGY_INCOMPLETE';
+
+export type DecisionExplanationItem = {
+  id: string;
+  ruleId?: string;
+  title: string;
+  plainLanguageDescription: string;
+  state: DecisionExplanationState;
+  required: boolean;
+  supported: boolean;
+  observedValue?: string;
+  expectedValue?: string;
+  detectedAt?: string;
+  source?: string;
+  nextAction?: string;
+  evidenceIds: string[];
+  deterministic: true;
+};
+
+export type DecisionExplanationSummary = {
+  verdict: DecisionExplanationVerdict;
+  headline: string;
+  explanation: string;
+  confirmedRequiredCount: number;
+  totalRequiredCount: number;
+  confirmedOptionalCount: number;
+  totalOptionalCount: number;
+  primaryReason: string;
+  nextAction: string;
+  items: DecisionExplanationItem[];
+  dataStatus: {
+    provider: string;
+    lastVerifiedCandleAt?: string;
+    candleAgeSeconds?: number;
+    freshness: 'CURRENT' | 'DELAYED' | 'MARKET_CLOSED' | 'UNAVAILABLE';
+    calculationCompletedAt?: string;
+  };
+  integrityStatement: string;
+};

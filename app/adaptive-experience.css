@@ -1,0 +1,272 @@
+/* Device-specific composition for the customer portal, HQ and Strategy Copilot. */
+
+/* iPad landscape/portrait and similar Android tablets. */
+@media (min-width: 761px) and (max-width: 1180px) {
+  body:has(.mobile-bottom-nav) .authenticated-app-shell,
+  body:has(.hq-container) .hq-container {
+    width: min(100% - 24px, 1480px);
+  }
+
+  body:has(.mobile-bottom-nav) .canonical-visible-nav {
+    grid-template-columns: repeat(7, minmax(76px, 1fr));
+  }
+
+  body:has(.mobile-bottom-nav) .canonical-visible-nav > a {
+    min-width: 0;
+    padding-inline: 8px !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+  }
+
+  body:has(.mobile-bottom-nav) .canonical-context-bar {
+    align-items: end;
+    gap: 12px;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-builder-layout,
+  body:has(.mobile-bottom-nav) .account-overview-layout {
+    grid-template-columns: minmax(220px, .7fr) minmax(0, 1.6fr);
+  }
+
+  body:has(.hq-container) .hq-shell-header {
+    padding: 14px !important;
+  }
+
+  body:has(.hq-container) .hq-command-nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  body:has(.hq-container) :is(.hq-command-home, .hq-command-group > summary) {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    padding-inline: 9px;
+  }
+
+  body:has(.hq-container) .hq-command-group > div {
+    right: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  body:has(.hq-container) :is(.directory-desktop-table, .directory-results-surface, .sales-queue-directory) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body:has(.hq-container) :is(.directory-desktop-table, .directory-results-surface, .sales-queue-directory) table {
+    min-width: 760px;
+  }
+}
+
+/* iPhone and Android phone: generous touch targets and one readable column. */
+@media (max-width: 760px) {
+  body:has(.mobile-bottom-nav) .authenticated-app-shell,
+  body:has(.hq-container) .hq-container {
+    width: 100%;
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+
+  body:has(.mobile-bottom-nav) :is(button, .button-link, input, select),
+  body:has(.hq-container) :is(button, .button-link, input, select, .hq-command-home, .hq-command-group > summary) {
+    min-height: 44px;
+  }
+
+  body:has(.mobile-bottom-nav) :is(input, select, textarea),
+  body:has(.hq-container) :is(input, select, textarea) {
+    font-size: 16px;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel {
+    gap: 14px;
+    padding: 13px;
+    overflow: hidden;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel > label {
+    min-width: 0;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel > label textarea {
+    min-height: 132px;
+    resize: vertical;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-log {
+    display: grid;
+    gap: 10px;
+    max-height: min(52dvh, 520px);
+    padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--tp-line-soft);
+    border-radius: 16px;
+    background: rgba(2, 7, 12, .3);
+    scroll-padding-block: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message {
+    width: min(88%, 430px);
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message.from-trade-police {
+    justify-self: start;
+    border-color: rgba(119, 223, 191, .2);
+    border-bottom-left-radius: 5px;
+    background: linear-gradient(145deg, rgba(121, 168, 255, .105), rgba(119, 223, 191, .07));
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message.from-trader {
+    justify-self: end;
+    border-color: rgba(255, 255, 255, .12);
+    border-bottom-right-radius: 5px;
+    background: rgba(255, 255, 255, .065);
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message strong {
+    font-size: 9px;
+    letter-spacing: .11em;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message p {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .draft-review-panel,
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .playbook-summary {
+    min-width: 0;
+    padding: 13px;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .playbook-summary .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body:has(.hq-container) .hq-container {
+    padding-top: 8px;
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  }
+
+  body:has(.hq-container) .hq-shell-header {
+    gap: 12px;
+    padding: 11px !important;
+    border-radius: 17px !important;
+  }
+
+  body:has(.hq-container) .hq-brand-row {
+    align-items: center !important;
+    flex-direction: row !important;
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+
+  body:has(.hq-container) .hq-brand {
+    gap: 9px;
+    max-width: calc(100% - 86px);
+  }
+
+  body:has(.hq-container) .hq-logo-wordmark {
+    height: 31px;
+    max-width: 142px;
+  }
+
+  body:has(.hq-container) .hq-brand-caption {
+    gap: 1px;
+    padding-left: 9px;
+  }
+
+  body:has(.hq-container) .hq-brand-caption strong {
+    font-size: 8px;
+    letter-spacing: .12em;
+  }
+
+  body:has(.hq-container) .hq-brand-caption small {
+    display: none;
+  }
+
+  body:has(.hq-container) .hq-profile-trigger {
+    width: 44px !important;
+    height: 44px;
+    min-width: 44px;
+    padding: 0 !important;
+    border-radius: 50%;
+  }
+
+  body:has(.hq-container) .hq-executive-greeting strong {
+    font-size: clamp(21px, 7vw, 27px);
+  }
+
+  body:has(.hq-container) .hq-command-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  body:has(.hq-container) :is(.hq-command-home, .hq-command-group > summary) {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    padding: 9px 10px;
+  }
+
+  body:has(.hq-container) .hq-command-group > summary strong,
+  body:has(.hq-container) .hq-command-home strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body:has(.hq-container) .hq-command-group > div {
+    position: absolute;
+    right: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  body:has(.hq-container) :is(.directory-page-header, .sales-v2-header, .hq-hero-card, .hq-command-hero) {
+    padding: 18px !important;
+    border-radius: 16px;
+  }
+
+  body:has(.hq-container) :is(.directory-desktop-table, .directory-results-surface, .sales-queue-directory) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body:has(.hq-container) :is(.directory-desktop-table, .directory-results-surface, .sales-queue-directory) table {
+    min-width: 680px;
+  }
+
+  body:has(.hq-container) :is(.hq-command-metric-grid.primary, .hq-command-metric-grid.attention, .hq-command-departments) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel,
+  body:has(.hq-container) .hq-shell-header {
+    padding: 10px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .strategy-copilot-panel .copilot-message {
+    width: 92%;
+  }
+
+  body:has(.hq-container) .hq-logo-wordmark {
+    max-width: 122px;
+  }
+}
