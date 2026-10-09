@@ -1,3 +1,4 @@
+export const maxDuration = 60;
 import { refreshTraderLearning } from '@/lib/server/trader-context';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';

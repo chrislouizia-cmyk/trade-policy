@@ -142,6 +142,11 @@ export function buildTraderInterventions(
       authoritative: false,
     });
   }
+  for (const signal of summary.integral?.signals ?? []) {
+    if (signal.category === "QUALITY" || (signal.category === "EXPOSURE" && context.stage === "POST_TRADE")) continue;
+    interventions.push({key:`${context.stage.toLowerCase()}:integral:${signal.key}`,stage:context.stage,severity:signal.severity,
+      title:signal.title,detail:signal.detail,sampleSize:signal.sampleSize,evidenceIds:signal.evidenceIds,authoritative:false});
+  }
   return interventions
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || b.sampleSize - a.sampleSize)
     .slice(0, 3);
@@ -156,7 +161,7 @@ export function buildAnonymousContributions(
       ["hour", "weekday", "instrument", "session", "discipline", "direction", "trade_number", "after_outcome"].includes(item.dimension) && item.trades >= MIN_PERSONAL_SAMPLE)
     .map((item) => ({
       dimension: item.dimension,
-      bucket: item.key,
+      bucket: item.dimension === "hour" || item.dimension === "weekday" ? `${summary.timezone}|${item.key}` : item.key,
       trades: item.trades,
       wins: item.wins,
       totalR: item.totalR,

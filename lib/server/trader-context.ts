@@ -9,6 +9,9 @@ import {
 } from "../trader-learning.ts";
 import { syncTraderIntelligenceState } from "./trader-intelligence-state.ts";
 
+import { generateTraderCompanion } from "./trader-companion.ts";
+import { buildIntegralIntelligence, normalizeRecordedResult, type IntegralTrade } from "../trader-integral-intelligence.ts";
+
 type Client = ReturnType<typeof createAdminClient>;
 export type TraderContextSelection = {
   strategyId?: string;
@@ -25,7 +28,7 @@ export async function loadTraderContext(
   // Authentication happens at the route boundary. Server-only access avoids
   // exposing internal feedback tables while every query remains user-scoped.
   const dataClient = createAdminClient();
-  const [profile, trades, memories, feedback, decisions, intelligenceProfile] = await Promise.all([
+  const [profile, trades, memories, feedback, decisions, intelligenceProfile, openTrades, settings, responses, scans, accounts, experiments, collective] = await Promise.all([
     dataClient
       .from("profiles")
       .select("display_name,experience_level,trader_type,preferred_locale")
@@ -34,7 +37,7 @@ export async function loadTraderContext(
     dataClient
       .from("active_trades")
       .select(
-        "id,user_id,status,instrument,direction,risk_percent,initial_rr,setup_type,strategy_profile_id,strategy_name_at_entry,outcome,result_r,opened_at,closed_at,taken_against_verdict,strategy_snapshot",
+        "id,user_id,status,instrument,direction,risk_percent,initial_rr,setup_type,strategy_profile_id,strategy_name_at_entry,outcome,result_r,opened_at,closed_at,taken_against_verdict,strategy_snapshot,account_id,risk_amount,realized_pnl,fees,mfe_r,last_price_at,last_analysis",
       )
       .eq("user_id", userId)
       .eq("status", "CLOSED")
@@ -62,15 +65,22 @@ export async function loadTraderContext(
       .limit(500),
     dataClient
       .from("trader_intelligence_profiles")
-      .select("timezone")
+      .select("timezone,daily_brief,locale")
       .eq("user_id", userId)
       .maybeSingle(),
+    dataClient.from("active_trades").select("id,user_id,status,instrument,direction,risk_percent,account_id,opened_at,last_price_at,current_r,last_analysis,strategy_snapshot").eq("user_id",userId).eq("status","OPEN").limit(100),
+    dataClient.from("trader_intelligence_settings").select("collective_opt_in,muted_keys").eq("user_id",userId).maybeSingle(),
+    dataClient.from("trader_intelligence_interventions").select("intervention_key,response,responded_at").eq("user_id",userId).not("response","is",null).order("responded_at",{ascending:false}).limit(100),
+    dataClient.from("market_scans").select("id,user_id,instrument,analysis").eq("user_id",userId).eq("server_created",true).order("created_at",{ascending:false}).limit(12),
+    dataClient.from("trading_accounts").select("id,user_id,name,currency,current_balance,peak_balance").eq("user_id",userId).eq("is_archived",false).limit(100),
+    dataClient.from("trader_intelligence_experiments").select("id,hypothesis,started_at,timezone,baseline_ids,status,outcome").eq("user_id",userId).order("started_at",{ascending:false}).limit(10),
+    dataClient.from("trader_collective_patterns").select("dimension,bucket,trades,contributor_count,average_r").gte("contributor_count",20).gte("trades",100).order("trades",{ascending:false}).limit(100),
   ]);
-  for (const result of [profile, trades, memories, feedback, decisions])
+  for (const result of [profile, trades, memories, feedback, decisions, openTrades, settings, responses, scans, accounts, experiments, collective])
     if (result.error) throw result.error;
   if (intelligenceProfile.error && intelligenceProfile.error.code !== "PGRST116")
     throw intelligenceProfile.error;
-  const records = (trades.data ?? []).map((row) => ({
+  const records = (trades.data ?? []).map((row) => normalizeRecordedResult({
     ...row,
     source: "EXECUTED",
     post_analysis: null,
@@ -93,8 +103,20 @@ export async function loadTraderContext(
       decisions: decisions.data ?? [],
     },
   );
+  summary.integral = buildIntegralIntelligence({ userId, summary,
+    trades: [...records, ...(openTrades.data ?? []).map(row => ({...row,source:"EXECUTED"}))] as IntegralTrade[],
+    memories: memories.data ?? [], responses: responses.data ?? [], scans:scans.data??[], accounts:accounts.data??[], experiments:experiments.data??[], collective:collective.data??[],
+    settings: { collectiveOptIn: settings.data?.collective_opt_in === true, mutedKeys: settings.data?.muted_keys ?? [] },
+  });
+  for (const experiment of summary.integral.experiments) if (experiment.status === "ACTIVE" && experiment.evaluation.status === "EVALUATED") {
+    const update = await dataClient.from("trader_intelligence_experiments").update({status:"EVALUATED",outcome:experiment.evaluation,evaluated_at:summary.generatedAt}).eq("user_id",userId).eq("id",experiment.id).eq("status","ACTIVE");
+    if (update.error) throw update.error;
+    experiment.status = "EVALUATED";
+  }
+  const priorBrief = intelligenceProfile.data?.daily_brief;
+  if (priorBrief?.generatedAt && priorBrief?.message && ["OPENAI","DETERMINISTIC"].includes(priorBrief.source)) summary.integral.brief = priorBrief;
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ ...summary, generatedAt: undefined }))
+    .update(JSON.stringify({ ...summary, generatedAt: undefined, integral: {...summary.integral,generatedAt:undefined} }))
     .digest("hex");
   const { error: snapshotError } = await createAdminClient()
     .from("trader_learning_snapshots")
@@ -109,9 +131,11 @@ export async function loadTraderContext(
   const facts: CompanionFact[] = summary.findings.map((finding) => ({
     id: finding.id,
     text: finding.text,
-    source: "Recorded closed executions",
+    source: "Recorded closed executions: net realized P&L / recorded risk where available; otherwise recorded R with unknown fee impact.",
     evidenceIds: finding.evidenceIds,
   }));
+  facts.push({ id: "integral:state", text: JSON.stringify(summary.integral),
+    source: "Recorded personal intelligence. Market observations apply only to their instrument, strategy, timeframe and timestamp. Measured correlation, broker verification and causal benefit are unavailable. No automatic strategy or order changes." });
   for (const memory of memories.data ?? [])
     facts.push({
       id: `memory:${memory.id}`,
@@ -256,7 +280,7 @@ export async function loadTraderContext(
     });
   }
   return {
-    profile: profile.data,
+    profile: profile.data ? {...profile.data,preferred_locale:["en","es","fr"].includes(profile.data.preferred_locale)?profile.data.preferred_locale:intelligenceProfile.data?.locale??"en"} : null,
     summary,
     memories: memories.data ?? [],
     facts,
@@ -268,6 +292,21 @@ export async function loadTraderContext(
 export async function refreshTraderLearning(client: Client, userId: string) {
   try {
     const context = await loadTraderContext(client, userId);
+    const localDay = new Intl.DateTimeFormat("en-CA", {timeZone:context.summary.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(context.summary.generatedAt));
+    const claim = context.summary.integral && context.summary.integral.brief?.day !== localDay
+      ? await createAdminClient().rpc("claim_trader_daily_brief",{p_user_id:userId,p_day:localDay}) : null;
+    if (claim?.error) throw claim.error;
+    if (context.summary.integral && claim?.data === true) {
+      const output = await generateTraderCompanion({ facts: context.facts, profile: context.profile,
+        message: "Prepare an automatic daily process brief: one priority from recorded evidence, what changed, one concrete review task. Do not ask for a trade or issue an execution instruction. Distinguish declared preferences, observations and unavailable information. Do not infer a current market regime. Cite supplied facts.",
+        history: [], locale: context.profile?.preferred_locale ?? "en", memorySaved: false });
+      const brief = {day:localDay,generatedAt:context.summary.generatedAt,...output.reply,source:output.source,failureCode:output.failureCode};
+      const stored = await createAdminClient().from("trader_intelligence_profiles").upsert({user_id:userId,daily_brief:brief},{onConflict:"user_id"});
+      if (stored.error) throw stored.error;
+      context.summary.integral.brief = brief;
+      const snapshot = await createAdminClient().from("trader_learning_snapshots").update({summary:context.summary,updated_at:context.summary.generatedAt}).eq("user_id",userId);
+      if (snapshot.error) throw snapshot.error;
+    }
     await createAdminClient()
       .from("trader_intelligence_profiles")
       .upsert({

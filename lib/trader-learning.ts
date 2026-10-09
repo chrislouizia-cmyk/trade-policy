@@ -92,6 +92,7 @@ export type LearningFinding = {
   sampleSize: number;
 };
 export type LearningSummary = {
+  integral?: import("./trader-integral-intelligence.ts").IntegralState;
   version: "2";
   closedTrades: number;
   excludedTrades: number;

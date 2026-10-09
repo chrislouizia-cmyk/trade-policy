@@ -1,14 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSameRequestOrigin } from "@/lib/request-origin";
-import { refreshTraderLearning } from "@/lib/server/trader-context";
+import { processTraderIntelligenceQueue } from "@/lib/server/trader-intelligence-worker";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const schema = z.object({
+  locale: z.enum(["en","es","fr"]).optional(),
   timezone: z.string().trim().min(1).max(80),
   route: z.string().trim().startsWith("/").max(160),
 }).strict();
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
     .upsert({
       user_id: user.id,
       timezone: parsed.data.timezone,
+      ...(parsed.data.locale?{locale:parsed.data.locale}:{}),
       last_seen_at: now.toISOString(),
     }, { onConflict: "user_id" })
     .select("last_refresh_at")
@@ -65,16 +67,9 @@ export async function POST(request: Request) {
       context: {},
     });
 
-  const refreshedAt = profile.data?.last_refresh_at
-    ? new Date(profile.data.last_refresh_at).getTime()
-    : 0;
-  if (!refreshedAt || now.getTime() - refreshedAt > 6 * 60 * 60_000) {
-    const result = await refreshTraderLearning(admin, user.id);
-    if (result.updated)
-      await admin
-        .from("trader_intelligence_profiles")
-        .update({ last_refresh_at: now.toISOString() })
-        .eq("user_id", user.id);
-  }
+  after(async () => {
+    try { await processTraderIntelligenceQueue({userId:user.id}); }
+    catch { console.warn("[INTELLIGENCE_BACKGROUND_FAILED]"); }
+  });
   return new NextResponse(null, { status: 204 });
 }

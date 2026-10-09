@@ -1,3 +1,4 @@
+import IntegralIntelligenceWorkspace from "./IntegralIntelligenceWorkspace";
 import type { LearningDimension, LearningSummary } from "@/lib/trader-learning";
 import type { Locale } from "@/lib/i18n/config";
 
@@ -105,7 +106,7 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
   const eligible = summary.dimensions.filter((item) => item.trades >= 3 && item.evidence?.status !== "STALE" && item.evidence?.status !== "CONFLICTING");
   const strongest = [...eligible].sort((a, b) => b.averageR - a.averageR)[0];
   const weakest = [...eligible].sort((a, b) => a.averageR - b.averageR)[0];
-  const priority = summary.recommendations[0];
+  const priority = summary.integral?.signals[0] ?? summary.recommendations[0];
   const established = eligible.some(item => item.evidence?.status === "REPEATED");
   const headingId = full ? "police-intelligence-title" : "police-intelligence-compact-title";
 
@@ -194,6 +195,7 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
         </div>
       </details>
 
+      {summary.integral ? <IntegralIntelligenceWorkspace initial={summary.integral} locale={locale} /> : null}
       <small className="police-intelligence-footnote">{c.automatic} · {summary.timezone} · {new Date(summary.generatedAt).toLocaleString(locale)}</small>
     </section>
   );

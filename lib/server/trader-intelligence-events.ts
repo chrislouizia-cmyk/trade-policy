@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { createHash } from "node:crypto";
 import { createAdminClient } from "../supabase/admin.ts";
 
@@ -71,5 +72,8 @@ export async function recordTraderIntelligenceEvent(input: EventInput) {
     last_seen_at: now,
     last_material_event_at: now,
   }, { onConflict: "user_id" });
+  if (["ACCOUNT_SEEN","DECISION_CREATED","TRADE_OPENED","TRADE_CLOSED","TRADE_REANALYZED","INTERVENTION_RESPONDED"].includes(input.eventType)) {
+    after(async () => { try { const {processTraderIntelligenceQueue} = await import("./trader-intelligence-worker.ts"); await processTraderIntelligenceQueue({userId:input.userId}); } catch { console.warn("[INTELLIGENCE_BACKGROUND_FAILED]"); } });
+  }
   return true;
 }

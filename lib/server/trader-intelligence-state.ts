@@ -60,7 +60,7 @@ export async function recordTraderInterventions(
       status: "PRESENTED",
       presented_at: new Date().toISOString(),
     })),
-    { onConflict: "user_id,intervention_key,context_fingerprint" },
+    { onConflict: "user_id,intervention_key,context_fingerprint", ignoreDuplicates: true },
   ).select("id,intervention_key");
   if (result.error) {
     console.warn("[TRADER_INTELLIGENCE_INTERVENTION_WRITE_FAILED]");
@@ -72,8 +72,12 @@ export async function recordTraderInterventions(
     dedupeKey: `${item.key}:${contextFingerprint}`,
     context: { interventionKey: item.key, stage: item.stage, severity: item.severity },
   })));
-  const ids = new Map((result.data ?? []).map((row) => [row.intervention_key, row.id]));
-  return interventions.map((item) => ({ ...item, recordId: ids.get(item.key) }));
+  const existing = await client.from("trader_intelligence_interventions").select("id,intervention_key,status")
+    .eq("user_id",userId).eq("context_fingerprint",contextFingerprint);
+  if (existing.error) return interventions;
+  const visible = interventions.filter(item => !existing.data?.some(row => row.intervention_key === item.key && row.status === "DISMISSED"));
+  const ids = new Map((existing.data ?? result.data ?? []).map((row) => [row.intervention_key, row.id]));
+  return visible.map((item) => ({ ...item, recordId: ids.get(item.key) }));
 }
 
 export async function rebuildCollectivePatterns(client: Client) {
@@ -212,7 +216,9 @@ async function syncContributions(
   userId: string,
   summary: LearningSummary,
 ) {
-  const contributions = buildAnonymousContributions(summary);
+  const settings = await client.from("trader_intelligence_settings").select("collective_opt_in").eq("user_id",userId).maybeSingle();
+  if (settings.error) throw settings.error;
+  const contributions = settings.data?.collective_opt_in === true ? buildAnonymousContributions(summary) : [];
   if (contributions.length) {
     const result = await client.from("trader_intelligence_contributions").upsert(
       contributions.map((item) => ({

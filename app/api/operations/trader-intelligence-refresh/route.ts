@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { refreshTraderLearning } from "@/lib/server/trader-context";
+import { processTraderIntelligenceQueue } from "@/lib/server/trader-intelligence-worker";
 import { rebuildCollectivePatterns } from "@/lib/server/trader-intelligence-state";
 
 export const runtime = "nodejs";
@@ -20,32 +20,9 @@ export async function GET(request: Request) {
   if (!authorized(request))
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   const admin = createAdminClient();
-  const candidates = await admin
-    .from("trader_intelligence_profiles")
-    .select("user_id")
-    .order("last_refresh_at", { ascending: true, nullsFirst: true })
-    .limit(200);
-  if (candidates.error)
-    return NextResponse.json({ error: "Refresh queue unavailable." }, { status: 503 });
-
-  let refreshed = 0;
-  let failed = 0;
-  for (let index = 0; index < (candidates.data?.length ?? 0); index += 5) {
-    const batch = candidates.data!.slice(index, index + 5);
-    const outcomes = await Promise.all(
-      batch.map(async ({ user_id }) => {
-        const result = await refreshTraderLearning(admin, user_id);
-        if (result.updated)
-          await admin
-            .from("trader_intelligence_profiles")
-            .update({ last_refresh_at: new Date().toISOString() })
-            .eq("user_id", user_id);
-        return result.updated;
-      }),
-    );
-    refreshed += outcomes.filter(Boolean).length;
-    failed += outcomes.filter((value) => !value).length;
-  }
+  const seeded = await admin.rpc("enqueue_daily_trader_intelligence", {p_limit:200});
+  if (seeded.error) return NextResponse.json({error:"Refresh queue unavailable."},{status:503});
+  const {refreshed,failed} = await processTraderIntelligenceQueue({budgetMs:40_000});
   await admin
     .from("trader_intelligence_events")
     .delete()
@@ -57,7 +34,7 @@ export async function GET(request: Request) {
     console.warn("[TRADER_COLLECTIVE_REFRESH_FAILED]");
   }
   return NextResponse.json({
-    processed: candidates.data?.length ?? 0,
+    processed: refreshed + failed,
     refreshed,
     failed,
     collectivePatterns,

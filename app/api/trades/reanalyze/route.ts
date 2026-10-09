@@ -14,7 +14,7 @@ import {buildTraderInterventions} from '@/lib/trader-intelligence';
 import {loadTraderLearningSnapshot,recordTraderInterventions} from '@/lib/server/trader-intelligence-state';
 import {recordTraderIntelligenceEvent} from '@/lib/server/trader-intelligence-events';
 
-export const runtime='nodejs';export const maxDuration=60;
+export const runtime='nodejs';export const maxDuration = 60;
 const requestSchema=z.object({tradeId:z.string().uuid(),session:z.string().trim().min(1).max(80).optional()});
 type GuidanceStatus='HOLD'|'PROTECT'|'EXIT'|'INVALIDATED';
 

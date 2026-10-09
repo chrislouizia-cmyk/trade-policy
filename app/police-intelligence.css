@@ -76,3 +76,19 @@
 .personal-intelligence-more{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(255,255,255,.06)}
 .personal-intelligence-feedback{display:flex;align-items:center;gap:.4rem;margin-top:.55rem;color:var(--muted,#94a3b8);font-size:.68rem}
 .personal-intelligence-feedback button{min-height:1.7rem;padding:.25rem .55rem;border-color:rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.035);font-size:.66rem}
+
+.integral-intelligence{border-top:1px solid rgba(255,255,255,.08);padding-top:12px;min-width:0}
+.integral-intelligence summary{cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;font-weight:700}
+.integral-intelligence summary small{color:var(--muted);font-weight:400}
+.integral-intelligence-content{display:grid;gap:12px;padding-top:12px;min-width:0}
+.integral-intelligence-content :is(article,section,details){padding:12px;border:1px solid rgba(255,255,255,.07);border-radius:12px;min-width:0;background:rgba(255,255,255,.012)}
+.integral-intelligence-content :is(p,small){font-size:12px;line-height:1.6;color:var(--muted);overflow-wrap:anywhere}
+.integral-intelligence-content h3{font-size:13px;margin:0}
+.integral-intelligence-content button{min-height:44px;font-size:11px;margin:4px 8px 4px 0}
+.integral-intelligence-content form{display:grid;gap:10px}
+.integral-intelligence-content :is(textarea,select){width:100%;font:inherit;font-size:16px;max-width:100%}
+.integral-intelligence-content textarea{min-height:90px;resize:vertical}
+.integral-evidence-list{list-style:none;padding:0;display:grid;gap:8px}
+.integral-evidence-list li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:11px;padding-block:6px;border-bottom:1px solid rgba(255,255,255,.06)}
+.integral-consent{display:flex;align-items:flex-start;gap:10px;font-size:12px}
+.integral-consent input{width:20px;height:20px;flex:none}
