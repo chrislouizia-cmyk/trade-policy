@@ -195,7 +195,7 @@ export default function PoliceIntelligence({ summary, locale, full = false }: Pr
         </div>
       </details>
 
-      {summary.integral ? <IntegralIntelligenceWorkspace initial={summary.integral} locale={locale} /> : null}
+      {summary.integral ? <IntegralIntelligenceWorkspace initial={summary.integral} locale={locale} initialTimezone={summary.timezone} /> : null}
       <small className="police-intelligence-footnote">{c.automatic} · {summary.timezone} · {new Date(summary.generatedAt).toLocaleString(locale)}</small>
     </section>
   );

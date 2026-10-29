@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSameRequestOrigin } from "@/lib/request-origin";
 import { processTraderIntelligenceQueue } from "@/lib/server/trader-intelligence-worker";
+import { canonicalTraderTimezone, shouldCaptureTraderTimezone } from "@/lib/trader-timezone";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,15 +15,6 @@ const schema = z.object({
   route: z.string().trim().startsWith("/").max(160),
 }).strict();
 
-function isTimezone(value: string) {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request) {
   if (!isSameRequestOrigin(request))
     return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
@@ -31,7 +23,8 @@ export async function POST(request: Request) {
   if (!user)
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success || !isTimezone(parsed.data.timezone))
+  const detectedTimezone = parsed.success ? canonicalTraderTimezone(parsed.data.timezone) : null;
+  if (!parsed.success || !detectedTimezone)
     return NextResponse.json({ error: "Invalid intelligence context." }, { status: 400 });
 
   const admin = createAdminClient();
@@ -40,14 +33,21 @@ export async function POST(request: Request) {
     .from("trader_intelligence_profiles")
     .upsert({
       user_id: user.id,
-      timezone: parsed.data.timezone,
       ...(parsed.data.locale?{locale:parsed.data.locale}:{}),
       last_seen_at: now.toISOString(),
     }, { onConflict: "user_id" })
-    .select("last_refresh_at")
+    .select("timezone_source")
     .single();
   if (profile.error)
     return NextResponse.json({ error: "Intelligence profile unavailable." }, { status: 503 });
+
+  if (shouldCaptureTraderTimezone(profile.data.timezone_source)) {
+    const captured = await admin.from("trader_intelligence_profiles")
+      .update({ timezone: detectedTimezone, timezone_source: "DEVICE" })
+      .eq("user_id", user.id).eq("timezone_source", "UNSET");
+    if (captured.error)
+      return NextResponse.json({ error: "Timezone initialization unavailable." }, { status: 503 });
+  }
 
   const recent = await admin
     .from("trader_intelligence_events")
