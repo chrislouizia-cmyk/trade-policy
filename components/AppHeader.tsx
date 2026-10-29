@@ -1,72 +1,87 @@
 import ActiveStrategySwitcher from '@/components/ActiveStrategySwitcher';
 import ActiveAccountSwitcher from '@/components/ActiveAccountSwitcher';
-import FeedbackWidget from '@/components/FeedbackWidget';
 import SignOutButton from '@/components/SignOutButton';
 import TradePoliceShield from '@/components/TradePoliceShield';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import AppPrimaryNavigation from '@/components/AppPrimaryNavigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { getServerTranslator } from '@/lib/i18n/server';
 
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-export default function AppHeader({
+export default async function AppHeader({
   eyebrow,
   displayName,
   description,
-  userId,
+  activeTradeCount = 0,
+  decisionFocused = false,
+  showContext = false,
 }: {
   eyebrow: string;
   displayName: string;
   description: string;
-  userId: string;
+  activeTradeCount?: number;
+  decisionFocused?: boolean;
+  showContext?: boolean;
 }) {
+  const { t } = await getServerTranslator();
+
   return (
     <>
-      <header className="app-shell-header client-header">
-        <div className="client-greeting-row">
-          <div className="client-greeting">
-            <strong>{greeting()}, {displayName}.</strong>
-            <small>{description}</small>
-          </div>
-          <TradePoliceShield />
-        </div>
-
-        <div className="app-brand-row">
-          <a href="/" className="app-brand">
-            <span className="brand-mark">TP</span>
-            <span>
-              <strong>Trade Police</strong>
-              <small>No trade without evidence.</small>
+      <header className={`app-shell-header client-header canonical-app-shell ${decisionFocused ? 'decision-focused-header' : ''}`}>
+        <div className="canonical-shell-top">
+          <Link href="/dashboard" className="app-brand canonical-shell-brand" aria-label="Trade Police">
+            <Image
+              src="/brand/trade-police-logo.png"
+              alt="Trade Police"
+              width={220}
+              height={46}
+              className="brand-logo-wordmark brand-logo-header"
+            />
+            <span className="brand-caption">
+              <small>{t('brand.tagline') || 'No trade without evidence.'}</small>
             </span>
-          </a>
-          <div className="app-user">
+          </Link>
+
+          <Link href="/dashboard" className="mobile-shell-brand" aria-label="Trade Police home">
+            <Image
+              src="/brand/trade-police-logo.png"
+              alt="Trade Police"
+              width={148}
+              height={38}
+            />
+          </Link>
+
+          <div className="app-user shell-user-controls canonical-shell-user" title={displayName}>
+            <TradePoliceShield />
+            <Link href="/account" className="mobile-account-link" aria-label={t('nav.account')} title={t('nav.account')}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.7-4 3-6 7-6s6.3 2 7 6"/></svg>
+            </Link>
+            <KeyboardShortcuts />
             <SignOutButton />
           </div>
         </div>
 
-        <nav className="primary-nav" aria-label="Primary navigation">
-          <a href="/">Dashboard</a>
-          <a href="/validate">Validate</a>
-          <a href="/active-trade">Active trades</a>
-          <a href="/accounts">Accounts</a>
-          <a href="/profile">Strategies</a>
-          <a href="/analytics">Analytics</a>
-        </nav>
+        <AppPrimaryNavigation activeTradeCount={activeTradeCount} />
 
-        <div className="context-bar compact-context-bar">
-          <div className="context-copy">
-            <span className="eyebrow">{eyebrow}</span>
-            <h1>Personal trading context</h1>
-          </div>
-          <div className="context-switchers compact-switchers">
-            <ActiveAccountSwitcher />
-            <ActiveStrategySwitcher />
-          </div>
-        </div>
+        {showContext ? (
+          <details className="context-bar compact-context-bar canonical-context-bar" open={decisionFocused || undefined}>
+            <summary className="mobile-context-summary">
+              <span>Trading context</span>
+              <small>{decisionFocused ? 'Ready to change' : 'Tap to change'}</small>
+              <b aria-hidden="true">⌄</b>
+            </summary>
+            <div className="context-copy canonical-context-copy">
+              <span className="eyebrow">{eyebrow}</span>
+              <small>{description}</small>
+            </div>
+            <div className="context-switchers compact-switchers canonical-context-switchers">
+              <ActiveAccountSwitcher />
+              <ActiveStrategySwitcher />
+            </div>
+          </details>
+        ) : null}
       </header>
-      <FeedbackWidget userId={userId} />
+
     </>
   );
 }

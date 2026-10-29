@@ -36,6 +36,7 @@ export default async function Page({
   const rows = data?.rows ?? [],
     total = Number(data?.total ?? 0),
     summary = data?.summary ?? {},
+    canViewTrading = data?.tradingDataAvailable === true,
     exportQuery = new URLSearchParams({ q, sort, direction }).toString();
   return (
     <HQShell displayName={displayName} role={role} permissions={permissions}>
@@ -62,6 +63,7 @@ export default async function Page({
             rows={rows}
             total={total}
             summary={summary}
+            canViewTrading={canViewTrading}
             params={{ q, page, pageSize, sort, direction }}
           />
           {rows.length === 0 && (

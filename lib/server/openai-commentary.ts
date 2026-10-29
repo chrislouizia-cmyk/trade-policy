@@ -19,9 +19,13 @@ export async function explainDeterministicAnalysis(
 ): Promise<AICommentary> {
   if (!process.env.OPENAI_API_KEY) return fallback;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2_000);
+
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
@@ -57,5 +61,7 @@ export async function explainDeterministicAnalysis(
     return { ...fallback, ...explanation };
   } catch {
     return fallback;
+  } finally {
+    clearTimeout(timeout);
   }
 }

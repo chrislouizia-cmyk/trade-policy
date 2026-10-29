@@ -3,8 +3,8 @@ import test from 'node:test';
 import {DEFAULT_STRATEGY_PROFILE,type StrategyProfile,type StrategyRule} from '../types/trade.ts';
 import {appendComposerNode,createComposerCondition,createComposerGroup,strategyRulesFromComposerTree} from '../lib/trading-dna/composer.ts';
 import {TRADING_DNA_RULES} from '../lib/trading-dna/registry.ts';
-import {buildLiveTradingDnaContext,calculateLiveSetupReadiness,evaluateLiveTradingDna} from '../lib/trading-dna/live-readiness.ts';
-import {evaluateTradingDnaRuntime} from '../lib/trading-dna/runtime.ts';
+import {buildLiveTradingDnaContext,calculateLiveSetupReadiness,evaluateLiveTradingDna,preserveLiveSetupEvidence} from '../lib/trading-dna/live-readiness.ts';
+import {buildTradingDnaRuntimeContext,evaluateTradingDnaRuntime} from '../lib/trading-dna/runtime.ts';
 
 const assessment=(value:boolean,reason='fixture')=>({value,confidence:value?100:0,reason});
 const legacy=(ruleKey:string,mandatory=true,weight=10,evaluationMode:StrategyRule['evaluationMode']='AUTOMATIC'):StrategyRule=>({ruleKey,label:ruleKey,enabled:true,mandatory,weight,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode});
@@ -40,6 +40,30 @@ test('optional failures are confluence and do not lower required readiness',()=>
   assert.equal(result.percentage,100);assert.deepEqual(result.required,{passed:1,failed:0,pending:0});assert.deepEqual(result.optional,{passed:0,failed:1,pending:0});
 });
 
+test('optional pending or failed evidence never changes an otherwise ready required setup',()=>{
+  const rules=[legacy('structure.bos',true,30),legacy('structure.choch',true,30),legacy('smart-money.liquidity-sweep',true,40),legacy('smart-money.fair-value-gap',false,10)];
+  const pending=evaluateTradingDnaRuntime(rules,{facts:{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true}});
+  pending.status='PENDING';
+  assert.equal(calculateLiveSetupReadiness(pending).state,'READY');
+  const failed=evaluateTradingDnaRuntime(rules,{facts:{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,'smart-money.fair-value-gap':false}});
+  failed.status='FAIL';
+  assert.equal(calculateLiveSetupReadiness(failed).state,'READY');
+});
+
+test('optional displacement pending or failed stays visible without blocking three confirmed required rules',()=>{
+  const required=[legacy('structure.bos',true),legacy('structure.choch',true),legacy('smart-money.liquidity-sweep',true)];
+  const pending=run([...required,legacy('displacement',false)],{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true});
+  assert.equal(pending.state,'READY');assert.deepEqual(pending.required,{passed:3,failed:0,pending:0});assert.deepEqual(pending.optional,{passed:0,failed:0,pending:1});
+  const failed=run([...required,legacy('displacement',false)],{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,displacement:false});
+  assert.equal(failed.state,'READY');assert.deepEqual(failed.optional,{passed:0,failed:1,pending:0});
+});
+
+test('required displacement remains a required WAIT or NOT_READY condition',()=>{
+  const required=[legacy('structure.bos',true),legacy('structure.choch',true),legacy('smart-money.liquidity-sweep',true),legacy('displacement',true)];
+  assert.equal(run(required,{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true}).state,'WAITING_FOR_CONFIRMATION');
+  assert.equal(run(required,{'structure.bos':true,'structure.choch':true,'smart-money.liquidity-sweep':true,displacement:false}).state,'NOT_READY');
+});
+
 test('manual external and unavailable automatic required evidence remain pending',()=>{
   const result=run([legacy('risk.stop-placement',true,10,'MANUAL'),legacy('external.economic-calendar',true,10,'EXTERNAL'),legacy('trend.ema',true,10)],{});
   assert.deepEqual(result.required,{passed:0,failed:0,pending:3});assert.equal(result.percentage,0);assert.equal(result.state,'WAITING_FOR_CONFIRMATION');
@@ -53,14 +77,162 @@ test('required FAIL is NOT READY, all pending waits, all passing is READY',()=>{
 
 test('no required rules requires configuration rather than returning 100',()=>{const result=run([legacy('structure.bos',false)],{'structure.bos':true});assert.equal(result.percentage,null);assert.equal(result.state,'CONFIGURATION_REQUIRED')});
 
-test('nested ALL and ANY retain runtime group semantics',()=>{
+test('nested ALL and ANY retain runtime group semantics while readiness still reports each required condition',()=>{
   const bos=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.bos')!,'bos');const choch=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.choch')!,'choch');
   let any=createComposerGroup('alternatives','ANY');any=appendComposerNode(any,'alternatives',bos);any=appendComposerNode(any,'alternatives',choch);let root=appendComposerNode(createComposerGroup(),'root',any);
-  const rules=strategyRulesFromComposerTree(root),report=evaluateTradingDnaRuntime(rules,{facts:{bos:true,choch:false}});assert.equal(report.status,'PASS');assert.equal(calculateLiveSetupReadiness(report).state,'READY');
+  const rules=strategyRulesFromComposerTree(root),report=evaluateTradingDnaRuntime(rules,{facts:{bos:true,choch:false}});assert.equal(report.status,'PASS');assert.equal(calculateLiveSetupReadiness(report).state,'NOT_READY');
   root={...root,children:[{...any,logic:'ALL'}]};assert.equal(evaluateTradingDnaRuntime(strategyRulesFromComposerTree(root),{facts:{bos:true,choch:false}}).status,'FAIL');
 });
 
 test('customer readiness uses human labels and never serialized composer keys',()=>{
   const condition=createComposerCondition(TRADING_DNA_RULES.find(rule=>rule.id==='structure.bos')!,'bos');const result=evaluateLiveTradingDna(profile(strategyRulesFromComposerTree(appendComposerNode(createComposerGroup(),'root',condition))),{bosConfirmed:assessment(false)});
   assert.match(result.readiness.blockers[0].label,/BOS/);assert.doesNotMatch(JSON.stringify(result.readiness),/dna\.v1\./);
+});
+
+test('required readiness percentages use the required-rule denominator and ignore optional confluence',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('bosConfirmed',true,25),
+    legacy('liquiditySweep',true,25),
+    legacy('retestConfirmed',true,25),
+    legacy('fairValueGap',true,25),
+    legacy('premiumDiscount',false,50),
+  ]),{bosConfirmed:assessment(true),liquiditySweep:assessment(false),retestConfirmed:assessment(false),fairValueGap:assessment(false),premiumDiscount:assessment(true)});
+  assert.equal(result.readiness.percentage,25);
+  assert.equal(result.readiness.required.passed,1);
+  assert.equal(result.readiness.required.failed,3);
+  assert.equal(result.readiness.required.pending,0);
+  assert.equal(result.readiness.optional.passed,1);
+});
+
+test('alias keys normalize to the canonical runtime evidence and resolve readiness',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('trendAlignmentH1',true,40),
+    legacy('premium_discount',true,30),
+    legacy('breakOfStructure',true,30),
+  ]),{h1TrendAligned:assessment(true),premiumDiscount:assessment(true),bosConfirmed:assessment(true)});
+  assert.equal(result.readiness.percentage,100);
+  assert.equal(result.readiness.required.passed,3);
+  assert.equal(result.readiness.diagnostics?.unmatchedStrategyRuleKeys.length,0);
+});
+
+test('empty evidence produces zero percent with explicit diagnostics',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('bosConfirmed',true,100),
+    legacy('liquiditySweep',true,100),
+  ]),{});
+  assert.equal(result.readiness.percentage,0);
+  assert.equal(result.readiness.required.passed,0);
+  assert.equal(result.readiness.required.failed,0);
+  assert.equal(result.readiness.required.pending,2);
+  assert.match(result.readiness.diagnostics?.reason ?? '',/no evidence/i);
+});
+
+test('unmatched strategy rule keys are surfaced diagnostically',()=>{
+  const result=evaluateLiveTradingDna(profile([
+    legacy('mysteryDetector',true,100),
+  ]),{});
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys, ['mysteryDetector']);
+});
+
+test('final evaluation preserves unresolved automatic Order Block evidence from setup review',()=>{
+  const rules=[legacy('orderBlock',true,50),legacy('bosConfirmed',true,50)];
+  const strategy=profile(rules);
+  const setup=evaluateLiveTradingDna(strategy,{bosConfirmed:assessment(true),orderBlock:assessment(false)});
+  assert.deepEqual(setup.readiness.required,{passed:1,failed:0,pending:1});
+  const input={entry:100,stopLoss:99,takeProfit:103,riskPercent:1,session:'LONDON',highImpactNews:false,h4TrendAligned:true,h1TrendAligned:true,structurePattern:true,liquiditySweep:true,chochConfirmed:true,bosConfirmed:true,orderBlock:false,fairValueGap:true,retestConfirmed:true} as any;
+  const report=evaluateTradingDnaRuntime(rules,preserveLiveSetupEvidence(buildTradingDnaRuntimeContext(input,strategy),setup.report));
+  assert.equal(report.conditions.find(item=>item.ruleId==='smart-money.order-block')?.status,'PENDING');
+  assert.equal(report.conditions.length,setup.report.conditions.length);
+});
+
+test('confirmed mandatory Order Block passes while optional Order Block never blocks the group',()=>{
+  const mandatory=legacy('orderBlock',true,100,'MANUAL');
+  const confirmed=evaluateTradingDnaRuntime([mandatory],{facts:{},manualConfirmations:[{evidenceKey:'orderBlock',state:'CONFIRMED'}]});
+  assert.equal(confirmed.status,'PASS');
+  const optional=evaluateTradingDnaRuntime([{...mandatory,mandatory:false}],{facts:{},manualConfirmations:[{evidenceKey:'orderBlock',state:'FAILED'}]});
+  assert.equal(optional.conditions[0].status,'FAIL');
+  assert.equal(optional.status,'PASS');
+});
+
+const productionRule=(ruleKey:string,mandatory:boolean,evaluationMode:StrategyRule['evaluationMode']='AUTOMATIC',weight=10):StrategyRule=>({ruleKey,label:ruleKey,enabled:true,mandatory,weight,minimumConfidence:60,timeframeRole:'CONFIRMATION',evaluationMode});
+const passingEvidence={
+  h1TrendAligned:assessment(true),
+  liquiditySweep:assessment(true),
+  chochConfirmed:assessment(true),
+  bosConfirmed:assessment(true),
+  retestConfirmed:assessment(true),
+  orderBlock:assessment(false),
+  fairValueGap:assessment(false),
+};
+
+test('Gold Liquidity Sweep production rule keys reach READY without rewriting the saved strategy',()=>{
+  const rules=[
+    productionRule('trend-alignment',true),
+    productionRule('liquidity-sweep',true),
+    productionRule('choch',true),
+    productionRule('bos',true),
+    productionRule('engulfing',false,'MANUAL'),
+    productionRule('doji',false,'MANUAL'),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+  ];
+  const result=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(result.readiness.state,'READY');
+  assert.equal(result.readiness.percentage,100);
+  assert.deepEqual(result.readiness.required,{passed:4,failed:0,pending:0});
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys,[]);
+});
+
+test('Gold Liquidity Sweep v1 production rule keys normalize CHoCH and preserve a real sweep failure',()=>{
+  const rules=[
+    productionRule('liquidity-sweep',true),
+    productionRule('choch',true),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+  ];
+  const ready=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(ready.readiness.state,'READY');
+  assert.deepEqual(ready.readiness.required,{passed:2,failed:0,pending:0});
+  const blocked=evaluateLiveTradingDna(profile(rules),{...passingEvidence,liquiditySweep:assessment(false,'No qualifying sweep was detected.')});
+  assert.equal(blocked.readiness.state,'NOT_READY');
+  assert.equal(blocked.readiness.required.failed,1);
+  assert.match(blocked.readiness.blockers[0].reason,/No qualifying sweep/);
+});
+
+test('GBPUSD London Pullback keeps support and resistance as exact manual gates',()=>{
+  const rules=[
+    productionRule('trend-alignment',true),
+    productionRule('support-zone',true,'MANUAL'),
+    productionRule('resistance-zone',true,'MANUAL'),
+    productionRule('choch',true),
+    productionRule('bos',true),
+    productionRule('retest',true),
+    productionRule('order-block',false,'MANUAL'),
+    productionRule('fair-value-gap',false),
+    productionRule('pivot',false,'MANUAL'),
+    productionRule('engulfing',false,'MANUAL'),
+    productionRule('liquidity-sweep',false),
+  ];
+  const live=evaluateLiveTradingDna(profile(rules),passingEvidence);
+  assert.equal(live.readiness.state,'WAITING_FOR_CONFIRMATION');
+  assert.deepEqual(live.readiness.required,{passed:4,failed:0,pending:2});
+  assert.deepEqual(live.readiness.diagnostics?.unmatchedStrategyRuleKeys,[]);
+  assert.doesNotMatch(live.readiness.diagnostics?.reason??'',/ZERO_REQUIRED_RULES/);
+
+  const context=buildLiveTradingDnaContext(passingEvidence);
+  const confirmed=evaluateTradingDnaRuntime(rules,{...context,manualConfirmations:[
+    {evidenceKey:'support-zone',state:'CONFIRMED'},
+    {evidenceKey:'resistance-zone',state:'CONFIRMED'},
+  ]});
+  const readiness=calculateLiveSetupReadiness(confirmed);
+  assert.equal(readiness.state,'READY');
+  assert.deepEqual(readiness.required,{passed:6,failed:0,pending:0});
+});
+
+test('missing automatic evidence remains PENDING and never becomes a synthetic PASS',()=>{
+  const result=evaluateLiveTradingDna(profile([productionRule('unknown-required-detector',true)]),passingEvidence);
+  assert.equal(result.report.conditions[0].status,'PENDING');
+  assert.equal(result.readiness.state,'WAITING_FOR_CONFIRMATION');
+  assert.equal(result.readiness.percentage,0);
+  assert.deepEqual(result.readiness.diagnostics?.unmatchedStrategyRuleKeys,['unknown-required-detector']);
 });

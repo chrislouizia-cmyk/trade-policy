@@ -1,12 +1,41 @@
 import './trade-police.css';
-import type { Metadata } from 'next';
+import './product-premium.css';
+import './hq-premium.css';
+import './mobile-shell.css';
+import './liquid-glass.css';
+import './customer-brand.css';
+import './hq-brand.css';
+import './adaptive-experience.css';
+import './trader-companion.css';
+import './police-intelligence.css';
+import './ui-refinements.css';
+import TraderIntelligenceTracker from '@/components/TraderIntelligenceTracker';
+import type { Metadata, Viewport } from 'next';
 import AppFooter from '@/components/AppFooter';
+import LocaleProvider from '@/components/i18n/LocaleProvider';
+import LocaleSynchronizer from '@/components/i18n/LocaleSynchronizer';
+import { getRequestLocale } from '@/lib/i18n/server';
 
 export const metadata: Metadata = {
   title: 'Trade Police',
-  description: 'No trade without evidence.'
+  description: 'No trade without evidence.',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      { url: '/icon.png?v=2026-09-22-center', type: 'image/png', sizes: '512x512' },
+      { url: '/favicon.ico?v=2026-09-22-center', sizes: 'any' },
+    ],
+    apple: [{ url: '/apple-icon.png?v=2026-09-22-center', type: 'image/png', sizes: '180x180' }],
+  },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><div className="app-document-content">{children}</div><AppFooter /></body></html>;
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getRequestLocale();
+  return <html lang={locale}><body><LocaleProvider locale={locale}><LocaleSynchronizer/><TraderIntelligenceTracker/><div className="app-document-content">{children}<AppFooter /></div></LocaleProvider></body></html>;
 }

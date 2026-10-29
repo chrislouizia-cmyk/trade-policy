@@ -1,3 +1,5 @@
+import type { TradingDnaEvidenceReport } from '../lib/trading-dna/runtime';
+
 export type Instrument = string;
 export type Direction = 'BUY' | 'SELL';
 export type Session = string;
@@ -60,6 +62,7 @@ export type MarketBias='BULLISH'|'BEARISH'|'RANGE'|'UNCLEAR';
 export type TimeframeLayer={role:TimeframeRole;timeframe:string};
 export type LayerAnalysis=TimeframeLayer&{bias:MarketBias;confirmedEvidence:string[];missingEvidence:string[];confidence:number|null};
 export type ManualConfirmationState='PENDING'|'CONFIRMED'|'FAILED';
+export type ReadinessDiagnostics={reason:string;unmatchedEvidenceKeys:string[];unmatchedStrategyRuleKeys:string[];normalizedRuleKeys:string[]};
 export type ManualConfirmation={evidenceKey:string;state?:ManualConfirmationState;confirmed?:boolean;note?:string};
 
 export type StopLimit = {
@@ -255,6 +258,7 @@ export type TradeInput = {
 };
 
 export type ScoreItem = { label: string; earned: number; possible: number };
+export type FinalRiskBlock = { id:string; name:string; actual:string; required:string; operator:string; source:string; reason:string; overrideable:boolean };
 export type TradeResult = {
   score: number;
   grade: 'A+' | 'A' | 'B' | 'C';
@@ -263,6 +267,9 @@ export type TradeResult = {
   riskAmount: number;
   stopDistance: number;
   vetoes: string[];
+  finalRiskBlocks?: FinalRiskBlock[];
+  overrideEligible?: boolean;
+  overrideBlockers?: Array<{id:string;label:string;reason:string}>;
   observations: string[];
   scoreItems: ScoreItem[];
   direction?: Direction;
@@ -279,6 +286,8 @@ export type TradeResult = {
     protectedFloor: number;
     worstCaseDailyPnl: number;
     greenDayExceptionApplied: boolean;
+    consecutiveLosses: number;
+    consecutiveLossLimit: number;
     message?: string;
   };
 };
@@ -290,6 +299,7 @@ export type EvidenceAssessment = {
 };
 export type EntryCandidate = {
   id: string;
+  createdAt?: string | null;
   direction: Direction;
   entryLow: number | null;
   entryHigh: number | null;
@@ -302,6 +312,7 @@ export type EntryCandidate = {
 export type ChartAnalysis = {
   analysisId?: string;
   status: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
+  detectorDisplayItems?: Array<{title:string;status:'pending'|'warning'|'info';humanLabel:string;timeframe?:string;explanation?:string}>;
   analysisStatus: 'DATA_UNAVAILABLE'|'INSUFFICIENT_DATA'|'STRATEGY_UNSUPPORTED'|'STRATEGY_INCOMPLETE'|'ANALYSIS_FAILED'|'NO_RELEVANT_EVIDENCE'|'VALID_ANALYSIS';
   instrument: Instrument;
   timeframe: string;
@@ -318,13 +329,15 @@ export type ChartAnalysis = {
   setupType: SetupType;
   liveAnalysisConfidence: number | null;
   strategyConfidenceThreshold: number;
-  setupReadiness?: {percentage:number|null;state:'READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';required:{passed:number;failed:number;pending:number};optional:{passed:number;failed:number;pending:number};totalRequiredWeight:number;passingRequiredWeight:number;formula:string;blockers:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;pendingConfirmations:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>};
+  setupReadiness?: {percentage:number|null;state:'READY'|'NOT_READY'|'WAITING_FOR_CONFIRMATION'|'CONFIGURATION_REQUIRED';required:{passed:number;failed:number;pending:number};optional:{passed:number;failed:number;pending:number};totalRequiredWeight:number;passingRequiredWeight:number;formula:string;blockers:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;pendingConfirmations:Array<{label:string;status:'PASS'|'FAIL'|'PENDING';reason:string}>;diagnostics?:ReadinessDiagnostics};
+  tradingDnaReport?: TradingDnaEvidenceReport;
   evidence: Record<EvidenceKey, EvidenceAssessment>;
   candidates: EntryCandidate[];
   warnings: string[];
   summary: string;
   aiCommentary?: AICommentary;
   manualConfirmations?: ManualConfirmation[];
+  marketSeries?: Record<string,Array<{datetime:string;open:number;high:number;low:number;close:number;volume?:number}>>;
 };
 export type TradeOutcome = 'WIN' | 'LOSS' | 'BREAKEVEN' | 'PARTIAL';
 export type PostTradeAnalysis = {

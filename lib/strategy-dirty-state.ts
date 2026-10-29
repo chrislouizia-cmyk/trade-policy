@@ -1,0 +1,4 @@
+import { canonicalStringify } from './market-intelligence/serialization/stable-fingerprint.ts';
+import type { StrategyBuilderV2State } from './strategy-builder-v2-persistence.ts';
+export function strategySemanticSnapshot(state:StrategyBuilderV2State){return {name:state.name.trim(),instruments:[...state.instruments],sessions:[...state.sessions],contextTimeframe:state.contextTimeframe??null,executionTimeframe:state.executionTimeframe??null,methodologyIds:[...state.methodologyIds],ruleSelections:state.ruleSelections,ruleTree:state.ruleTree??null,riskPercent:state.riskPercent,minimumRR:state.minimumRR,stopLogic:state.stopLogic??null,targetLogic:state.targetLogic??null,direction:state.direction??null};}
+export function isStrategyDirty(baseline:StrategyBuilderV2State,current:StrategyBuilderV2State){return canonicalStringify(strategySemanticSnapshot(baseline))!==canonicalStringify(strategySemanticSnapshot(current));}

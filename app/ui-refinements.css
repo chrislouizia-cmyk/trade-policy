@@ -1,0 +1,124 @@
+/* Final composition fixes shared by the customer and employee workspaces. */
+.authenticated-app-shell :is(.card, .grid, .stack, .event-row),
+.hq-container :is(.hq-page-content, .card, .grid, .stack, .hq-brand-row, .hq-command-group) {
+  min-width: 0;
+}
+.hq-container :is(h1, h2, h3, p, dd, .hq-profile-popover strong, .hq-profile-popover span) {
+  overflow-wrap: anywhere;
+}
+.hq-profile-trigger { max-width: 280px; }
+.hq-profile-trigger > span { overflow: hidden; }
+.hq-profile-trigger :is(strong, small) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hq-profile-popover { max-height: calc(100dvh - 100px); overflow-y: auto; overscroll-behavior: contain; }
+.hq-container :is(a, button, summary, input, select, textarea):focus-visible {
+  outline: 2px solid var(--hq-gold, #d8bf79);
+  outline-offset: 3px;
+}
+body:has(.hq-container) .hq-command-group > div {
+  width: max(220px, 100%);
+  max-width: calc(100vw - 40px);
+  max-height: min(60dvh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body:has(.hq-container) .hq-command-group:last-child > div { left: auto; right: 0; }
+.hq-container .hq-command-group > div a { min-height: 44px; display: flex; align-items: center; }
+.hq-container .hq-executive-greeting { min-width: 0; }
+.hq-container .hq-executive-greeting strong { overflow-wrap: anywhere; }
+.marketplace-candidate-grid { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+.marketplace-proof-metrics > div, .marketplace-candidate-card { min-width: 0; }
+.marketplace-proof-metrics strong { overflow-wrap: anywhere; }
+
+/* Feedback is portalled outside transformed / filtered card ancestors. */
+.feedback-dialog-backdrop {
+  z-index: 2000;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.feedback-dialog {
+  display: grid;
+  gap: 16px;
+  width: min(600px, 100%);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.feedback-dialog .modal-head h2 { margin: 0; font-size: clamp(20px, 4vw, 26px); }
+.feedback-dialog .modal-head button { flex: 0 0 44px; min-width: 44px; min-height: 44px; }
+.feedback-dialog textarea { width: 100%; min-height: 120px; resize: vertical; font: inherit; }
+.feedback-dialog input[type="range"] { padding: 0; box-shadow: none; background: transparent; }
+.feedback-dialog :is(input, select, textarea):focus-visible { outline: 2px solid #70d5b5; outline-offset: 2px; }
+
+@media (max-width: 1180px) and (min-width: 761px) {
+  body:has(.mobile-bottom-nav) .police-intelligence--compact {
+    grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+    gap: 14px;
+  }
+  .police-intelligence--compact .police-intelligence-link { justify-self: end; }
+  body:has(.hq-container) .hq-command-group > div { width: max(220px, 100%); }
+}
+
+@media (max-width: 760px) {
+  /* Keep the selection visible even without the optional animated indicator. */
+  body:has(.mobile-bottom-nav) .mobile-bottom-nav > a.active {
+    background: linear-gradient(145deg, rgba(119, 223, 191, .15), rgba(121, 168, 255, .09)) !important;
+    box-shadow: inset 0 0 0 1px rgba(119, 223, 191, .2) !important;
+    color: #e4fff6 !important;
+  }
+  .mobile-bottom-nav > a > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body:has(.mobile-bottom-nav) .canonical-context-switchers select { font-size: 16px !important; }
+  body:has(.mobile-bottom-nav) .market-chart-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 7px;
+  }
+  body:has(.mobile-bottom-nav) .market-chart-toolbar .market-timeframe-rail:first-child {
+    display: flex;
+    flex: 1;
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+  body:has(.mobile-bottom-nav) .market-chart-toolbar .market-timeframe-rail:last-child { display: flex; flex: 0 0 auto; }
+  body:has(.mobile-bottom-nav) .market-chart-toolbar button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 7px 9px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  /* Reserve canvas height independently of the header and toolbar. */
+  body:has(.mobile-bottom-nav) .market-chart-stage { height: clamp(400px, 60dvh, 520px); }
+  body:has(.mobile-bottom-nav) .market-position-summary { flex-wrap: wrap; gap: 4px 8px; }
+  body:has(.hq-container) .hq-brand { flex: 1 1 auto; max-width: none; flex-wrap: wrap; }
+  body:has(.hq-container) .hq-profile-menu { margin-left: auto; }
+  body:has(.hq-container) .hq-command-group > div { width: min(260px, calc(100vw - 40px)); }
+  body:has(.hq-container) .hq-command-group:nth-child(even) > div { left: auto; right: 0; }
+  body:has(.hq-container) .hq-command-metric-grid.primary,
+  body:has(.hq-container) .hq-command-metric-grid.attention,
+  body:has(.hq-container) .hq-command-departments { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .hq-command-metric { min-width: 0; padding: 13px; }
+  .hq-command-metric > strong { font-size: clamp(23px, 6vw, 30px); overflow-wrap: anywhere; }
+  .hq-command-metric > span { line-height: 1.4; }
+  .hq-container .directory-pagination { flex-wrap: wrap; }
+  .hq-container .directory-pagination > div { flex-wrap: wrap; }
+  .hq-container .directory-mobile-card { min-width: 0; }
+  .hq-container .directory-customer-identity { min-width: 0; }
+  .hq-container .directory-customer-identity > div { min-width: 0; }
+  .hq-container .directory-customer-identity :is(strong, small) { overflow-wrap: anywhere; }
+  .hq-container .affiliate-review-modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+  .feedback-dialog :is(input, select, textarea) { font-size: 16px; }
+}
+@media (max-width: 350px) {
+  body:has(.hq-container) .hq-command-departments { grid-template-columns: 1fr !important; }
+  .police-intelligence-head { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .authenticated-app-shell *, .hq-container *, .feedback-dialog * { scroll-behavior: auto !important; }
+  .hq-command-metric:hover { transform: none; }
+}
+
+/* The marketing page already supplies its own branded footer. */
+body:has(.public-landing) .app-document-content > .app-footer { display: none; }

@@ -1,281 +1,320 @@
 'use client';
 
-import {useMemo,useState} from 'react';
+import { useMemo } from 'react';
+import { summarizeClosedTradeMetrics } from '@/lib/analytics/closed-trade-metrics';
+import { useLocale } from '@/components/i18n/LocaleProvider';
+import PoliceIntelligence from '@/components/PoliceIntelligence';
+import type { LearningSummary } from '@/lib/trader-learning';
 
-type Trade={
-  id:string;
-  pnl:number;
-  r:number;
-  openedAt:string;
-  closedAt:string;
-  instrument:string;
-  strategy:string;
-  session:string;
-  outcome:string;
-  direction:string;
-  riskPercent:number;
-  initialRR:number;
-  setupType:string;
-  compliant:boolean;
-  overrideReason:string|null;
+type Trade = {
+  id: string;
+  resultR: number | null;
+  realizedPnl: number | null;
+  outcome: string;
+  closedAt: string;
+  instrument: string;
+  strategy: string;
+  direction: string;
+  activationMode: string;
+  tookAgainstVerdict: boolean;
+  sourceReportId: string | null;
 };
 
-type Account={
-  name:string;
-  currency:string;
-  startingBalance:number;
-  currentBalance:number;
-};
+type Account = { name: string; currency: string; startingBalance: number; currentBalance: number };
+type BreakdownEntry = { name: string; trades: number; winRate: number; averageR: number };
 
-const ranges=['1D','7D','30D','3M','1Y','ALL'] as const;
-type Range=(typeof ranges)[number];
+export default function AnalyticsDashboard({ account, trades, intelligence }: { account: Account; trades: Trade[]; intelligence?: LearningSummary | null }) {
+  const {copy:{analytics:c},locale}=useLocale();
+  const metricRows = useMemo(() => trades.map((trade) => ({
+    id: trade.id,
+    status: 'CLOSED',
+    closed_at: trade.closedAt,
+    outcome: trade.outcome,
+    result_r: trade.resultR,
+  })), [trades]);
+  const metrics = useMemo(() => summarizeClosedTradeMetrics(metricRows), [metricRows]);
+  const ordered = useMemo(
+    () => [...trades].sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime()),
+    [trades],
+  );
 
-export default function AnalyticsDashboard({account,trades}:{account:Account;trades:Trade[]}){
-  const [range,setRange]=useState<Range>('30D');
-  const filtered=useMemo(()=>filterRange(trades,range),[trades,range]);
-  const analytics=useMemo(()=>calculateAnalytics(filtered,account.startingBalance),[filtered,account.startingBalance]);
-
-  return <div className="stack">
-    <section className="card analytics-hero">
-      <div>
-        <span className="eyebrow">PERFORMANCE INTELLIGENCE</span>
-        <h1>Your trading, explained.</h1>
-        <p className="muted">Understand where, when and why this account makes or loses money.</p>
+  if (trades.length === 0) {
+    return (
+      <div className="stack analytics-shell analytics-premium-shell">
+        <section className="card analytics-empty-state analytics-premium-empty">
+          <div className="analytics-empty-orbit" aria-hidden="true"><span>R</span></div>
+          <div>
+            <span className="eyebrow">{c.cockpit}</span>
+            <h1>{c.emptyTitle}</h1>
+            <p>{c.emptyBody}</p>
+            <div className="button-row">
+              <a className="button-link primary" href="/validate">{c.reviewDecision}</a>
+              <a className="button-link secondary" href="/history">{c.openJournal}</a>
+            </div>
+          </div>
+        </section>
+        {intelligence ? <PoliceIntelligence summary={intelligence} locale={locale} full /> : null}
       </div>
-      <div className="range-tabs" aria-label="Analytics period">
-        {ranges.map(item=><button className={range===item?'active':''} onClick={()=>setRange(item)} key={item}>{item}</button>)}
-      </div>
-    </section>
+    );
+  }
 
-    <EquityChart
-      startingBalance={account.startingBalance}
-      currency={account.currency}
-      points={analytics.curve}
-      drawdown={analytics.drawdownCurve}
-    />
+  const strategyBreakdown = buildBreakdown(ordered, 'strategy');
+  const instrumentBreakdown = buildBreakdown(ordered, 'instrument');
+  const directionBreakdown = buildBreakdown(ordered, 'direction');
+  const activationBreakdown = buildBreakdown(ordered, (trade) =>
+    trade.activationMode === 'OVERRIDE' || trade.tookAgainstVerdict ? 'OVERRIDE' : 'READY'
+  );
+  const netR = metrics.netR ?? 0;
+  const netTone = netR > 0 ? 'positive' : netR < 0 ? 'negative' : 'neutral';
+  const chart = buildChart(metrics.cumulative);
 
-    <div className="grid grid-4 metric-grid">
-      <Metric label="Net P&L" value={money(analytics.pnl,account.currency)} />
-      <Metric label="Win rate" value={`${analytics.winRate.toFixed(1)}%`} sub={`${analytics.wins} wins · ${analytics.losses} losses`} />
-      <Metric label="Profit factor" value={analytics.profitFactor===Infinity?'∞':analytics.profitFactor.toFixed(2)} />
-      <Metric label="Expectancy" value={`${analytics.expectancy.toFixed(2)}R`} />
-      <Metric label="Average R" value={`${analytics.averageR.toFixed(2)}R`} />
-      <Metric label="Maximum drawdown" value={`${analytics.maxDrawdownPercent.toFixed(2)}%`} sub={money(-analytics.maxDrawdown,account.currency)} />
-      <Metric label="Average win" value={money(analytics.averageWin,account.currency)} />
-      <Metric label="Average loss" value={money(-analytics.averageLoss,account.currency)} />
-      <Metric label="Best trade" value={analytics.best?money(analytics.best.pnl,account.currency):'—'} sub={analytics.best?tradeLabel(analytics.best):''} />
-      <Metric label="Worst trade" value={analytics.worst?money(analytics.worst.pnl,account.currency):'—'} sub={analytics.worst?tradeLabel(analytics.worst):''} />
-      <Metric label="Winning streak" value={String(analytics.longestWinStreak)} />
-      <Metric label="Losing streak" value={String(analytics.longestLossStreak)} />
-    </div>
-
-    <div className="grid grid-2">
-      <Breakdown title="Performance by hour" rows={analytics.byHour} currency={account.currency} />
-      <Breakdown title="Performance by weekday" rows={analytics.byWeekday} currency={account.currency} />
-    </div>
-
-    <div className="grid grid-2">
-      <Breakdown title="Performance by session" rows={analytics.bySession} currency={account.currency} />
-      <Breakdown title="Performance by instrument" rows={analytics.byInstrument} currency={account.currency} />
-    </div>
-
-    <div className="grid grid-2">
-      <Breakdown title="Performance by strategy" rows={analytics.byStrategy} currency={account.currency} />
-      <Breakdown title="Long vs short" rows={analytics.byDirection} currency={account.currency} />
-    </div>
-
-    <section className="card">
-      <div className="section-title">
-        <div><span className="eyebrow">DISCIPLINE INTELLIGENCE</span><h2>Following the plan vs overrides</h2></div>
-      </div>
-      <div className="grid grid-2">
-        <DisciplineCard title="Compliant trades" row={analytics.compliance.compliant} currency={account.currency} />
-        <DisciplineCard title="Override trades" row={analytics.compliance.override} currency={account.currency} />
-      </div>
-      <p className="muted">
-        {analytics.compliance.message}
-      </p>
-    </section>
-
-    <section className="card">
-      <div className="section-title">
-        <div><span className="eyebrow">ACCOUNT DETAIL</span><h2>Closed-trade ledger</h2></div>
-      </div>
-      {filtered.length?(
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr><th align="left">Closed</th><th align="left">Instrument</th><th align="left">Strategy</th><th align="left">Session</th><th align="left">Direction</th><th align="right">P&L</th><th align="right">R</th><th align="left">Discipline</th></tr></thead>
-            <tbody>{[...filtered].reverse().map(trade=><tr key={trade.id}>
-              <td>{new Date(trade.closedAt).toLocaleString()}</td>
-              <td>{trade.instrument}</td>
-              <td>{trade.strategy}</td>
-              <td>{trade.session}</td>
-              <td>{trade.direction}</td>
-              <td align="right" className={trade.pnl>=0?'positive':'negative'}>{money(trade.pnl,account.currency)}</td>
-              <td align="right">{trade.r.toFixed(2)}R</td>
-              <td>{trade.compliant?'Compliant':'Override'}</td>
-            </tr>)}</tbody>
-          </table>
+  return (
+    <div className="stack analytics-shell analytics-premium-shell analytics-canonical-shell">
+      <section className="card analytics-hero analytics-cockpit-hero analytics-canonical-hero">
+        <div className="analytics-hero-copy">
+          <div className="analytics-kicker-row">
+            <span className="eyebrow">{c.cockpit}</span>
+            <span className={`analytics-sample-badge ${metrics.sampleSize < 20 ? 'early' : ''}`}>
+              {metrics.sampleSize < 20 ? c.early : c.established}
+            </span>
+          </div>
+          <h1>{c.title}</h1>
+          <p>{c.intro}</p>
+          <small>{c.canonicalOnly}</small>
         </div>
-      ):<p className="muted">No closed trades in this period.</p>}
-    </section>
-  </div>;
-}
-function EquityChart({startingBalance,currency,points,drawdown}:{startingBalance:number;currency:string;points:{label:string;value:number}[];drawdown:{label:string;value:number}[]}){
-  if(!points.length)return <div className="card empty-state"><strong>No closed trades in this period.</strong><span>The equity curve will populate from realized P&L.</span></div>;
-  const values=[startingBalance,...points.map(point=>point.value)];
-  const min=Math.min(...values),max=Math.max(...values),span=max-min||1;
-  const coords=[{label:'Start',value:startingBalance},...points]
-    .map((point,index,all)=>`${(index/Math.max(1,all.length-1))*100},${92-((point.value-min)/span)*80}`)
-    .join(' ');
-  const end=points.at(-1)!.value;
-  const maxDd=Math.max(0,...drawdown.map(point=>point.value));
-  return <section className="card equity-card">
-    <div className="section-title">
-      <div><span className="eyebrow">EQUITY CURVE</span><h2>Actual account progression</h2><p className="muted">Starting balance plus cumulative realized P&L.</p></div>
-      <div style={{textAlign:'right'}}><strong className={end>=startingBalance?'positive':'negative'}>{money(end,currency)}</strong><small style={{display:'block'}}>Max DD {maxDd.toFixed(2)}%</small></div>
+
+        <div className={`analytics-hero-score ${netTone}`}>
+          <span>{c.netR}</span>
+          <strong>{metrics.netR === null ? '—' : `${signed(metrics.netR)}R`}</strong>
+          <div>
+            <b>{metrics.sampleSize}</b> {c.closedTrades}
+            <i aria-hidden="true" />
+            <b>{metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(0)}%`}</b> {c.winRate}
+          </div>
+        </div>
+      </section>
+
+      {intelligence ? <PoliceIntelligence summary={intelligence} locale={locale} full /> : null}
+
+      <section className="analytics-primary-metrics analytics-canonical-metrics" aria-label="Primary analytics metrics">
+        <PrimaryMetric
+          label={c.averageR}
+          value={metrics.averageR === null ? '—' : `${signed(metrics.averageR)}R`}
+          sub={c.expectancy}
+          tone={(metrics.averageR ?? 0) >= 0 ? 'positive' : 'negative'}
+        />
+        <PrimaryMetric
+          label={c.winRate}
+          value={metrics.winRate === null ? '—' : `${metrics.winRate.toFixed(1)}%`}
+          sub={`${metrics.wins} ${c.wins} · ${metrics.losses} ${c.losses} · ${metrics.breakeven} ${c.breakeven}`}
+        />
+        <PrimaryMetric
+          label={c.profitFactor}
+          value={metrics.profitFactor === null ? '—' : metrics.profitFactor.toFixed(2)}
+          sub={c.profitFactorHint}
+        />
+      </section>
+
+      <section className="card analytics-chart-card analytics-equity-card analytics-canonical-trajectory">
+        <header className="analytics-panel-heading">
+          <div>
+            <span className="eyebrow">{c.realized}</span>
+            <h2>{c.trajectory}</h2>
+          </div>
+          <div className={`analytics-chart-delta ${netTone}`}>
+            <span>{c.periodChange}</span>
+            <strong>{signed(netR)}R</strong>
+          </div>
+        </header>
+        <p className="analytics-panel-note">{c.trajectoryHint}</p>
+        {metrics.cumulative.length === 0 ? (
+          <div className="analytics-empty-inline">{c.noRealized}</div>
+        ) : (
+          <div className="analytics-chart-frame">
+            <div className="analytics-chart-scale" aria-hidden="true">
+              <span>{chart.max.toFixed(2)}R</span>
+              <span>{formatRLabel(0)}</span>
+              <span>{chart.min.toFixed(2)}R</span>
+            </div>
+            <svg viewBox="0 0 100 40" className="analytics-cumulative-chart" preserveAspectRatio="none" role="img" aria-label="Cumulative realized R chart">
+              <defs>
+                <linearGradient id="realized-r-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset={percentage(0)} stopColor="var(--blue)" stopOpacity="0.28" />
+                  <stop offset={percentage(100)} stopColor="var(--blue)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <line className="analytics-chart-grid" x1="0" y1={chart.zeroY} x2="100" y2={chart.zeroY} />
+              <path className="analytics-chart-area" d={chart.areaPath} />
+              <polyline className="analytics-chart-line" points={chart.points} />
+            </svg>
+            <div className="analytics-chart-axis">
+              <span>{formatShortDate(ordered[0]?.closedAt, locale)}</span>
+              <span>{formatShortDate(ordered.at(-1)?.closedAt, locale)}</span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="analytics-canonical-diagnosis">
+        <div className="analytics-section-heading">
+          <div>
+            <span className="eyebrow">{c.discipline}</span>
+            <h2>{c.activationMode}</h2>
+          </div>
+          <p>{c.sourceHint}</p>
+        </div>
+        <BreakdownCard
+          eyebrow={c.discipline}
+          title={c.activationMode}
+          entries={activationBreakdown}
+          tradeLabels={c}
+          featured
+        />
+      </section>
+
+      <details className="card analytics-detail-disclosure">
+        <summary>
+          <div>
+            <span className="eyebrow">{c.edgeMap}</span>
+            <strong>{c.sourceTitle}</strong>
+          </div>
+          <span aria-hidden="true">+</span>
+        </summary>
+
+        <div className="analytics-detail-body">
+          <p className="analytics-panel-note">{c.sourceHint}</p>
+
+          <div className="analytics-secondary-strip analytics-canonical-secondary" aria-label="Supporting analytics metrics">
+            <SecondaryMetric label={c.closedTradesLabel} value={String(metrics.sampleSize)} />
+            <SecondaryMetric label={c.averageWinner} value={metrics.averageWinner === null ? '—' : `+${metrics.averageWinner.toFixed(2)}R`} tone="positive" />
+            <SecondaryMetric label={c.averageLoser} value={metrics.averageLoser === null ? '—' : `-${metrics.averageLoser.toFixed(2)}R`} tone="negative" />
+            <SecondaryMetric label={c.account} value={account.name} />
+          </div>
+
+          <div className="analytics-edge-grid">
+            <BreakdownCard eyebrow={c.strategy} title={c.byPlaybook} entries={strategyBreakdown} tradeLabels={c} />
+            <BreakdownCard eyebrow={c.instrument} title={c.byMarket} entries={instrumentBreakdown} tradeLabels={c} />
+            <BreakdownCard eyebrow={c.direction} title={c.longShort} entries={directionBreakdown} tradeLabels={c} />
+          </div>
+        </div>
+      </details>
+
+      <section className="card analytics-review-card analytics-recent-card analytics-canonical-recent">
+        <header className="analytics-panel-heading">
+          <div>
+            <span className="eyebrow">{c.recent}</span>
+            <h2>{c.latest}</h2>
+          </div>
+          <a className="button-link secondary" href="/history?view=trades">{c.fullJournal}</a>
+        </header>
+
+        <div className="analytics-trade-table" role="table" aria-label="Recent closed trades">
+          <div className="analytics-trade-head" role="row">
+            <span>{c.trade}</span>
+            <span>{c.strategy}</span>
+            <span>{c.outcome}</span>
+            <span>{c.realizedLabel}</span>
+            <span />
+          </div>
+          {ordered.slice(-5).reverse().map((trade) => (
+            <div key={trade.id} className="analytics-trade-row" role="row">
+              <div>
+                <strong>{trade.instrument} · {trade.direction}</strong>
+                <small>{new Date(trade.closedAt).toLocaleString(locale)}</small>
+              </div>
+              <div>
+                <strong>{trade.strategy}</strong>
+                <small>{trade.activationMode}</small>
+              </div>
+              <div>
+                <span className={`analytics-outcome-chip ${outcomeTone(trade.outcome)}`}>{trade.outcome}</span>
+              </div>
+              <div>
+                <strong className={(trade.resultR ?? 0) >= 0 ? 'metric-positive' : 'metric-negative'}>
+                  {trade.resultR === null ? c.noR : `${signed(trade.resultR)}R`}
+                </strong>
+              </div>
+              <div>
+                {trade.sourceReportId ? <a href={`/history/${trade.sourceReportId}`}>{c.decision} →</a> : <span className="muted">—</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Account equity curve">
-      <line x1="0" y1="92" x2="100" y2="92"/>
-      <polyline points={coords}/>
-    </svg>
-  </section>;
+  );
 }
 
-function Metric({label,value,sub}:{label:string;value:string;sub?:string}){
-  return <div className="card metric"><span className="muted">{label}</span><strong>{value}</strong>{sub&&<small>{sub}</small>}</div>;
+function PrimaryMetric({ label, value, sub, tone = 'neutral' }: { label: string; value: string; sub: string; tone?: 'positive' | 'negative' | 'neutral' }) {
+  return <article className={`card analytics-primary-metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{sub}</small></article>;
 }
 
-type GroupRow={name:string;pnl:number;r:number;trades:number;wins:number;winRate:number;averageR:number;profitFactor:number};
-
-function Breakdown({title,rows,currency}:{title:string;rows:GroupRow[];currency:string}){
-  return <div className="card">
-    <h2>{title}</h2>
-    {rows.length?rows.map(row=><div className="event-row" key={row.name}>
-      <div><strong>{row.name||'Unknown'}</strong><small style={{display:'block'}}>{row.trades} trades · {row.winRate.toFixed(0)}% wins · {row.averageR.toFixed(2)}R avg</small></div>
-      <span className={row.pnl>=0?'positive':'negative'}>{money(row.pnl,currency)}</span>
-    </div>):<p className="muted">No closed trades in this period.</p>}
-  </div>;
+function SecondaryMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'positive' | 'negative' | 'neutral' }) {
+  return <div className={`analytics-secondary-metric ${tone}`}><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function DisciplineCard({title,row,currency}:{title:string;row:GroupRow;currency:string}){
-  return <div className="card metric">
-    <span className="muted">{title}</span>
-    <strong className={row.pnl>=0?'positive':'negative'}>{money(row.pnl,currency)}</strong>
-    <small>{row.trades} trades · {row.winRate.toFixed(1)}% wins · {row.averageR.toFixed(2)}R average</small>
-  </div>;
+function BreakdownCard({ eyebrow, title, entries, tradeLabels, featured = false }: { eyebrow: string; title: string; entries: BreakdownEntry[]; tradeLabels: import('@/lib/i18n/screen-copy').ScreenCopy['analytics']; featured?: boolean }) {
+  const maxTrades = Math.max(1, ...entries.map((entry) => entry.trades));
+  return (
+    <section className={`card analytics-breakdown-card analytics-compact-breakdown ${featured ? 'featured analytics-featured-compact' : ''}`}>
+      <header className="analytics-panel-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div></header>
+      <div className="analytics-breakdown-list">
+        {entries.map((entry) => (
+          <div key={entry.name} className="analytics-breakdown-row">
+            <div className="analytics-breakdown-name"><strong>{entry.name}</strong><small>{entry.trades} {entry.trades === 1 ? tradeLabels.oneTrade : tradeLabels.manyTrades}</small></div>
+            <div className="analytics-breakdown-bar" aria-hidden="true"><span style={{ width: `${(entry.trades / maxTrades) * 100}%` }} /></div>
+            <div className="analytics-breakdown-metrics"><span>{entry.winRate.toFixed(0)}% {tradeLabels.winShort}</span><strong className={entry.averageR >= 0 ? 'metric-positive' : 'metric-negative'}>{signed(entry.averageR)}R {tradeLabels.avg}</strong></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
-function filterRange(trades:Trade[],range:Range){
-  if(range==='ALL')return trades;
-  const days=range==='1D'?1:range==='7D'?7:range==='30D'?30:range==='3M'?90:365;
-  const cutoff=Date.now()-days*86_400_000;
-  return trades.filter(trade=>new Date(trade.closedAt).getTime()>=cutoff);
-}
-
-function calculateAnalytics(trades:Trade[],startingBalance:number){
-  const ordered=[...trades].sort((a,b)=>+new Date(a.closedAt)-+new Date(b.closedAt));
-  let equity=startingBalance;
-  let peak=startingBalance;
-  let maxDrawdown=0;
-  let maxDrawdownPercent=0;
-  const curve=ordered.map(trade=>{
-    equity+=trade.pnl;
-    peak=Math.max(peak,equity);
-    const drawdown=Math.max(0,peak-equity);
-    const drawdownPercent=peak?drawdown/peak*100:0;
-    maxDrawdown=Math.max(maxDrawdown,drawdown);
-    maxDrawdownPercent=Math.max(maxDrawdownPercent,drawdownPercent);
-    return {label:new Date(trade.closedAt).toLocaleString(),value:equity};
-  });
-  let runningPeak=startingBalance;
-  const drawdownCurve=curve.map(point=>{
-    runningPeak=Math.max(runningPeak,point.value);
-    return {label:point.label,value:runningPeak?Math.max(0,(runningPeak-point.value)/runningPeak*100):0};
-  });
-
-  const wins=ordered.filter(trade=>trade.pnl>0);
-  const losses=ordered.filter(trade=>trade.pnl<0);
-  const grossProfit=wins.reduce((sum,trade)=>sum+trade.pnl,0);
-  const grossLoss=Math.abs(losses.reduce((sum,trade)=>sum+trade.pnl,0));
-  const pnl=ordered.reduce((sum,trade)=>sum+trade.pnl,0);
-  const averageR=ordered.length?ordered.reduce((sum,trade)=>sum+trade.r,0)/ordered.length:0;
-  const winRate=ordered.length?wins.length/ordered.length*100:0;
-  const averageWin=wins.length?grossProfit/wins.length:0;
-  const averageLoss=losses.length?grossLoss/losses.length:0;
-  const averageWinR=wins.length?wins.reduce((sum,trade)=>sum+trade.r,0)/wins.length:0;
-  const averageLossR=losses.length?Math.abs(losses.reduce((sum,trade)=>sum+trade.r,0)/losses.length):0;
-  const expectancy=(winRate/100)*averageWinR-(1-winRate/100)*averageLossR;
-
-  const compliant=groupRows(ordered.filter(trade=>trade.compliant),()=> 'Compliant')[0]??emptyGroup('Compliant');
-  const override=groupRows(ordered.filter(trade=>!trade.compliant),()=> 'Override')[0]??emptyGroup('Override');
-
-  return {
-    curve,drawdownCurve,pnl,averageR,winRate,expectancy,
-    wins:wins.length,losses:losses.length,
-    profitFactor:grossLoss?grossProfit/grossLoss:(grossProfit?Infinity:0),
-    averageWin,averageLoss,maxDrawdown,maxDrawdownPercent,
-    best:[...ordered].sort((a,b)=>b.pnl-a.pnl)[0],
-    worst:[...ordered].sort((a,b)=>a.pnl-b.pnl)[0],
-    longestWinStreak:streak(ordered,trade=>trade.pnl>0),
-    longestLossStreak:streak(ordered,trade=>trade.pnl<0),
-    byHour:groupRows(ordered,trade=>`${String(new Date(trade.openedAt).getHours()).padStart(2,'0')}:00`),
-    byWeekday:groupRows(ordered,trade=>['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date(trade.openedAt).getDay()]),
-    bySession:groupRows(ordered,trade=>trade.session||'Unknown'),
-    byInstrument:groupRows(ordered,trade=>trade.instrument),
-    byStrategy:groupRows(ordered,trade=>trade.strategy),
-    byDirection:groupRows(ordered,trade=>trade.direction),
-    compliance:{
-      compliant,override,
-      message:override.trades===0
-        ? 'No override trades were recorded in this period.'
-        : compliant.averageR>override.averageR
-          ? `Following the strategy produced ${(compliant.averageR-override.averageR).toFixed(2)}R more per trade than overrides.`
-          : `Overrides produced ${(override.averageR-compliant.averageR).toFixed(2)}R more per trade in this sample. Review trade count before drawing conclusions.`,
-    },
-  };
-}
-
-function groupRows(trades:Trade[],key:(trade:Trade)=>string):GroupRow[]{
-  const map=new Map<string,Trade[]>();
-  for(const trade of trades){
-    const name=key(trade)||'Unknown';
-    map.set(name,[...(map.get(name)??[]),trade]);
+function buildBreakdown(rows: Trade[], key: string | ((trade: Trade) => string)): BreakdownEntry[] {
+  const buckets = new Map<string, Trade[]>();
+  for (const trade of rows) {
+    const bucketName = typeof key === 'function' ? key(trade) : String((trade as Record<string, unknown>)[key] ?? 'Unknown');
+    const current = buckets.get(bucketName) ?? [];
+    current.push(trade);
+    buckets.set(bucketName, current);
   }
-  return [...map.entries()].map(([name,items])=>{
-    const wins=items.filter(item=>item.pnl>0);
-    const grossProfit=wins.reduce((sum,item)=>sum+item.pnl,0);
-    const grossLoss=Math.abs(items.filter(item=>item.pnl<0).reduce((sum,item)=>sum+item.pnl,0));
-    return {
-      name,
-      pnl:items.reduce((sum,item)=>sum+item.pnl,0),
-      r:items.reduce((sum,item)=>sum+item.r,0),
-      trades:items.length,
-      wins:wins.length,
-      winRate:items.length?wins.length/items.length*100:0,
-      averageR:items.length?items.reduce((sum,item)=>sum+item.r,0)/items.length:0,
-      profitFactor:grossLoss?grossProfit/grossLoss:(grossProfit?Infinity:0),
-    };
-  }).sort((a,b)=>b.pnl-a.pnl);
+  return Array.from(buckets.entries()).map(([name, items]) => {
+    const values = items.map((item) => item.resultR).filter((value): value is number => value !== null && Number.isFinite(value));
+    const wins = items.filter((item) => String(item.outcome ?? '').toUpperCase() === 'WIN').length;
+    return { name, trades: items.length, winRate: items.length ? (wins / items.length) * 100 : 0, averageR: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0 };
+  }).sort((a, b) => b.trades - a.trades || b.averageR - a.averageR);
 }
 
-function emptyGroup(name:string):GroupRow{
-  return {name,pnl:0,r:0,trades:0,wins:0,winRate:0,averageR:0,profitFactor:0};
+function buildChart(points: Array<{ label: string; value: number }>) {
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
+  const span = max - min || 1;
+  const zeroY = 36 - ((0 - min) / span) * 30;
+  const coordinates = points.map((point, index) => {
+    const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
+    const y = 36 - ((point.value - min) / span) * 30;
+    return { x, y };
+  });
+  const linePoints = coordinates.map(({ x, y }) => `${x},${y}`).join(' ');
+  const first = coordinates[0] ?? { x: 0, y: zeroY };
+  const last = coordinates.at(-1) ?? first;
+  const pathPoints = coordinates.map(({ x, y }) => `L ${x} ${y}`).join(' ');
+  return { min, max, zeroY, points: linePoints, areaPath: `M ${first.x} ${zeroY} ${pathPoints} L ${last.x} ${zeroY} Z` };
 }
 
-function streak(trades:Trade[],predicate:(trade:Trade)=>boolean){
-  let best=0,current=0;
-  for(const trade of trades){
-    current=predicate(trade)?current+1:0;
-    best=Math.max(best,current);
-  }
-  return best;
+function signed(value: number) {
+  const rounded = Number(value.toFixed(2));
+  if (Object.is(rounded, -0) || rounded === 0) return '0.00';
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
 }
-
-function money(value:number,currency:string){
-  return new Intl.NumberFormat(undefined,{style:'currency',currency:currency||'USD',maximumFractionDigits:2}).format(value);
-}
-
-function tradeLabel(trade:Trade){
-  return `${trade.instrument} · ${trade.strategy} · ${new Date(trade.closedAt).toLocaleDateString()}`;
+function formatRLabel(value: number) { return `${value.toFixed(0)}R`; }
+function percentage(value: number) { return `${value}%`; }
+function formatShortDate(value: string | undefined, locale: string) { return value ? new Date(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) : ''; }
+function outcomeTone(outcome: string) {
+  const normalized = outcome.toUpperCase();
+  if (normalized === 'WIN') return 'positive';
+  if (normalized === 'LOSS') return 'negative';
+  return 'neutral';
 }

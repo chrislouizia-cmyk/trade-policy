@@ -37,7 +37,7 @@ test('frozen registry rejects every mutation and returns immutable list snapshot
 test('bootstrap registers dormant reference detectors, then freezes', () => {
   const registry = createDetectorRegistry();
   const detector = registry.get('infrastructure.placeholder');
-  assert.deepEqual(registry.listIds(), ['infrastructure.placeholder', 'session', 'atr', 'trend', 'range-levels', 'break-of-structure', 'liquidity-sweep', 'fair-value-gap', 'rejection-candle', 'volume-expansion', 'displacement', 'volatility-requirement', 'retest']);
+  assert.deepEqual(registry.listIds(), ['infrastructure.placeholder', 'session', 'atr', 'trend', 'range-levels', 'break-of-structure', 'liquidity-sweep', 'fair-value-gap', 'order-block', 'rejection-candle', 'volume-expansion', 'displacement', 'volatility-requirement', 'retest']);
   assert.equal(detector?.metadata.displayName, 'Placeholder Detector');
   assert.equal(detector?.metadata.deterministic, true);
   assert.equal(detector?.metadata.supportsReplay, true);

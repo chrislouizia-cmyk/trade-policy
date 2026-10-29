@@ -1,0 +1,2 @@
+import {HQShell} from '@/lib/hq-page';import {getHQMarketplaceContext} from '@/lib/server/hq-marketplace';import MarketplaceReleaseDetail from '@/components/hq/MarketplaceReleaseDetail';
+export default async function Page({params}:{params:Promise<{listingId:string}>}){const {listingId}=await params,{role,displayName,permissions}=await getHQMarketplaceContext();return <HQShell role={role} displayName={displayName} permissions={permissions}><MarketplaceReleaseDetail listingId={listingId}/></HQShell>}

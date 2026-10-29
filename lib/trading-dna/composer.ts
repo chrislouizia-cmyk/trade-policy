@@ -1,4 +1,5 @@
 import type { StrategyRule } from '@/types/trade';
+import { resolveActiveStrategyDnaRuleId } from '../active-strategy-evidence.ts';
 import { TRADING_DNA_RULES, validateTradingDnaCondition } from './registry.ts';
 import { getTradingDnaOperator } from './operators.ts';
 import type { TradingDnaOperator, TradingDnaRuleDefinition, TradingDnaValidationIssue } from './types.ts';
@@ -10,7 +11,7 @@ export type ComposerNode=ComposerGroup|ComposerCondition;
 
 const PREFIX='dna.v1.';
 const registryById=new Map(TRADING_DNA_RULES.map(rule=>[rule.id,rule]));
-const legacyAliases:Record<string,string>={h4TrendAligned:'structure.trend-alignment',h1TrendAligned:'structure.trend-alignment',structurePattern:'structure.higher-high',liquiditySweep:'smart-money.liquidity-sweep',chochConfirmed:'structure.choch',bosConfirmed:'structure.bos',orderBlock:'smart-money.order-block',fairValueGap:'smart-money.fair-value-gap',premiumDiscount:'smart-money.discount',retestConfirmed:'price-action.retest',rejectionCandle:'price-action.strong-rejection',volumeConfirmation:'volume.above-average',sessionRequirement:'session.london',newsFilter:'external.high-impact-news',correlationFilter:'external.correlation'};
+export function resolveComposerRuleId(ruleKey:string):string|null{if(!ruleKey)return null;if(registryById.has(ruleKey))return ruleKey;const decoded=decode(ruleKey);if(decoded?.condition?.ruleId){return decoded.condition.ruleId;}return resolveActiveStrategyDnaRuleId(ruleKey);}
 
 export function createComposerGroup(id='root',logic:ComposerLogic='ALL'):ComposerGroup{return {kind:'GROUP',id,logic,children:[]};}
 export function createComposerCondition(rule:TradingDnaRuleDefinition,id:string):ComposerCondition{return {kind:'CONDITION',id,ruleId:rule.id,operator:rule.supportedOperators[0],inputs:{...rule.defaultValues},operands:[]};}
@@ -24,8 +25,8 @@ export function composerTreeFromStrategyRules(rules:StrategyRule[]):ComposerGrou
   for(const [index,strategyRule] of rules.entries()){
     const stored=decode(strategyRule.ruleKey);
     if(stored){if(stored.rootLogic)root.logic=stored.rootLogic;insertPath(root,stored.path,{kind:'CONDITION',...stored.condition,legacyRule:strategyRule});continue;}
-    const ruleId=registryById.has(strategyRule.ruleKey)?strategyRule.ruleKey:legacyAliases[strategyRule.ruleKey];
-    const definition=ruleId?registryById.get(ruleId):undefined;
+    const resolvedRuleId=resolveComposerRuleId(strategyRule.ruleKey);
+    const definition=resolvedRuleId?registryById.get(resolvedRuleId):undefined;
     const condition:ComposerCondition=definition?{...createComposerCondition(definition,`legacy-${index}`),legacyRule:strategyRule}:{kind:'CONDITION',id:`legacy-${index}`,ruleId:strategyRule.ruleKey,operator:'CONFIRMED',inputs:{},operands:[],legacyRule:strategyRule};
     root.children.push(condition);
   }

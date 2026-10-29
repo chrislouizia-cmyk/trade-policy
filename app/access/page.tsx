@@ -5,7 +5,7 @@ export default function AccessPage() {
     <main className="auth-page access-choice-page">
       <section className="access-choice-shell">
         <div className="access-choice-heading">
-          <span className="brand-mark">TP</span>
+          <img src="/brand/trade-police-mark.png" alt="Trade Police" className="brand-mark" width={42} height={42} />
           <span className="eyebrow">TRADE POLICE</span>
           <h1>Choose your portal</h1>
           <p>Customers and employees use separate operational environments.</p>

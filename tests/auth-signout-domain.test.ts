@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('sign out uses the canonical Supabase client and only redirects after success', () => {
+  const button = read('components/SignOutButton.tsx');
+  assert.match(button, /createClient\(\)\.auth\.signOut\(\{ scope: 'local' \}\)/);
+  assert.match(button, /if \(error\) throw error;[\s\S]*catch[\s\S]*still signed in/);
+  assert.match(button, /window\.location\.replace\(loginPath\)/);
+  assert.match(button, /\/client\/login\?signedOut=1/);
+  assert.match(button, /\/hq\/login\?signedOut=1/);
+});
+
+test('protected responses are not cached and unauthenticated traffic uses the correct portal', () => {
+  const proxy = read('lib/supabase/proxy.ts');
+  assert.match(proxy, /private, no-store, max-age=0/);
+  assert.match(proxy, /isStaffPath \? canonicalUrls\.hq : canonicalUrls\.portal/);
+  assert.match(proxy, /pathname\.startsWith\('\/hq'\)/);
+});
+
+test('HQ authorization remains server enforced', () => {
+  const guard = read('lib/hq-page.tsx');
+  assert.match(guard, /has_staff_permission/);
+  assert.match(guard, /if\(!role\)redirect/);
+  assert.match(guard, /if\(mfaRequired&&assurance\?\.currentLevel!==['"]aal2['"]\)redirect\(['"]\/hq\/mfa['"]\)/);
+  assert.match(guard, /if\(!allowed\)redirect/);
+  assert.ok(guard.indexOf('if(!role)') < guard.indexOf('if(mfaRequired'));
+  assert.ok(guard.indexOf('if(mfaRequired') < guard.indexOf('if(!allowed)'));
+});
+
+test('auth logging excludes cookie names and session values', () => {
+  const server = read('lib/supabase/server.ts');
+  const proxy = read('lib/supabase/proxy.ts');
+
+  assert.doesNotMatch(
+    `${server}\n${proxy}`,
+    /cookieValues\s*:|cookieCount\s*:|session\s*:\s*|access_token|refresh_token/i,
+  );
+  assert.match(proxy, /Session verification failed/);
+  assert.match(proxy, /AUTH_ROUTE_DIAGNOSTIC/);
+  assert.match(proxy, /authStateCategory/);
+  assert.match(proxy, /hasMatchingSupabaseAuthCookies/);
+  assert.doesNotMatch(proxy, /cookieValues\s*:|cookieCount\s*:|session\s*:\s*|access_token|refresh_token/i);
+  assert.match(proxy, /pathname,\s*\n\s*redirectDestination:|authStateCategory,\s*\n\s*hasMatchingSupabaseAuthCookies/);
+});

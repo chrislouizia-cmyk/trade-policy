@@ -1,0 +1,4 @@
+import { RESERVED_INTERNAL_STRATEGY_NAMES } from './strategy-name.ts';
+export type GenericStrategyDiagnostic = Readonly<{ id:string; name:string; createdAt?:string; updatedAt?:string; isDefault:boolean; isArchived:boolean }>;
+/** Read-only projection for authenticated persisted rows; callers supply only the owner's query result. */
+export function findGenericPersistedStrategies(rows: readonly Record<string, unknown>[]): GenericStrategyDiagnostic[] { return rows.filter(row => typeof row.name === 'string' && RESERVED_INTERNAL_STRATEGY_NAMES.includes(row.name.trim().toLocaleLowerCase())).map(row => ({ id:String(row.id), name:String(row.name), ...(typeof row.created_at === 'string'?{createdAt:row.created_at}:{}), ...(typeof row.updated_at === 'string'?{updatedAt:row.updated_at}:{}), isDefault:Boolean(row.is_default), isArchived:Boolean(row.is_archived) })); }

@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/operations/decision-sources/cleanup",
+      "schedule": "17 3 * * *"
+    },
+    {
+      "path": "/api/operations/trader-intelligence-refresh",
+      "schedule": "35 5 * * *"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+export const RESERVED_INTERNAL_STRATEGY_NAMES = Object.freeze(['draft from description', 'new strategy', 'untitled']);
+export function validateStrategyName(value: string): string | null { const name = value.trim(); if (!name) return 'Strategy name is required.'; if (RESERVED_INTERNAL_STRATEGY_NAMES.includes(name.toLocaleLowerCase())) return 'Choose a strategy name instead of the internal draft placeholder.'; return null; }

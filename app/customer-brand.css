@@ -1,0 +1,292 @@
+/*
+ * Trade Police customer identity
+ * Evidence first. Calm by default. Semantic color only when it carries meaning.
+ * Scoped to the authenticated client portal so HQ and public pages stay independent.
+ */
+body:has(.mobile-bottom-nav) {
+  --tp-canvas: #05080d;
+  --tp-canvas-raised: #091019;
+  --tp-glass: rgba(12, 19, 28, .76);
+  --tp-glass-strong: rgba(8, 14, 22, .9);
+  --tp-glass-soft: rgba(255, 255, 255, .045);
+  --tp-line: rgba(224, 237, 246, .13);
+  --tp-line-soft: rgba(224, 237, 246, .075);
+  --tp-highlight: rgba(255, 255, 255, .105);
+  --tp-ink: #f5f8fa;
+  --tp-muted: #9ba8b7;
+  --tp-mint: #77dfbf;
+  --tp-blue: #79a8ff;
+  --tp-gold: #dcc27b;
+  --tp-danger: #ff8c94;
+  --tp-radius-xl: 24px;
+  --tp-radius-lg: 18px;
+  --tp-radius-md: 12px;
+  --tp-shadow: 0 24px 70px rgba(0, 0, 0, .34);
+  --bg: var(--tp-canvas);
+  --panel: var(--tp-glass);
+  --panel-2: rgba(20, 29, 40, .86);
+  --text: var(--tp-ink);
+  --muted: var(--tp-muted);
+  --border: var(--tp-line);
+  --green: var(--tp-mint);
+  --yellow: var(--tp-gold);
+  --red: var(--tp-danger);
+  --blue: var(--tp-blue);
+  color: var(--tp-ink);
+  background:
+    radial-gradient(ellipse 52rem 34rem at 9% -8%, rgba(76, 216, 185, .15), transparent 68%),
+    radial-gradient(ellipse 48rem 38rem at 96% 15%, rgba(83, 127, 227, .13), transparent 70%),
+    linear-gradient(180deg, #071019 0%, var(--tp-canvas) 38%, #05070b 100%);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+}
+
+body:has(.mobile-bottom-nav) .authenticated-app-shell {
+  width: min(100% - 32px, 1480px);
+  max-width: 1480px;
+}
+
+body:has(.mobile-bottom-nav) .canonical-app-shell {
+  gap: 9px !important;
+  padding: 12px !important;
+  border: 1px solid var(--tp-line) !important;
+  border-radius: var(--tp-radius-xl) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .075), transparent 35%),
+    linear-gradient(160deg, rgba(15, 24, 34, .88), var(--tp-glass-strong)) !important;
+  box-shadow: inset 0 1px 0 var(--tp-highlight), var(--tp-shadow) !important;
+  backdrop-filter: blur(34px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(34px) saturate(145%) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-shell-top {
+  min-height: 44px;
+  padding: 0 3px;
+}
+
+body:has(.mobile-bottom-nav) .canonical-shell-brand {
+  gap: 12px !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-shell-brand .brand-logo-header {
+  width: auto !important;
+  max-width: 184px !important;
+  height: 38px !important;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .22));
+}
+
+body:has(.mobile-bottom-nav) .canonical-shell-brand .brand-caption {
+  display: grid !important;
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--tp-line-soft);
+}
+
+body:has(.mobile-bottom-nav) .canonical-shell-brand .brand-caption small {
+  color: #aeb8c5 !important;
+  font-size: 9px !important;
+  font-weight: 760;
+  letter-spacing: .12em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav {
+  gap: 4px !important;
+  padding: 5px !important;
+  border: 1px solid var(--tp-line-soft) !important;
+  border-radius: 14px !important;
+  background: rgba(3, 8, 13, .34) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav > a {
+  position: relative;
+  min-height: 40px;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: #aab4c0 !important;
+  font-weight: 720 !important;
+  letter-spacing: -.01em !important;
+  box-shadow: none !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav > a:hover {
+  color: var(--tp-ink) !important;
+  background: rgba(255, 255, 255, .045) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav > a.active {
+  color: #fff !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .115), rgba(121, 168, 255, .07) 58%, rgba(119, 223, 191, .08)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .13), 0 9px 24px rgba(0, 0, 0, .2) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-visible-nav > a.active::after {
+  content: "";
+  position: absolute;
+  right: 32%;
+  bottom: 4px;
+  left: 32%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--tp-blue), var(--tp-mint));
+  box-shadow: 0 0 10px rgba(119, 223, 191, .2);
+}
+
+body:has(.mobile-bottom-nav) .canonical-context-bar {
+  border: 1px solid var(--tp-line-soft) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, .025) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+body:has(.mobile-bottom-nav) .canonical-context-copy .eyebrow,
+body:has(.mobile-bottom-nav) .eyebrow,
+body:has(.mobile-bottom-nav) .brand {
+  color: #9fb5d7;
+  font-weight: 820;
+  letter-spacing: .14em !important;
+}
+
+body:has(.mobile-bottom-nav) :is(.card, .trade-list, .monitor-hero, .decision-state-guide, .market-position-chart-shell) {
+  border: 1px solid var(--tp-line-soft) !important;
+  border-radius: var(--tp-radius-lg) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .055), transparent 34%),
+    linear-gradient(155deg, rgba(14, 22, 32, .82), rgba(7, 12, 19, .76)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .065), 0 18px 52px rgba(0, 0, 0, .23) !important;
+  backdrop-filter: blur(26px) saturate(138%);
+  -webkit-backdrop-filter: blur(26px) saturate(138%);
+}
+
+body:has(.mobile-bottom-nav) :is(.card, .trade-list, .monitor-hero, .decision-state-guide):hover {
+  border-color: rgba(224, 237, 246, .18) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(h1, h2, h3) {
+  color: var(--tp-ink);
+  text-wrap: balance;
+}
+
+body:has(.mobile-bottom-nav) h1 {
+  letter-spacing: -.045em;
+}
+
+body:has(.mobile-bottom-nav) :is(button, .button-link) {
+  border-radius: 11px;
+  font-weight: 760;
+  letter-spacing: -.005em;
+}
+
+body:has(.mobile-bottom-nav) :is(.primary, .button-link.primary) {
+  border-color: rgba(255, 255, 255, .72) !important;
+  background: linear-gradient(180deg, #fbfdfe, #e6edf1) !important;
+  color: #071016 !important;
+  box-shadow: inset 0 1px 0 #fff, 0 12px 28px rgba(0, 0, 0, .22) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(.primary, .button-link.primary):hover:not(:disabled) {
+  background: #fff !important;
+  box-shadow: inset 0 1px 0 #fff, 0 15px 34px rgba(0, 0, 0, .28) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(input, select, textarea) {
+  border: 1px solid var(--tp-line-soft) !important;
+  border-radius: 11px !important;
+  background: rgba(3, 8, 13, .46) !important;
+  color: var(--tp-ink) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(input, select, textarea):focus {
+  border-color: rgba(121, 168, 255, .48) !important;
+  box-shadow: 0 0 0 3px rgba(121, 168, 255, .12), inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+  outline: 0;
+}
+
+body:has(.mobile-bottom-nav) :is(.metric, .decision-panel-metrics > div, .strategy-list-item, .trade-list-item, .event-row) {
+  border-color: var(--tp-line-soft) !important;
+  border-radius: var(--tp-radius-md) !important;
+  background: rgba(255, 255, 255, .028) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+body:has(.mobile-bottom-nav) :is(.state-ready, .tone-positive, .status-pass) {
+  --state-accent: var(--tp-mint);
+}
+
+body:has(.mobile-bottom-nav) :is(.state-wait, .tone-warning, .status-pending) {
+  --state-accent: var(--tp-gold);
+}
+
+body:has(.mobile-bottom-nav) :is(.state-blocked, .tone-danger, .status-fail) {
+  --state-accent: var(--tp-danger);
+}
+
+body:has(.mobile-bottom-nav) .decision-system-state {
+  border-color: color-mix(in srgb, var(--state-accent, var(--tp-blue)) 30%, transparent) !important;
+  background: color-mix(in srgb, var(--state-accent, var(--tp-blue)) 7%, transparent) !important;
+}
+
+body:has(.mobile-bottom-nav) .decision-rule-progress-track span {
+  background: linear-gradient(90deg, var(--tp-blue), var(--tp-mint));
+}
+
+body:has(.mobile-bottom-nav) .nav-badge {
+  border-color: rgba(119, 223, 191, .28);
+  background: rgba(119, 223, 191, .12);
+  color: #c8f7e8;
+}
+
+@media (max-width: 760px) {
+  body:has(.mobile-bottom-nav) {
+    --tp-radius-xl: 19px;
+    --tp-radius-lg: 16px;
+    --tp-shadow: 0 18px 46px rgba(0, 0, 0, .28);
+  }
+
+  body:has(.mobile-bottom-nav) .authenticated-app-shell {
+    width: 100%;
+  }
+
+  body:has(.mobile-bottom-nav) .canonical-app-shell {
+    padding: 8px !important;
+  }
+
+  body:has(.mobile-bottom-nav) .mobile-shell-brand img {
+    width: 146px;
+    max-height: 38px;
+    filter: drop-shadow(0 7px 16px rgba(0, 0, 0, .22));
+  }
+
+  body:has(.mobile-bottom-nav) :is(.card, .trade-list, .monitor-hero, .decision-state-guide, .market-position-chart-shell) {
+    backdrop-filter: blur(18px) saturate(128%);
+    -webkit-backdrop-filter: blur(18px) saturate(128%);
+  }
+
+  body:has(.mobile-bottom-nav) .mobile-bottom-nav {
+    border-color: var(--tp-line) !important;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, .085), transparent 38%),
+      rgba(6, 11, 18, .9) !important;
+    box-shadow: inset 0 1px 0 var(--tp-highlight), 0 22px 62px rgba(0, 0, 0, .5) !important;
+  }
+
+  body:has(.mobile-bottom-nav) .mobile-liquid-selection {
+    border-color: rgba(255, 255, 255, .17);
+    background:
+      radial-gradient(circle at 50% 0, rgba(255, 255, 255, .16), transparent 52%),
+      linear-gradient(145deg, rgba(121, 168, 255, .12), rgba(119, 223, 191, .09));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body:has(.mobile-bottom-nav) :is(.canonical-app-shell, .card, .trade-list, .monitor-hero, .decision-state-guide, .market-position-chart-shell, .mobile-bottom-nav) {
+    background: #0d151f !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}

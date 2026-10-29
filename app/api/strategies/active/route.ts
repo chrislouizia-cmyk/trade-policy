@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { loadActiveStrategy } from '@/lib/server/active-strategy';
 import { apiError } from '@/lib/server/public-error';
+import { strategyRevisionId } from '@/lib/historical-decisions/strategy-revision';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,8 +19,9 @@ export async function GET() {
     }
 
     const strategy = await loadActiveStrategy(supabase, user.id);
+    const strategyRevisionIdValue = strategyRevisionId(strategy);
     return NextResponse.json(
-      { strategy },
+      { strategy, strategyRevisionId: strategyRevisionIdValue },
       { headers: { 'Cache-Control': 'no-store, max-age=0' } },
     );
   } catch (error) {

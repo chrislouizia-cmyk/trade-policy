@@ -1,0 +1,218 @@
+{
+  "id": "xauusd-structure-pullback",
+  "version": "1.1.0",
+  "parentStrategyVersion": "1.0.0",
+  "status": "PREREGISTERED",
+  "instrument": "XAUUSD",
+  "primaryTimeframe": "M15",
+  "direction": "BOTH",
+  "governanceReason": "Semantic clarification and executable preregistration created before any official backtest; no performance-equivalence claim is made for version 1.0.0.",
+  "resolvedAmbiguities": [
+    "directional sweep binding and chronology",
+    "FVG-to-transition association",
+    "displacement evidence binding",
+    "entry-zone and rejection geometry",
+    "session boundaries and next-open timing",
+    "structural stop composition",
+    "liquidity-target selection and reward-to-risk",
+    "one-entry structure identity and consumption",
+    "setup invalidation, maximum holding, gaps, and exit precedence"
+  ],
+  "rules": {
+    "directional": {
+      "LONG": {
+        "requiredStructureBias": "BEARISH",
+        "transitionDirection": "BULLISH",
+        "transitionClassifications": ["MARKET_STRUCTURE_SHIFT", "CHOCH"],
+        "requiredSweepSide": "SELL_SIDE",
+        "fvgDirection": "BULLISH",
+        "entryZoneDirection": "BULLISH",
+        "stopSide": "BELOW_ENTRY",
+        "targetSide": "BUY_SIDE"
+      },
+      "SHORT": {
+        "requiredStructureBias": "BULLISH",
+        "transitionDirection": "BEARISH",
+        "transitionClassifications": ["MARKET_STRUCTURE_SHIFT", "CHOCH"],
+        "requiredSweepSide": "BUY_SIDE",
+        "fvgDirection": "BEARISH",
+        "entryZoneDirection": "BEARISH",
+        "stopSide": "ABOVE_ENTRY",
+        "targetSide": "SELL_SIDE"
+      }
+    },
+    "structure": {
+      "transitionAccepted": true,
+      "identity": "TRANSITION_REGIME_ID_ELSE_TRANSITION_EVENT_ID",
+      "sourceSnapshot": "PRIOR_STRUCTURE_SNAPSHOT",
+      "oneEntryPerIdentity": true
+    },
+    "sweepRelationship": {
+      "acceptedOnly": true,
+      "sequence": "BEFORE_TRANSITION",
+      "sameCandleAllowed": false,
+      "maximumCompletedCandles": 8,
+      "sameSetupWindow": "NO_ACCEPTED_OPPOSITE_DIRECTION_TRANSITION_BETWEEN_SWEEP_AND_TRANSITION",
+      "sourceRelationship": "SWEEP_SOURCE_SWING_MUST_APPEAR_IN_TRANSITION_PRIOR_SNAPSHOT",
+      "consumedSourceEligible": true,
+      "multiplePolicy": "LATEST_DETECTED_AT_THEN_STABLE_ID"
+    },
+    "displacement": {
+      "source": "IMMUTABLE_DISPLACEMENT_OBSERVATION",
+      "candle": "TRANSITION_BREAKOUT_CANDLE",
+      "bodyFormula": "ABS(CLOSE-OPEN)",
+      "rangeFormula": "HIGH-LOW",
+      "atrPeriod": 14,
+      "atrMethod": "SIMPLE_TRUE_RANGE_COMPLETED_CANDLES",
+      "minimumBodyRangeRatioExclusive": 0.65,
+      "minimumBodyAtrMultipleExclusive": 1.1,
+      "directionalCloseRequired": true,
+      "closeLocationRequirement": "NONE",
+      "formula": "bodySize > ATR14*1.1 AND bodySize > candleRange*0.65"
+    },
+    "fvgAssociation": {
+      "transitionCandleRole": "C2",
+      "c3CompletedCandlesAfterTransition": 1,
+      "requiredDirectionMatchesTransition": true,
+      "middleCandleIsDisplacementCandle": true,
+      "eligibleStatusesAtTrigger": ["ACTIVE", "PARTIALLY_MITIGATED"],
+      "partialMitigationEligible": true,
+      "terminalStatusesIneligible": ["FULLY_MITIGATED", "INVALIDATED", "EXPIRED"],
+      "selection": ["EARLIEST_DETECTED_AT", "STABLE_FVG_ID"]
+    },
+    "entryZone": {
+      "source": "ENTIRE_ORIGINAL_FVG",
+      "lowerBoundary": "FVG_LOWER_BOUND",
+      "upperBoundary": "FVG_UPPER_BOUND",
+      "boundaryEqualityQualifies": true,
+      "touchRequired": true,
+      "rejectionRequired": true,
+      "maximumCompletedCandlesAfterFvgCreation": 20,
+      "maximumCompletedCandlesAfterFirstTouch": 4
+    },
+    "rejectionTrigger": {
+      "candle": "FIRST_COMPLETED_ELIGIBLE_CANDLE",
+      "overlap": "CANDLE_HIGH_GTE_ZONE_LOWER_AND_CANDLE_LOW_LTE_ZONE_UPPER",
+      "minimumZonePenetrationPercent": 0,
+      "boundaryEqualityQualifies": true,
+      "LONG": {
+        "direction": "CLOSE_GT_OPEN",
+        "closeLocation": "CLOSE_GTE_ZONE_MIDPOINT",
+        "minimumLowerWickRangeRatio": 0
+      },
+      "SHORT": {
+        "direction": "CLOSE_LT_OPEN",
+        "closeLocation": "CLOSE_LTE_ZONE_MIDPOINT",
+        "minimumUpperWickRangeRatio": 0
+      },
+      "firstTouchCandleEligible": true,
+      "knownAt": "CANDLE_CLOSE"
+    },
+    "session": {
+      "timezone": "UTC",
+      "dstPolicy": "FIXED_UTC_NO_DST_ADJUSTMENT",
+      "allowedWeekdaysUtc": [1, 2, 3, 4, 5],
+      "holidayPolicy": "NOT_MODELED",
+      "windows": [
+        {"id": "LONDON", "start": "07:00", "end": "16:00"},
+        {"id": "NEW_YORK", "start": "13:00", "end": "22:00"}
+      ],
+      "startInclusive": true,
+      "endExclusive": true,
+      "triggerCloseMustBeInside": true,
+      "entryOpenMustBeInside": true,
+      "finalSessionCandleWithoutEligibleNextOpen": "INVALID"
+    },
+    "entryTiming": {
+      "model": "MARKET_AT_NEXT_CHRONOLOGICAL_CANDLE_OPEN",
+      "sameCandleExecution": false,
+      "missingNextCandle": "INCOMPLETE",
+      "structuralCompositionUsesMidpointPrices": true,
+      "spreadSlippageAppliedByExecutionSimulation": true
+    },
+    "stop": {
+      "structuralOrigin": "ACCEPTED_LAST_CONFIRMED_ADVERSE_SIDE_SWING_IN_TRANSITION_PRIOR_SNAPSHOT",
+      "fvgBoundary": "ORIGINAL_FVG_FAR_BOUNDARY",
+      "LONG": "MIN(STRUCTURAL_ORIGIN_PRICE,FVG_LOWER_BOUND)-ATR14*0.1",
+      "SHORT": "MAX(STRUCTURAL_ORIGIN_PRICE,FVG_UPPER_BOUND)+ATR14*0.1",
+      "bufferMethod": "SIMPLE_TRUE_RANGE_COMPLETED_CANDLES",
+      "bufferAtrPeriod": 14,
+      "bufferAtrMultiple": 0.1,
+      "componentEqualityAllowed": true,
+      "missingComponent": "BLOCKED",
+      "fallback": null
+    },
+    "target": {
+      "LONG": {"side": "BUY_SIDE", "strictPriceRelation": "TARGET_GT_ENTRY"},
+      "SHORT": {"side": "SELL_SIDE", "strictPriceRelation": "TARGET_LT_ENTRY"},
+      "types": ["STRUCTURAL_HIGH", "STRUCTURAL_LOW", "EQUAL_HIGHS", "EQUAL_LOWS"],
+      "typeDirectionCompatibilityRequired": true,
+      "eligibleStatuses": ["AVAILABLE", "TESTED"],
+      "testedEligible": true,
+      "minimumClusterMembers": 2,
+      "mustExistByEntry": true,
+      "selection": ["ABSOLUTE_DISTANCE", "TYPE_PRIORITY", "DETECTED_AT", "STABLE_TARGET_ID"],
+      "typePriority": ["EQUAL_HIGHS", "EQUAL_LOWS", "STRUCTURAL_HIGH", "STRUCTURAL_LOW"],
+      "searchFartherWhenNearestFailsMinimumRr": false
+    },
+    "minimumRewardToRisk": {
+      "minimumInclusive": 2,
+      "LONG": {
+        "risk": "ENTRY_PRICE-STOP_PRICE",
+        "reward": "TARGET_PRICE-ENTRY_PRICE"
+      },
+      "SHORT": {
+        "risk": "STOP_PRICE-ENTRY_PRICE",
+        "reward": "ENTRY_PRICE-TARGET_PRICE"
+      },
+      "riskMustBePositive": true,
+      "rewardMustBePositive": true,
+      "costsIncludedAtComposition": false,
+      "nearestTargetFailureStatus": "INVALID"
+    },
+    "oneEntryPerStructure": {
+      "identity": "TRANSITION_REGIME_ID_ELSE_TRANSITION_EVENT_ID",
+      "consumeAt": "ENTRY_FILL",
+      "unfilledAttemptConsumes": false,
+      "invalidSetupConsumes": false,
+      "stoppedOutAllowsReentry": false,
+      "newBosCreatesIdentity": false,
+      "newAcceptedTransitionRegimeCreatesIdentity": true,
+      "persistsAcrossSessions": true,
+      "stateSource": "IMMUTABLE_STRUCTURE_CONSUMPTION_RECORDS"
+    },
+    "setupInvalidation": [
+      "FVG_TERMINAL_BEFORE_ENTRY",
+      "ACCEPTED_OPPOSING_TRANSITION_BEFORE_ENTRY",
+      "COMPLETED_CLOSE_BEYOND_STRUCTURAL_ORIGIN",
+      "SELECTED_TARGET_TERMINAL_BEFORE_ENTRY",
+      "ZONE_EXPIRY",
+      "SESSION_INELIGIBLE_AT_TRIGGER_OR_ENTRY",
+      "STRUCTURE_ALREADY_CONSUMED"
+    ],
+    "maximumHolding": {
+      "completedCandles": 32,
+      "countingStarts": "ENTRY_CANDLE_IS_ONE",
+      "exitAt": "CLOSE_OF_32ND_COMPLETED_CANDLE_FROM_ENTRY",
+      "missingCandle": "NEXT_AVAILABLE_CHRONOLOGICAL_CANDLE_CONTINUES_COUNT",
+      "sessionCloseExit": false
+    },
+    "exit": {
+      "precedence": ["STRUCTURAL_CLOSE_INVALIDATION", "STOP", "TARGET", "MAXIMUM_HOLDING"],
+      "sameCandleConvention": "CONSERVATIVE_ADVERSE_PRECEDENCE_FOR_UNPROVABLE_INTRABAR_CHRONOLOGY",
+      "gapThroughStop": "FILL_AT_CANDLE_OPEN_IF_OPEN_BEYOND_STOP_ELSE_STOP_PRICE",
+      "gapThroughTarget": "FILL_AT_TARGET_PRICE_NO_POSITIVE_SLIPPAGE",
+      "maximumHoldingPrice": "CANDLE_CLOSE"
+    }
+  },
+  "researchMetadata": {
+    "immutable": true,
+    "createdAt": "2026-07-28T00:00:00.000Z",
+    "schemaVersion": "1.1.0",
+    "profitabilityClaim": false,
+    "performanceEquivalentToParentClaim": false,
+    "backtestResultsExamined": false,
+    "parameterOptimizationPerformed": false,
+    "officialBacktestExecuted": false
+  }
+}

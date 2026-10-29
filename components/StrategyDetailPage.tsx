@@ -1,0 +1,996 @@
+'use client';
+
+import { publishCompanionContext } from '@/lib/companion-events';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { createClient } from '@/lib/supabase/client';
+import { isBacktestLeaseStale } from '@/lib/backtesting/run-lifecycle';
+import { normalizeStrategyInstruments, resolveBacktestInstrument } from '@/lib/backtesting/instrument-selection';
+import { backtestOutcome } from '@/lib/backtesting/backtest-report';
+import styles from './StrategyDetailPage.module.css';
+import {useLocale} from '@/components/i18n/LocaleProvider';
+import {workspaceText} from '@/lib/i18n/workspace-copy';
+import MarketplaceObservationCard from '@/components/MarketplaceObservationCard';
+import StrategyShareDialog from '@/components/StrategyShareDialog';
+
+type TabKey = 'overview' | 'rules' | 'backtests' | 'forward-test';
+
+type StrategyRow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  market_types?: string[] | null;
+  instruments?: string[] | null;
+  macro_timeframe?: string | null;
+  trend_timeframe?: string | null;
+  confirmation_timeframe?: string | null;
+  entry_timeframe?: string | null;
+  trigger_timeframe?: string | null;
+  maximum_risk_percent?: number | null;
+  minimum_rr?: number | null;
+  authorization_score?: number | null;
+  wait_score?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  is_default?: boolean | null;
+  allowed_sessions?: string[] | null;
+  required_evidence?: string[] | null;
+  stop_limits?: Record<string, number> | null;
+};
+
+type RuleRow = {
+  id?: string;
+  rule_key?: string | null;
+  label?: string | null;
+  enabled?: boolean | null;
+  mandatory?: boolean | null;
+  weight?: number | null;
+  minimum_confidence?: number | null;
+  timeframe_role?: string | null;
+  evaluation_mode?: string | null;
+};
+
+type SessionRow = {
+  id?: string;
+  session_code?: string | null;
+  name?: string | null;
+  timezone?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+};
+
+type BacktestRunRow = {
+  id: string;
+  strategy_profile_id: string;
+  status: string;
+  strategy_revision_id?: string | null;
+  instrument?: string | null;
+  execution_timeframe?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  starting_balance?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type OpportunityFunnel = {
+  execution_candles_evaluated?: number;
+  multi_timeframe_context_ready?: number;
+  analysis_completed?: number;
+  ready_candidate_found?: number;
+  setup_readiness_ready?: number;
+  direction_allowed?: number;
+  daily_limit_allowed?: number;
+  valid_risk_geometry?: number;
+  executable_signals?: number;
+  completed_trades?: number;
+  analysis_errors?: number;
+  rejected_historical_rules?: number;
+  rejected_no_ready_candidate?: number;
+  rejected_setup_not_ready?: number;
+  rejected_direction?: number;
+  rejected_daily_limit?: number;
+  rejected_invalid_risk_geometry?: number;
+};
+
+type RuleDiagnostic = {
+  rule_id?: string;
+  label?: string;
+  detector?: string;
+  timeframe?: string;
+  required?: boolean;
+  matched?: number;
+  rejected?: number;
+  insufficient_data?: number;
+  candidates_before?: number;
+  candidates_after?: number;
+  rejection_reason?: string;
+  match_rate_percent?: number;
+};
+
+type BacktestReadinessRule = { label: string; reason: string; timeframe?: string };
+type BacktestReadiness = {
+  ready: boolean;
+  executableRuleCount: number;
+  unsupportedRules: BacktestReadinessRule[];
+  unsupportedRequiredRules: BacktestReadinessRule[];
+};
+
+type BacktestUsageSummary = {
+  planCode: string;
+  window: 'LIFETIME' | 'MONTHLY';
+  periodStart: string | null;
+  periodEnd: string | null;
+  used: number;
+  reserved: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function numberValue(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function backtestProgress(run: BacktestRunRow): number {
+  if (run.status === 'COMPLETED') return 100;
+  const metadata = asRecord(run.metadata);
+  const persisted = Number(metadata?.execution_progress_percent ?? 0);
+  return Number.isFinite(persisted) ? Math.min(99, Math.max(0, Math.round(persisted))) : 0;
+}
+
+function backtestRunStatusLabel(run: BacktestRunRow): string {
+  if (run.status === 'COMPLETED') return 'Completed · 100%';
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') return `Running historical replay · ${backtestProgress(run)}%`;
+  return run.status;
+}
+
+type StrategyDetailPageProps = {
+  strategy: StrategyRow;
+  rules: RuleRow[];
+  sessions: SessionRow[];
+  initialRuns: BacktestRunRow[];
+  planCode: string;
+};
+
+type BacktestResultRow = {
+  run_id: string;
+  ending_balance?: number | null;
+  net_return_percent?: number | null;
+  total_trades?: number | null;
+  wins?: number | null;
+  losses?: number | null;
+  breakeven?: number | null;
+  win_rate?: number | null;
+  profit_factor?: number | null;
+  expectancy_r?: number | null;
+  average_r?: number | null;
+  max_drawdown_percent?: number | null;
+  max_drawdown_amount?: number | null;
+  gross_profit?: number | null;
+  gross_loss?: number | null;
+  total_costs?: number | null;
+};
+
+type BacktestTradeRow = {
+  id: string;
+  sequence: number;
+  direction: 'LONG' | 'SHORT';
+  entry_timestamp: string;
+  exit_timestamp?: string | null;
+  entry: number;
+  exit_price?: number | null;
+  net_pnl?: number | null;
+  net_r?: number | null;
+  session?: string | null;
+  entry_reason?: string | null;
+  exit_reason?: string | null;
+};
+
+const BACKTEST_LIMITS: Record<string, number | null> = {
+  FREE: 1,
+  PRIVATE_BETA: 10,
+  PRO: 3,
+  ELITE: 10,
+  TEAM: 70,
+  FOUNDER: null,
+};
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+function formatDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+function formatRange(start?: string | null, end?: string | null) {
+  if (!start || !end) return '—';
+  return `${formatDate(start)} → ${formatDate(end)} · UTC`;
+}
+
+function normalizeBacktestPlanCode(planCode: string | null | undefined) {
+  return String(planCode ?? 'FREE').trim().toUpperCase();
+}
+
+function getPlanLimit(planCode: string | null | undefined): number | null {
+  const normalizedPlanCode = normalizeBacktestPlanCode(planCode);
+  return normalizedPlanCode in BACKTEST_LIMITS ? BACKTEST_LIMITS[normalizedPlanCode] : 0;
+}
+
+function getWindowForPreset(preset: string) {
+  const now = new Date();
+  const start = new Date(now.getTime());
+  const end = new Date(now.getTime());
+
+  if (preset === '1M') {
+    start.setUTCMonth(start.getUTCMonth() - 1);
+  } else if (preset === '3M') {
+    start.setUTCMonth(start.getUTCMonth() - 3);
+  } else if (preset === '6M') {
+    start.setUTCMonth(start.getUTCMonth() - 6);
+  } else {
+    start.setUTCMonth(start.getUTCMonth() - 3);
+  }
+
+  return {
+    periodStart: start.toISOString(),
+    periodEnd: end.toISOString(),
+  };
+}
+
+export default function StrategyDetailPage({ strategy, rules, sessions, initialRuns, planCode }: StrategyDetailPageProps) {
+  const {locale}=useLocale(); const w=(text:string)=>workspaceText(locale,text);
+  const enabledBacktestInstruments = useMemo(
+    () => normalizeStrategyInstruments(strategy.instruments),
+    [strategy.instruments],
+  );
+  const enabledBacktestInstrumentKey = enabledBacktestInstruments.join('|');
+  const [tab, setTab] = useState<TabKey>('overview');
+  const [runs, setRuns] = useState(() => initialRuns.filter((run) => run.strategy_profile_id === strategy.id));
+  const [usage, setUsage] = useState<BacktestUsageSummary | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [readiness, setReadiness] = useState<BacktestReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(
+    initialRuns.find((run) => run.strategy_profile_id === strategy.id)?.id ?? null,
+  );
+  const [reportResult, setReportResult] = useState<BacktestResultRow | null>(null);
+  const [reportTrades, setReportTrades] = useState<BacktestTradeRow[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [form, setForm] = useState({
+    instrument: resolveBacktestInstrument(null, strategy.instruments),
+    periodPreset: '3M',
+    customStart: '',
+    customEnd: '',
+    startingBalance: '10000',
+    executionModel: 'STANDARD',
+  });
+
+  const fallbackPlanCode = normalizeBacktestPlanCode(planCode);
+  const normalizedPlanCode = usage?.planCode ?? fallbackPlanCode;
+  const limitValue = usage ? usage.limit : getPlanLimit(normalizedPlanCode);
+  const usageCount = usage?.used ?? null;
+  const reservedCount = usage?.reserved ?? 0;
+  const chargeableCount = (usageCount ?? 0) + reservedCount;
+  const remainingCredits = usage?.remaining ?? (limitValue === null ? null : Math.max(0, limitValue - chargeableCount));
+  const usagePercent = usage && limitValue !== null && limitValue > 0
+    ? Math.min(100, (chargeableCount / limitValue) * 100)
+    : 0;
+  const usageWindowLabel = usage?.window === 'LIFETIME' || (!usage && normalizedPlanCode === 'FREE') ? 'Lifetime usage' : 'Monthly usage';
+  const backtestStatusLabel = !usage
+    ? (historyLoading ? 'Loading verified usage…' : 'Usage temporarily unavailable')
+    : limitValue === null
+      ? (normalizedPlanCode === 'FOUNDER' ? `${usage.used} completed - Founder access` : `${usage.used} completed - Unlimited`)
+      : `${usage.used} completed${reservedCount ? ` - ${reservedCount} reserved` : ''} - ${remainingCredits} available`;
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
+  const selectedRunMetadata = asRecord(selectedRun?.metadata);
+  const opportunityFunnel = asRecord(selectedRunMetadata?.opportunity_funnel) as OpportunityFunnel | null;
+  const ruleDiagnostics = Array.isArray(selectedRunMetadata?.rule_diagnostics)
+    ? selectedRunMetadata.rule_diagnostics as RuleDiagnostic[]
+    : [];
+  const sampleQuality = asRecord(selectedRunMetadata?.sample_quality);
+  const effectivePeriodEnd = typeof selectedRunMetadata?.effective_period_end === 'string'
+    ? selectedRunMetadata.effective_period_end
+    : null;
+  const dataFreshnessSeconds = numberValue(selectedRunMetadata?.data_freshness_seconds);
+  const reportOutcome = reportResult
+    ? backtestOutcome(reportResult.total_trades ?? reportTrades.length, selectedRunMetadata)
+    : null;
+
+  useEffect(() => {
+    setForm((current) => {
+      const instrument = resolveBacktestInstrument(current.instrument, enabledBacktestInstruments);
+      return instrument === current.instrument ? current : { ...current, instrument };
+    });
+  }, [strategy.id, enabledBacktestInstrumentKey]);
+
+  function handleBackToStrategies() {
+    window.location.assign('/profile');
+  }
+
+  function handleEditStrategy() {
+    if (!strategy.id) return;
+    window.location.assign(`/profile?strategy=${encodeURIComponent(strategy.id)}&mode=edit`);
+  }
+
+  function handleDuplicateStrategy() {
+    if (!strategy.id) return;
+    window.location.assign(`/profile?strategy=${encodeURIComponent(strategy.id)}&mode=duplicate`);
+  }
+
+  async function refreshBacktests() {
+    if (!strategy.id) return;
+    try {
+      const response = await fetch(`/api/backtests?strategyProfileId=${encodeURIComponent(strategy.id)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Backtest history could not be loaded.');
+      }
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const strategyItems = items.filter((run: BacktestRunRow) => run.strategy_profile_id === strategy.id);
+      setRuns(strategyItems);
+      setSelectedRunId((current) => strategyItems.some((run: BacktestRunRow) => run.id === current)
+        ? current
+        : strategyItems[0]?.id ?? null);
+      setUsage(payload.usage && typeof payload.usage === 'object' ? payload.usage as BacktestUsageSummary : null);
+      setHistoryError('');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Backtest history could not be loaded.';
+      console.warn('Backtest refresh temporarily unavailable', { error: errorMessage });
+      setHistoryError(errorMessage);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function refreshBacktestReadiness() {
+    if (!strategy.id) return;
+    setReadinessLoading(true);
+    try {
+      const response = await fetch(`/api/backtests/readiness?strategyProfileId=${encodeURIComponent(strategy.id)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error?.message || 'Backtest readiness could not be checked.');
+      setReadiness(payload as BacktestReadiness);
+    } catch {
+      setMessage('Backtest readiness could not be checked. Please try again.');
+      setReadiness(null);
+    } finally {
+      setReadinessLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'backtests') {
+      void refreshBacktestReadiness();
+      void refreshBacktests();
+    }
+  }, [tab, strategy.id]);
+
+  useEffect(() => {
+    void refreshBacktests();
+  }, [strategy.id]);
+
+  useEffect(() => {
+    const hasActiveRun = runs.some((run) => run.status === 'QUEUED' || run.status === 'RUNNING');
+    if (!hasActiveRun) return;
+
+    const timer = window.setInterval(() => { void refreshBacktests(); }, 2500);
+    return () => window.clearInterval(timer);
+  }, [runs, strategy.id]);
+
+  useEffect(() => {
+    if (!reportModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleReportEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setReportModalOpen(false);
+    };
+
+    window.addEventListener('keydown', handleReportEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleReportEscape);
+    };
+  }, [reportModalOpen]);
+
+  function closeRunReport(event?: React.SyntheticEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setReportModalOpen(false);
+  }
+
+  async function openRunReport(run: BacktestRunRow) {
+    setSelectedRunId(run.id);
+    setReportModalOpen(true);
+    setReportLoading(true);
+    setReportError('');
+    setReportResult(null);
+    setReportTrades([]);
+
+    if (run.status !== 'COMPLETED') {
+      setReportLoading(false);
+      setReportError(`This run is ${run.status}. The full report becomes available after it completes.`);
+      return;
+    }
+
+    const supabase = createClient();
+    const [{ data: result, error: resultError }, { data: trades, error: tradesError }] = await Promise.all([
+      supabase.from('backtest_results').select('*').eq('run_id', run.id).maybeSingle(),
+      supabase.from('backtest_trades').select('*').eq('run_id', run.id).order('sequence', { ascending: true }),
+    ]);
+
+    if (resultError || tradesError) {
+      setReportError(resultError?.message || tradesError?.message || 'Backtest report could not be loaded.');
+    } else if (!result) {
+      setReportError('The run completed, but its persisted result is not available yet. Refresh in a moment.');
+    } else {
+      setReportResult(result as BacktestResultRow);
+      publishCompanionContext({context:{backtestId:run.id},reason:'BACKTEST',instrument:run.instrument??undefined});
+      setReportTrades((trades ?? []) as BacktestTradeRow[]);
+    }
+setReportLoading(false);
+  }
+
+  async function executeQueuedRun(runId: string) {
+    const currentRun = runs.find((run) => run.id === runId);
+    setMessage(currentRun?.status === 'RUNNING' ? 'Checking the active backtest lease…' : 'Running historical replay…');
+    try {
+      const response = await fetch(`/api/backtests/${runId}/execute`, { method: 'POST' });
+      const payload = await response.json().catch(() => ({}));
+      await refreshBacktests();
+      if (!response.ok) {
+        setMessage(payload?.error?.message || payload?.message || 'Backtest execution failed. The reserved credit was released when possible.');
+        return;
+      }
+      if (payload?.status === 'COMPLETED') {
+        setMessage('Backtest completed. Open View Report to review the persisted results.');
+      } else if (payload?.continuationRequired && payload?.status === 'QUEUED') {
+        const retryAfterSeconds = Math.max(1, Number(payload?.retryAfterSeconds || 1));
+        setMessage(payload?.message || `Historical replay is ${Number(payload?.progressPercent || 0).toFixed(0)}% complete. Continuing automatically…`);
+        window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
+      } else if (payload?.preparingHistoricalData && payload?.status === 'QUEUED') {
+        const retryAfterSeconds = Math.max(5, Number(payload?.retryAfterSeconds || 65));
+        setMessage(payload?.message || 'Historical data is being prepared. Trade Police will continue shortly.');
+        window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
+      } else {
+        const retryAfterSeconds = Math.max(5, Number(payload?.retryAfterSeconds || 15));
+        if (payload?.status === 'RUNNING') {
+          setMessage(`Backtest execution is still active. Checking again in about ${retryAfterSeconds} seconds…`);
+          window.setTimeout(() => { void executeQueuedRun(runId); }, retryAfterSeconds * 1000);
+        } else {
+          setMessage(`Backtest status: ${payload?.status || 'RUNNING'}.`);
+        }
+      }
+    } catch {
+      setMessage('The connection was interrupted, but the backtest is safe. Reconnecting automatically…');
+      await refreshBacktests();
+      window.setTimeout(() => { void executeQueuedRun(runId); }, 15_000);
+    }
+  }
+
+  function openBacktestForm() {
+    setTab('backtests');
+    setFormOpen(true);
+  }
+
+  async function handleCreateBacktest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const selectedInstrument = resolveBacktestInstrument(form.instrument, enabledBacktestInstruments);
+      if (!selectedInstrument) {
+        throw new Error('Enable at least one instrument for this strategy before running a backtest.');
+      }
+
+      const chosenPeriod = form.periodPreset === 'Custom' ? {
+        periodStart: form.customStart ? new Date(form.customStart).toISOString() : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        periodEnd: form.customEnd ? new Date(form.customEnd).toISOString() : new Date().toISOString(),
+      } : getWindowForPreset(form.periodPreset);
+
+      const payload = {
+        strategyProfileId: strategy.id,
+        instrument: selectedInstrument,
+        executionTimeframe: strategy.trigger_timeframe || strategy.entry_timeframe || 'M15',
+        periodStart: chosenPeriod.periodStart,
+        periodEnd: chosenPeriod.periodEnd,
+        startingBalance: Number(form.startingBalance) || 10000,
+        riskConfiguration: { mode: 'conservative' },
+        executionModel: { mode: form.executionModel },
+        engineVersion: '1.0.0',
+        dataProvider: 'Twelve Data',
+        dataRevisionFingerprint: '',
+        metadata: {
+          strategyDetailUi: true,
+          periodPreset: form.periodPreset,
+        },
+      };
+
+      const response = await fetch('/api/backtests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        const blockers = Array.isArray(result?.error?.details?.unsupportedRules)
+          ? result.error.details.unsupportedRules.map((rule: BacktestReadinessRule) => `${rule.label}: ${rule.reason}`).join(' · ')
+          : '';
+        throw new Error(blockers || result?.error?.message || 'Backtest creation failed.');
+      }
+
+      setFormOpen(false);
+      if (result?.runId) {
+        setSelectedRunId(result.runId);
+        setMessage(`Queued ${selectedInstrument} backtest for ${strategy.name}. Starting historical replay…`);
+        await executeQueuedRun(result.runId);
+      } else {
+        await refreshBacktests();
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : 'Unable to queue the backtest.';
+      setMessage(text);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const strategyRules = rules.filter((rule) => rule.enabled !== false || rule.mandatory);
+  const strategySessions = (strategy.allowed_sessions && strategy.allowed_sessions.length ? strategy.allowed_sessions : sessions.map((s) => s.session_code ?? '')).filter(Boolean);
+
+  return (
+    <main className="strategy-detail-shell" style={{ width: '100%', maxWidth: 'none' }}>
+      <section className="card strategy-detail-header" aria-label="Strategy detail header">
+        <div className="strategy-detail-header-row">
+          <div className="strategy-detail-heading">
+            <p className="eyebrow">STRATEGY DETAIL</p>
+            <div className="strategy-detail-title-row">
+              <h1>{strategy.name}</h1>
+              <div className="button-row" style={{ marginTop: 0 }}>
+                <button type="button" className="button-link secondary strategy-detail-back-link" onClick={handleBackToStrategies}>{w('Back to Strategies')}</button>
+                <button type="button" className="button-link secondary" onClick={handleEditStrategy}>{w('Edit strategy')}</button>
+                <button type="button" className="button-link secondary" onClick={handleDuplicateStrategy}>{w('Duplicate')}</button>
+                <StrategyShareDialog strategyId={strategy.id} strategyName={strategy.name} />
+              </div>
+            </div>
+            <small className="muted strategy-detail-subtitle">{strategy.description || w('No description saved.')}</small>
+          </div>
+        </div>
+
+        <div className="button-row strategy-detail-tabs" style={{ marginTop: 0 }}>
+          {(['overview', 'rules', 'backtests', 'forward-test'] as TabKey[]).map((key) => {
+            const comingSoon = key === 'forward-test';
+            return (
+              <button
+                key={key}
+                type="button"
+                className={tab === key ? 'primary strategy-detail-tab active' : 'secondary strategy-detail-tab'}
+                onClick={() => { if (!comingSoon) setTab(key); }}
+                disabled={comingSoon}
+                title={comingSoon ? 'Forward Test is not available yet.' : undefined}
+              >
+                {w(key === 'overview' ? 'Overview' : key === 'rules' ? 'Rules' : key === 'backtests' ? 'Backtests' : 'Forward Test - Coming soon')}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className={`card strategy-detail-panel ${styles.detailPanel}`}>
+        <div className={`strategy-detail-tab-panel ${styles.tabPanel}`}>
+          {tab === 'overview' && (
+            <div className="grid grid-3 strategy-detail-grid strategy-detail-view">
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">PROFILE</p>
+                <h3>{w('Strategy summary')}</h3>
+                <div className="strategy-detail-summary-list">
+                  <div className="strategy-detail-meta-row"><span>{w('Instruments')}</span><strong>{(strategy.instruments ?? []).join(', ') || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>{w('Timeframes')}</span><strong>{strategy.macro_timeframe || '—'} / {strategy.trend_timeframe || '—'} / {strategy.confirmation_timeframe || '—'} / {strategy.entry_timeframe || '—'} / {strategy.trigger_timeframe || '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>{w('Risk')}</span><strong>{strategy.maximum_risk_percent ?? '—'}%</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Min RR</span><strong>{strategy.minimum_rr ?? '—'}</strong></div>
+                  <div className="strategy-detail-meta-row"><span>Signal readiness</span><strong>{strategy.authorization_score ?? '—'}% / wait {strategy.wait_score ?? '—'}%</strong></div>
+                  <div className="strategy-detail-meta-row strategy-detail-meta-row-wrap">
+                    <span>{w('Sessions')}</span>
+                    <strong className="strategy-detail-chip-list">
+                      {strategySessions.length ? strategySessions.map((session) => (
+                        <span key={session} className="strategy-detail-chip">{session}</span>
+                      )) : <span className="muted">—</span>}
+                    </strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">RULES</p>
+                <h3>{strategyRules.length} {w('enabled')}</h3>
+                <div className="strategy-detail-rule-stack">
+                  {strategyRules.slice(0, 5).map((rule) => (
+                    <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card">
+                      <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
+                      <small className="muted">{rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'}</small>
+                    </div>
+                  ))}
+                  {strategyRules.length === 0 && <p className="muted">{w('No enabled rules saved yet.')}</p>}
+                </div>
+              </section>
+
+              <section className="card strategy-detail-card">
+                <p className="eyebrow">BACKTESTING</p>
+                <h3>V1 readiness</h3>
+                <div className="strategy-detail-backtest-stack">
+                  <div>
+                    <div className="strategy-detail-usage-row">
+                      <strong>{usageCount ?? '—'}</strong>
+                      <small className="muted">{backtestStatusLabel}</small>
+                    </div>
+                    <div className="strategy-detail-progress-track">
+                      <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
+                    </div>
+                  </div>
+                  <button type="button" className="primary" onClick={openBacktestForm}>{w('Run Backtest')}</button>
+                </div>
+              </section>
+
+              <MarketplaceObservationCard strategyId={strategy.id} />
+            </div>
+          )}
+
+          {tab === 'rules' && (
+            <section className="card strategy-detail-section-card strategy-detail-view">
+              <p className="eyebrow">RULES</p>
+              <h3>{w('Configured rule set')}</h3>
+              <div className="strategy-detail-rule-list">
+                {strategyRules.length === 0 ? (
+                  <p className="muted">{w('No rules have been configured for this strategy.')}</p>
+                ) : (
+                  strategyRules.map((rule) => (
+                    <div key={rule.rule_key || Math.random()} className="strategy-detail-rule-card compact">
+                      <div className="strategy-detail-rule-header">
+                        <strong>{rule.label || rule.rule_key || 'Rule'}</strong>
+                        <span className="badge">{w(rule.enabled ? 'Enabled' : 'Disabled')}</span>
+                      </div>
+                      <small className="muted">
+                        {rule.timeframe_role || 'General'} · {rule.evaluation_mode || 'AUTOMATIC'} · Weight {rule.weight ?? 0} · Min confidence {rule.minimum_confidence ?? 0}
+                      </small>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
+
+          {tab === 'backtests' && (
+            <div className="stack strategy-detail-backtests-stack strategy-detail-view">
+              <section className="card strategy-detail-section-card">
+                <div className="strategy-detail-header-row strategy-detail-backtests-head">
+                  <div>
+                    <p className="eyebrow">BACKTESTS</p>
+                    <h3>{usageWindowLabel}</h3>
+                  </div>
+                  <button type="button" className="primary" onClick={openBacktestForm}>{w('Run Backtest')}</button>
+                </div>
+
+                <div className="strategy-detail-backtest-summary">
+                  <div className="strategy-detail-usage-row">
+                    <strong>{usageCount ?? '—'}</strong>
+                    <small className="muted">{w('Plan')}: {normalizedPlanCode || 'FREE'} · {!usage ? backtestStatusLabel : limitValue === null ? w('Unlimited') : `${remainingCredits}/${limitValue} ${w('credits left')}`}</small>
+                  </div>
+                  <div className="strategy-detail-progress-track large">
+                    <div className="strategy-detail-progress-fill" style={{ width: `${usagePercent}%` }} />
+                  </div>
+                </div>
+
+                {formOpen && (
+                  <form onSubmit={handleCreateBacktest} style={{ marginTop: 20, display: 'grid', gap: 16, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="card" aria-live="polite" style={{ margin: 0, padding: 14 }}>
+                      <strong>{readinessLoading ? 'Checking historical rule coverage…' : readiness?.ready ? 'Ready for deterministic backtesting' : 'Backtest setup needs attention'}</strong>
+                      {readiness && <small className="muted" style={{ display: 'block', marginTop: 6 }}>{readiness.executableRuleCount} rules have historical detectors.</small>}
+                      {readiness?.unsupportedRules.map((rule) => (
+                        <small key={`${rule.label}-${rule.reason}`} style={{ display: 'block', marginTop: 6 }}>
+                          {rule.label}: {rule.reason}{rule.timeframe ? ` (${rule.timeframe})` : ''}
+                        </small>
+                      ))}
+                    </div>
+                    <div className="grid grid-2">
+                      <label>
+                        {w('Instrument')}
+                        <select value={form.instrument} onChange={(event) => setForm((current) => ({ ...current, instrument: event.target.value }))}>
+                          {enabledBacktestInstruments.length === 0 && <option value="">{w('No enabled instruments')}</option>}
+                          {enabledBacktestInstruments.map((instrument) => (
+                            <option key={instrument} value={instrument}>{instrument}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label>
+                        {w('Period')}
+                        <select value={form.periodPreset} onChange={(event) => setForm((current) => ({ ...current, periodPreset: event.target.value }))}>
+                          <option value="1M">1M</option>
+                          <option value="3M">3M</option>
+                          <option value="6M">6M</option>
+                          <option value="Custom">Custom</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        {w('Starting balance')}
+                        <input type="number" min="1" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} />
+                      </label>
+
+                      <label>
+                        {w('Execution model')}
+                        <select value={form.executionModel} onChange={(event) => setForm((current) => ({ ...current, executionModel: event.target.value }))}>
+                          <option value="STANDARD">{w('Standard')}</option>
+                          <option value="CONSERVATIVE">{w('Conservative')}</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {form.periodPreset === 'Custom' && (
+                      <div className="grid grid-2">
+                        <label>
+                          {w('Start date')}
+                          <input type="date" value={form.customStart} onChange={(event) => setForm((current) => ({ ...current, customStart: event.target.value }))} />
+                        </label>
+                        <label>
+                          {w('End date')}
+                          <input type="date" value={form.customEnd} onChange={(event) => setForm((current) => ({ ...current, customEnd: event.target.value }))} />
+                        </label>
+                      </div>
+                    )}
+
+                    <div className="button-row" style={{ marginTop: 0 }}>
+                      <button type="submit" className="primary" disabled={saving || readinessLoading || readiness?.ready === false || enabledBacktestInstruments.length === 0}>{w(saving ? 'Queueing…' : 'Queue Backtest')}</button>
+                      <button type="button" className="secondary" onClick={() => setFormOpen(false)}>{w('Cancel')}</button>
+                    </div>
+                  </form>
+                )}
+
+                {message && <p className="muted" style={{ marginTop: 14 }}>{message}</p>}
+              </section>
+
+              <section className="card">
+                <p className="eyebrow">{w('RUN HISTORY')}</p>
+                <h3>{w('Past runs')}</h3>
+                {historyError && (
+                  <div className="warning" role="alert" style={{ marginTop: 12 }}>
+                    <span>{historyError}</span>{' '}
+                    <button type="button" className="secondary" onClick={() => void refreshBacktests()}>Retry</button>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  {historyLoading && runs.length === 0 ? (
+                    <p className="muted">{w('Loading past runs…')}</p>
+                  ) : runs.length === 0 ? (
+                    <p className="muted">{w('No backtests have been queued for this strategy yet.')}</p>
+                  ) : (
+                    runs.map((run) => (
+                      <div key={run.id} className="card strategy-detail-run-card" style={{ padding: 16, margin: 0 }}>
+                        <div className="button-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 0, gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{run.instrument || 'XAUUSD'}</strong>
+                            <small className="muted" style={{ display: 'block' }}>{backtestRunStatusLabel(run)}</small>
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              if (run.status === 'QUEUED') void executeQueuedRun(run.id);
+                              else if (run.status === 'RUNNING') void executeQueuedRun(run.id);
+                              else void openRunReport(run);
+                            }}
+                          >
+                            {run.status === 'COMPLETED'
+                              ? w('View Report')
+                              : run.status === 'FAILED'
+                                ? w('View Failure')
+                                : run.status === 'QUEUED'
+                                  ? w('Run now')
+                                  : isBacktestLeaseStale(run)
+                                    ? w('Recover run')
+                                    : w('Refresh status')}
+                          </button>
+                        </div>
+                        {(run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'COMPLETED') && (
+                          <div className="strategy-detail-progress-track large" role="progressbar" aria-label={`${run.instrument || 'Backtest'} historical replay progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={backtestProgress(run)} style={{ marginTop: 12 }}>
+                            <div className="strategy-detail-progress-fill" style={{ width: `${backtestProgress(run)}%` }} />
+                          </div>
+                        )}
+                        <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
+                          <div><small className="muted">{w('Revision')}</small><div>{run.strategy_revision_id || '—'}</div></div>
+                          <div><small className="muted">{w('Period')}</small><div>{formatRange(run.period_start, run.period_end)}</div></div>
+                          <div><small className="muted">{w('Created')}</small><div>{formatDate(run.created_at)}</div></div>
+                        </div>
+                        <div className="grid grid-3 strategy-detail-metrics" style={{ marginTop: 12 }}>
+                          <div><small className="muted">{w('Total trades')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'total_trades' in run.metadata ? String((run.metadata as any).total_trades ?? '—') : '—'}</div></div>
+                          <div><small className="muted">{w('Net return')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'net_return' in run.metadata ? String((run.metadata as any).net_return ?? '—') : '—'}</div></div>
+                          <div><small className="muted">{w('Max drawdown')}</small><div>{run.metadata && typeof run.metadata === 'object' && 'max_drawdown' in run.metadata ? String((run.metadata as any).max_drawdown ?? '—') : '—'}</div></div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              {selectedRun && reportModalOpen && createPortal(
+        <div
+          className={styles.reportModalBackdrop}
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.currentTarget === event.target) closeRunReport(event);
+          }}
+        >
+          <div className={styles.reportModalShell} role="dialog" aria-modal="true" aria-label="Backtest report" onPointerDown={event=>event.stopPropagation()}>
+            <button
+              type="button"
+              className={styles.reportModalClose}
+              onPointerDown={closeRunReport}
+              aria-label="Close backtest report"
+            >
+              ×
+            </button>
+<section
+                  id="backtest-report"
+                  className={`card ${styles.reportCard} ${styles.reportModalCard}`}
+                    tabIndex={-1}
+                  >
+                  <div className={styles.reportHeader}>
+                    <div>
+                      <p className="eyebrow">BACKTEST REPORT</p>
+                      <h3>{selectedRun.instrument || 'Backtest'} · {formatRange(selectedRun.period_start, selectedRun.period_end)}</h3>
+                    </div>
+                    <span className={styles.statusPill}>{selectedRun.status}</span>
+                  </div>
+                  <div className={`button-row ${styles.reportActions}`}>
+                    <a className="secondary button" href={`/api/backtests/${selectedRun.id}/export`} download>Download Excel</a>
+                    <a className="secondary button" href={`/api/backtests/${selectedRun.id}/report`} target="_blank" rel="noreferrer">Open PDF Report</a>
+                  </div>
+                  {reportLoading && <p className="muted">Loading persisted backtest result…</p>}
+                  {reportError && <p className={styles.reportNotice}>{reportError}</p>}
+                  {reportResult && (
+                    <>
+                      {reportOutcome&&numberValue(reportResult.total_trades ?? reportTrades.length)===0&&selectedRun.status==='COMPLETED'&&(
+                        <div className={reportOutcome.successful ? styles.reportSuccessNotice : styles.reportNotice} role="status">
+                          <strong>{reportOutcome.title}</strong>
+                          <div>{reportOutcome.explanation}</div>
+                        </div>
+                      )}
+                      <div className={styles.reportMetrics}>
+                        <div><small>Net return</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.net_return_percent ?? '—'}%`}</strong></div>
+                        <div><small>Ending balance</small><strong>{reportResult.ending_balance ?? '—'}</strong></div>
+                        <div><small>Total trades</small><strong>{reportResult.total_trades ?? reportTrades.length}</strong></div>
+                        <div><small>Win rate</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.win_rate ?? '—'}%`}</strong></div>
+                        <div><small>Wins / losses</small><strong>{reportResult.wins ?? '—'} / {reportResult.losses ?? '—'}</strong></div>
+                        <div><small>Max drawdown</small><strong>{numberValue(reportResult.total_trades ?? reportTrades.length)===0?'N/A':`${reportResult.max_drawdown_percent ?? '—'}%`}</strong></div>
+                        <div><small>Profit factor</small><strong>{reportResult.profit_factor ?? '—'}</strong></div>
+                        <div><small>Expectancy</small><strong>{reportResult.expectancy_r ?? '—'} R</strong></div>
+                      </div>
+                      <div className={styles.reportSummary}>
+                        <div><span>Gross profit</span><strong>{reportResult.gross_profit ?? '—'}</strong></div>
+                        <div><span>Gross loss</span><strong>{reportResult.gross_loss ?? '—'}</strong></div>
+                        <div><span>Total costs</span><strong>{reportResult.total_costs ?? '—'}</strong></div>
+                        <div><span>Average R</span><strong>{reportResult.average_r ?? '—'}</strong></div>
+                      </div>
+                      <div className={styles.tradeHistory}>
+                        <div className={styles.tradeHistoryHeader}><h4>Trade history</h4><span>{reportTrades.length} persisted trades</span></div>
+                        {reportTrades.length === 0 ? <p className="muted">No simulated trades were produced by this completed run.</p> : (
+                          <div className={styles.tradeRows}>
+                            {reportTrades.map((trade) => (
+                              <div key={trade.id} className={styles.tradeRow}>
+                                <span>#{trade.sequence}</span><strong>{trade.direction}</strong><span>{formatDate(trade.entry_timestamp)}</span>
+                                <span>Entry {trade.entry}</span><span>Exit {trade.exit_price ?? '—'}</span>
+                                <span className={(trade.net_pnl ?? 0) >= 0 ? styles.positive : styles.negative}>P&amp;L {trade.net_pnl ?? '—'}</span>
+                                <span>{trade.net_r ?? '—'} R</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {effectivePeriodEnd && selectedRun?.period_end && dataFreshnessSeconds > 60 && (
+                        <div className={styles.reportNotice}>
+                          <strong>Historical data coverage</strong>
+                          <div>
+                            Requested through {formatDate(selectedRun.period_end)}. Backtest used complete historical data through {formatDate(effectivePeriodEnd)}.
+                            {' '}The newest {Math.max(1, Math.round(dataFreshnessSeconds / 3600))} hour(s) were excluded rather than blocking the run.
+                          </div>
+                        </div>
+                      )}
+
+                      {sampleQuality && (
+                        <div className={styles.reportNotice}>
+                          <strong>Sample quality: {String(sampleQuality.label ?? 'Unknown')}</strong>
+                          <div>
+                            {numberValue(reportResult.total_trades ?? reportTrades.length)} completed trade{numberValue(reportResult.total_trades ?? reportTrades.length) === 1 ? '' : 's'}.
+                            {String(sampleQuality.code ?? '') !== 'MORE_INFORMATIVE'
+                              ? ' This sample is too small to treat the performance metrics as a reliable conclusion.'
+                              : ' The sample is large enough to be more informative, though historical performance still has limitations.'}
+                          </div>
+                        </div>
+                      )}
+
+                      {opportunityFunnel && (
+                        <div style={{ marginTop: 20 }}>
+                          <p className="eyebrow">OPPORTUNITY FUNNEL</p>
+                          <div className={styles.reportMetrics}>
+                            <div><small>Execution candles evaluated</small><strong>{numberValue(opportunityFunnel.execution_candles_evaluated).toLocaleString()}</strong></div>
+                            <div><small>Multi-timeframe context ready</small><strong>{numberValue(opportunityFunnel.multi_timeframe_context_ready).toLocaleString()}</strong></div>
+                            <div><small>Rejected by required rules</small><strong>{numberValue(opportunityFunnel.rejected_historical_rules).toLocaleString()}</strong></div>
+                            <div><small>Analysis completed</small><strong>{numberValue(opportunityFunnel.analysis_completed).toLocaleString()}</strong></div>
+                            <div><small>Analysis errors</small><strong>{numberValue(opportunityFunnel.analysis_errors).toLocaleString()}</strong></div>
+                            <div><small>READY candidate found</small><strong>{numberValue(opportunityFunnel.ready_candidate_found).toLocaleString()}</strong></div>
+                            <div><small>Setup readiness READY</small><strong>{numberValue(opportunityFunnel.setup_readiness_ready).toLocaleString()}</strong></div>
+                            <div><small>Direction allowed</small><strong>{numberValue(opportunityFunnel.direction_allowed).toLocaleString()}</strong></div>
+                            <div><small>Daily limit allowed</small><strong>{numberValue(opportunityFunnel.daily_limit_allowed).toLocaleString()}</strong></div>
+                            <div><small>Valid risk geometry</small><strong>{numberValue(opportunityFunnel.valid_risk_geometry).toLocaleString()}</strong></div>
+                            <div><small>Executable signals</small><strong>{numberValue(opportunityFunnel.executable_signals).toLocaleString()}</strong></div>
+                            <div><small>Completed trades</small><strong>{numberValue(opportunityFunnel.completed_trades).toLocaleString()}</strong></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {ruleDiagnostics.length > 0 && (
+                        <div style={{ marginTop: 20 }}>
+                          <p className="eyebrow">RULE AUDIT</p>
+                          <div className={styles.tradeRows}>
+                            {ruleDiagnostics.map((rule) => (
+                              <div className={styles.tradeRow} key={rule.rule_id ?? `${rule.label}-${rule.timeframe}`}>
+                                <strong>{rule.label ?? 'Strategy rule'}</strong>
+                                <span>{rule.timeframe ?? '—'}</span>
+                                <span>{rule.required ? 'Required' : 'Optional'}</span>
+                                <span>Before {numberValue(rule.candidates_before).toLocaleString()}</span>
+                                <span>After {numberValue(rule.candidates_after).toLocaleString()}</span>
+                                <span>Rejected {numberValue(rule.rejected).toLocaleString()}</span>
+                                <span>{rule.rejection_reason ?? `${numberValue(rule.match_rate_percent).toFixed(2)}% match`}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <small className="muted">Historical performance does not guarantee future results.</small>
+                    </>
+                  )}
+                  {!reportResult && !reportLoading && !reportError && (
+                    <div className="button-row" style={{ marginTop: 18 }}>
+                      <button type="button" className="secondary" onClick={() => { void openRunReport(selectedRun); }}>Load Report</button>
+                    </div>
+                  )}
+                </section>
+          </div>
+        </div>
+      , document.body)}
+            </div>
+          )}
+
+          {tab === 'forward-test' && (
+            <section className="card strategy-detail-forward-card strategy-detail-view">
+              <p className="eyebrow">FORWARD TEST</p>
+              <h3>Forward Testing</h3>
+              <p className="muted" style={{ marginTop: 12 }}>Coming soon</p>
+              <p className="muted" style={{ marginTop: 12 }}>Validate your strategy against live market conditions before using it in execution.</p>
+            </section>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -9,13 +9,14 @@ type Ticket = {
   status:'OPEN'|'REVIEWING'|'RESOLVED'|'CLOSED'; resolution_note:string|null; created_at:string;
 };
 
-export default function FeedbackTicketQueue({initialTickets}:{initialTickets:Ticket[]}){
+export default function FeedbackTicketQueue({initialTickets,canManage}:{initialTickets:Ticket[];canManage:boolean}){
   const [tickets,setTickets]=useState(initialTickets);
   const [filter,setFilter]=useState<'ALL'|'OPEN'|'REVIEWING'|'RESOLVED'>('ALL');
   const [busy,setBusy]=useState('');
   const visible=useMemo(()=>filter==='ALL'?tickets:tickets.filter(t=>t.status===filter),[tickets,filter]);
 
   async function update(id:string, patch:{status?:Ticket['status'];priority?:Ticket['priority'];resolution_note?:string;assign?:boolean}){
+    if(!canManage)return;
     setBusy(id);
     const {error}=await createClient().rpc('update_feedback_ticket',{
       p_ticket_id:id,p_status:patch.status??null,p_priority:patch.priority??null,
@@ -33,12 +34,12 @@ export default function FeedbackTicketQueue({initialTickets}:{initialTickets:Tic
       <div className="ticket-head"><div><span className="eyebrow">{ticket.type} · {ticket.priority}</span><h2>{ticket.title}</h2><p className="muted">{ticket.customer_name}{ticket.customer_email?` · ${ticket.customer_email}`:''} · {new Date(ticket.created_at).toLocaleString()}</p></div><span className={`badge ${ticket.status.toLowerCase()}`}>{ticket.status}</span></div>
       <p>{ticket.message}</p>
       <div className="analysis-strip"><span>Page {ticket.page_path||'Unknown'}</span><span>Ease {ticket.ease_score??'—'}/10</span></div>
-      <div className="grid grid-2">
+      {canManage ? <div className="grid grid-2">
         <label>Priority<select value={ticket.priority} disabled={busy===ticket.id} onChange={e=>void update(ticket.id,{priority:e.target.value as Ticket['priority']})}><option>LOW</option><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label>
         <label>Status<select value={ticket.status} disabled={busy===ticket.id} onChange={e=>void update(ticket.id,{status:e.target.value as Ticket['status']})}><option>OPEN</option><option>REVIEWING</option><option>RESOLVED</option><option>CLOSED</option></select></label>
-      </div>
-      <label>Resolution / product note<textarea defaultValue={ticket.resolution_note??''} id={`note-${ticket.id}`} placeholder="What will we change, why, and how will we verify it?"/></label>
-      <div className="button-row"><button onClick={()=>void update(ticket.id,{assign:true,status:'REVIEWING'})}>Assign to me</button><button className="primary" onClick={()=>{const el=document.getElementById(`note-${ticket.id}`) as HTMLTextAreaElement;void update(ticket.id,{resolution_note:el.value,status:'RESOLVED'});}}>Resolve ticket</button></div>
+      </div> : null}
+      {canManage ? <label>Resolution / product note<textarea defaultValue={ticket.resolution_note??''} id={`note-${ticket.id}`} placeholder="What changed, why, and how was it verified?"/></label> : ticket.resolution_note ? <p className="muted">Resolution: {ticket.resolution_note}</p> : null}
+      {canManage ? <div className="button-row"><button onClick={()=>void update(ticket.id,{assign:true,status:'REVIEWING'})}>Assign to me</button><button className="primary" onClick={()=>{const el=document.getElementById(`note-${ticket.id}`) as HTMLTextAreaElement;void update(ticket.id,{resolution_note:el.value,status:'RESOLVED'});}}>Resolve ticket</button></div> : <p className="muted">Read-only access</p>}
     </article>)}
   </div>;
 }

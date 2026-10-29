@@ -1,0 +1,146 @@
+{
+  "snapshotVersion": "1.0.0",
+  "strategyId": "gold-intraday-research",
+  "strategyVersion": "1.0.0",
+  "strategyName": "Gold Intraday Research",
+  "originalStoredStrategyDna": {
+    "id": "gold-intraday-research",
+    "name": "Gold Intraday Research",
+    "version": "1.0.0",
+    "tradingStyle": "INTRADAY",
+    "supportedSymbols": [
+      "XAUUSD"
+    ],
+    "supportedAssetClasses": [
+      "METALS"
+    ],
+    "timeframeRoles": {
+      "entry": "M15"
+    },
+    "rules": [
+      {
+        "ruleId": "trend-alignment",
+        "enabled": true,
+        "requirement": "REQUIRED",
+        "timeframeRole": "entry",
+        "parameters": {
+          "requiredTrend": "BULLISH"
+        },
+        "confidenceContribution": 0.5,
+        "executionOrder": 1,
+        "missingEvidenceBehavior": "FAIL"
+      },
+      {
+        "ruleId": "retest",
+        "enabled": true,
+        "requirement": "OPTIONAL",
+        "timeframeRole": "entry",
+        "parameters": {},
+        "confidenceContribution": 0.25,
+        "executionOrder": 2,
+        "missingEvidenceBehavior": "FAIL"
+      },
+      {
+        "ruleId": "displacement",
+        "enabled": true,
+        "requirement": "OPTIONAL",
+        "timeframeRole": "entry",
+        "parameters": {},
+        "confidenceContribution": 0.25,
+        "executionOrder": 3,
+        "missingEvidenceBehavior": "FAIL"
+      }
+    ],
+    "validation": {
+      "schemaVersion": "1.0.0",
+      "status": "VALIDATED",
+      "description": "Immutable long-only XAUUSD M15 strategy for the first historical engine-validation experiment.",
+      "tags": [
+        "research",
+        "xauusd",
+        "first-experiment"
+      ],
+      "author": "Trade Police Research"
+    },
+    "directionConfiguration": {
+      "mode": "FIXED",
+      "fixedDirection": "BUY",
+      "conflictBehavior": "NO_DIRECTION"
+    },
+    "requiredRuleIds": [
+      "trend-alignment"
+    ]
+  },
+  "mappedExecutableStrategy": {
+    "id": "gold-intraday-research",
+    "name": "Gold Intraday Research",
+    "version": "1.0.0",
+    "direction": "LONG",
+    "entryRules": [
+      {
+        "id": "trend-alignment",
+        "type": "SMA_RELATION",
+        "fastPeriod": 10,
+        "slowPeriod": 24,
+        "relation": "ABOVE",
+        "closeMustConfirmSlow": true,
+        "required": true
+      },
+      {
+        "id": "retest",
+        "type": "LEGACY_RETEST",
+        "atrPeriod": 14,
+        "lookback": 7,
+        "toleranceAtrMultiple": 0.35,
+        "tolerancePriceMultiple": 0.0002,
+        "trendFastPeriod": 10,
+        "trendSlowPeriod": 24,
+        "required": false
+      },
+      {
+        "id": "displacement",
+        "type": "LEGACY_DISPLACEMENT",
+        "atrPeriod": 14,
+        "atrMultiple": 1.1,
+        "bodyRangeRatio": 0.65,
+        "required": false
+      }
+    ],
+    "forbiddenRules": [],
+    "stopLossRule": {
+      "type": "ATR_MULTIPLE",
+      "period": 14,
+      "multiple": 1
+    },
+    "takeProfitRule": {
+      "type": "ATR_MULTIPLE",
+      "period": 14,
+      "multiple": 2
+    },
+    "maximumHoldingPeriod": 20,
+    "minimumRequiredConfirmations": 2
+  },
+  "supportedRules": [
+    "trend-alignment",
+    "retest",
+    "displacement"
+  ],
+  "partiallySupportedRules": [],
+  "unsupportedRules": [],
+  "omittedFields": [
+    "validation.description",
+    "validation.tags",
+    "validation.author"
+  ],
+  "interpretationDecisions": [
+    "The 50/25/25 confidence weights and 70% policy threshold are mapped to required trend alignment plus at least one of retest or displacement (minimum two confirmations).",
+    "Trend uses the exact legacy SMA10>SMA24 and close>SMA24 bullish formula.",
+    "Retest and displacement use their exact legacy formulas.",
+    "The stored composition definition has no exit rules; the baseline preregisters ATR(14) 1.0x stop, ATR(14) 2.0x target, and 20-bar maximum holding solely as transparent execution assumptions."
+  ],
+  "mappingWarnings": [
+    "Stop, target, and maximum holding period are research execution assumptions absent from the stored Strategy DNA; conclusions are conditional on them."
+  ],
+  "mappingHash": "15dc66f83a12c4af",
+  "immutable": true
+}

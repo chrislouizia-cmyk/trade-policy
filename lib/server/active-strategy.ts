@@ -1,7 +1,8 @@
 import 'server-only';
 
 import type { EvidenceKey, StopLimit, StrategyProfile, StrategyRule, StrategySession } from '@/types/trade';
-import { normalizeStrategyPolicy, normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { assertUsableRequiredRules, normalizeStrategyPolicy, normalizeStrategyProfile } from '@/lib/strategy-policy';
+import { reconstructActiveEvidenceConfiguration } from '@/lib/active-strategy-evidence';
 
 type SupabaseServerClient = any;
 
@@ -30,6 +31,7 @@ const evidenceKeys: EvidenceKey[] = [
   'fairValueGap',
   'retestConfirmed',
 ];
+
 
 export async function loadActiveStrategy(
   supabase: SupabaseServerClient,
@@ -133,16 +135,7 @@ async function loadStrategy(
     atrMultiplier: row.atr_multiplier == null ? undefined : Number(row.atr_multiplier),
   }));
 
-  const evidenceWeights:Record<string,number> = {};
-  const requiredEvidence: EvidenceKey[] = [];
-
-  for (const rule of rules) {
-    if (!evidenceKeys.includes(rule.ruleKey as EvidenceKey) || !rule.enabled) continue;
-    const key = rule.ruleKey as EvidenceKey;
-    evidenceWeights[key] = rule.weight;
-    if (rule.mandatory) requiredEvidence.push(key);
-  }
-  if(!rules.length)Object.assign(evidenceWeights,profile.evidence_weights??{});
+  const { evidenceWeights, requiredEvidence } = reconstructActiveEvidenceConfiguration(rules, profile.evidence_weights);
 
   const allowedSessions = sessions.length
     ? sessions.map((session) => session.sessionCode)
@@ -187,7 +180,7 @@ async function loadStrategy(
     newsBlockMinutesAfter: Number(profile.news_block_minutes_after ?? 15),
     newsCurrencies: profile.news_currencies ?? ['USD', 'GBP', 'JPY'],
     requireTrendAlignment: Boolean(profile.require_trend_alignment),
-    requiredEvidence: requiredEvidence.length ? requiredEvidence : profile.required_evidence ?? [],
+    requiredEvidence: requiredEvidence.length ? requiredEvidence : [],
     evidenceWeights,
     rules,
     stopLimits: profile.stop_limits ?? {},
@@ -207,6 +200,7 @@ async function loadStrategy(
     aiBehavior: profile.ai_behavior ?? undefined,
   };
   const normalized=normalizeStrategyProfile(strategy);
+  assertUsableRequiredRules(normalized);
   normalizeStrategyPolicy(normalized);
   return normalized;
 }

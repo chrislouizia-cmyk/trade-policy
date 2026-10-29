@@ -9,8 +9,8 @@ const byId=(id:string)=>{
   return rule;
 };
 
-test('all 53 rules expose complete Phase 2 intelligence metadata',()=>{
-  assert.equal(TRADING_DNA_RULES.length,53);
+test('all 54 rules expose complete Phase 2 intelligence metadata',()=>{
+  assert.equal(TRADING_DNA_RULES.length,54);
   for(const rule of TRADING_DNA_RULES){
     assert.ok(rule.shortName&&rule.validationSchema&&rule.exampleConditions.length,rule.id);
     assert.ok(Array.isArray(rule.supportedTimeframes)&&Array.isArray(rule.aliases),rule.id);
