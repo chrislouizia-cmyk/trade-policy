@@ -59,7 +59,9 @@ test("pricing and account use server-authoritative billing state", () => {
   assert.match(pricing, /getBillingState/);
   assert.match(pricing, /same deterministic decision logic/);
   assert.match(account, /getBillingState/);
-  assert.match(account, /verified Stripe webhooks/);
+  assert.match(account, /t\('account\.disclaimer'\)/);
+  assert.match(read('lib/i18n/messages.ts'), /verified Stripe webhooks/);
+  assert.match(read('app/api/billing/webhook/route.ts'), /constructEvent/);
 });
 test("history has truthful empty and unavailable states", () => {
   const page = read("app/history/page.tsx");

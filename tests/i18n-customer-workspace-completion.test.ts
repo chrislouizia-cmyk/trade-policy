@@ -24,7 +24,7 @@ test('trading accounts are permanently discoverable after onboarding',()=>{
   const accounts=read('components/TradingAccounts.tsx');
   assert.equal(translate('es','nav.tradingAccounts'),'Cuentas');
   assert.match(header,/AppPrimaryNavigation/);
-  assert.match(navigation,/href: '\/accounts'/);
+  assert.match(navigation,/href: '\/account'/);
   const coreOrder=['/dashboard','/validate','/active-trade','/history'];
   coreOrder.slice(1).forEach((href,index)=>assert.ok(navigation.indexOf(`href: '${coreOrder[index]}'`)<navigation.indexOf(`href: '${href}'`)));
   assert.match(account,/href="\/accounts"/);

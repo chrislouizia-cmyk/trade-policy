@@ -9,7 +9,8 @@ test('activation experience keeps onboarding guidance while Validate uses progre
   const builder = read('components/StrategyBuilder.tsx');
   const validator = read('components/TradeValidator.tsx');
 
-  assert.match(checklist, /ACTIVATION CHECKLIST/i);
+  assert.match(checklist, /GET STARTED/);
+  assert.match(checklist, /Three steps\. Then Trade Police guides you\./);
   assert.match(checklist, /Use starter rules/);
   assert.match(builder, /quickstart/i);
   assert.doesNotMatch(validator, /validate-next-step/);
