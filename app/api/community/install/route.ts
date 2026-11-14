@@ -107,6 +107,24 @@ export async function POST(request: Request) {
         ? 'Installation incomplete. Review your strategies before retrying.'
         : 'Installation could not be completed. No strategy was activated.'},{status:500});
     }
+    const {data:storedRules,error:verifyError} = await supabase.from('strategy_rules')
+      .select('rule_key,evaluation_mode,configuration')
+      .eq('strategy_id',result.strategyId).eq('user_id',user.id);
+    const expected = new Map(rules.map(rule=>[rule.rule_key,rule]));
+    const verified = !verifyError && storedRules?.length===rules.length &&
+      storedRules.every(rule=>{
+        const original=expected.get(rule.rule_key);
+        return original && original.evaluation_mode===rule.evaluation_mode &&
+          JSON.stringify(original.configuration)===JSON.stringify(rule.configuration);
+      });
+    if (!verified) {
+      const {error:rollbackError} = await supabase.from('strategy_profiles').delete()
+        .eq('id',result.strategyId).eq('user_id',user.id);
+      if (rollbackError) console.error('[community-install] Verification rollback failed.',rollbackError.code);
+      return NextResponse.json({error:rollbackError
+        ? 'Installation incomplete. Review your strategies before retrying.'
+        : 'Installation verification failed. No strategy was activated.'},{status:500});
+    }
     return NextResponse.json({installed:true,strategyId:result.strategyId,activated:false},
       {headers:{'Cache-Control':'no-store'}});
   } catch {
