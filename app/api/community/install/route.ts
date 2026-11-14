@@ -30,6 +30,14 @@ const fields: Record<string, string> = {
 };
 type Snapshot = Record<string, unknown>;
 type Rule = Record<string, unknown>;
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return '['+value.map(canonical).join(',')+']';
+  if (value && typeof value==='object') {
+    const record=value as Record<string,unknown>;
+    return '{'+Object.keys(record).sort().map(key=>JSON.stringify(key)+':'+canonical(record[key])).join(',')+'}';
+  }
+  return JSON.stringify(value) ?? 'null';
+}
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -115,7 +123,7 @@ export async function POST(request: Request) {
       storedRules.every(rule=>{
         const original=expected.get(rule.rule_key);
         return original && original.evaluation_mode===rule.evaluation_mode &&
-          JSON.stringify(original.configuration)===JSON.stringify(rule.configuration);
+          canonical(original.configuration)===canonical(rule.configuration);
       });
     if (!verified) {
       const {error:rollbackError} = await supabase.from('strategy_profiles').delete()
