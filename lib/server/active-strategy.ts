@@ -142,7 +142,7 @@ async function loadStrategy(
     evidenceWeights[key] = rule.weight;
     if (rule.mandatory) requiredEvidence.push(key);
   }
-  if(!rules.length)Object.assign(evidenceWeights,profile.evidence_weights??{});
+  // Community strategies may define custom rule keys. Preserve the profile's\n  // supported evidence weights unless an enabled standard rule overrides them.\n  for (const key of evidenceKeys) {\n    const value=Number(profile.evidence_weights?.[key]);\n    if (evidenceWeights[key]===undefined && Number.isFinite(value) && value>0) evidenceWeights[key]=value;\n  }
 
   const allowedSessions = sessions.length
     ? sessions.map((session) => session.sessionCode)
