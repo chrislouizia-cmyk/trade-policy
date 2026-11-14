@@ -1,4 +1,5 @@
 import TradeValidator from '@/components/TradeValidator';
+import ReadOnlyMarketCharts from '@/components/ReadOnlyMarketCharts';
 import AppHeader from '@/components/AppHeader';
 import { createClient } from '@/lib/supabase/server';
 import { getUserDisplayName } from '@/lib/user-display-name';
@@ -16,7 +17,7 @@ export default async function ValidatePage() {
     strategy = await loadActiveStrategy(supabase, user.id);
   } catch (error) {
     if (!(error instanceof NoActiveStrategyError)&&!(error instanceof StrategyConfigurationError)) throw error;
-    return <main className="container"><AppHeader eyebrow="TRADE POLICE / ANALYZE" displayName={displayName} description="Should I take this trade?" userId={user.id} /><div className="card empty-state"><h2>{error instanceof NoActiveStrategyError?'No active strategy':'Active strategy needs configuration'}</h2><p className="muted">{error.message}</p><a className="button-link primary" href="/profile">Build or configure strategy</a></div></main>;
+    return <main className="container"><AppHeader eyebrow="TRADE POLICE / ANALYZE" displayName={displayName} description="Should I take this trade?" userId={user.id} /><div className="card empty-state"><h2>{error instanceof NoActiveStrategyError?'No active strategy':'Active strategy needs configuration'}</h2><p className="muted">{error.message}</p><a className="button-link primary" href="/profile">Build or configure strategy</a></div><ReadOnlyMarketCharts /></main>;
   }
   return <main className="container"><AppHeader eyebrow="TRADE POLICE / ANALYZE" displayName={displayName} description="Should I take this trade?" userId={user.id} /><TradeValidator userId={user.id} displayName={displayName} initialStrategy={strategy} /></main>;
 }
