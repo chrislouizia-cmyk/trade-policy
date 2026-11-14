@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 const schema = z.object({shareCode: z.string().uuid()});
@@ -47,17 +46,9 @@ export async function POST(request: Request) {
     if (!parsed.success || !ALLOWED.has(parsed.data.shareCode)) {
       return NextResponse.json({error:'Strategy unavailable.'},{status:404});
     }
-    const admin = createAdminClient();
-    const {data:share,error:shareError} = await admin.from('strategy_shares')
-      .select('id,current_version,license_code,status')
-      .eq('share_code',parsed.data.shareCode).eq('status','ACTIVE').maybeSingle();
-    if (shareError || !share || share.license_code !== 'PERSONAL_USE_V1') {
-      return NextResponse.json({error:'Strategy unavailable.'},{status:404});
-    }
-    const {data:version,error:versionError} = await admin.from('strategy_share_versions')
-      .select('snapshot_json').eq('share_id',share.id).eq('version',share.current_version).maybeSingle();
-    if (versionError || !version) return NextResponse.json({error:'Strategy version unavailable.'},{status:404});
-    const snapshot = version.snapshot_json as Snapshot;
+    const {data:sharedSnapshot,error:shareError} = await supabase.rpc('get_community_strategy_snapshot',{p_share_code:parsed.data.shareCode});
+    if (shareError || !sharedSnapshot) return NextResponse.json({error:'Strategy unavailable.'},{status:404});
+    const snapshot = sharedSnapshot as Snapshot;
     if (typeof snapshot.name !== 'string' || !Array.isArray(snapshot.instruments)
       || !snapshot.instruments.length || !Array.isArray(snapshot.rules) || !snapshot.rules.length) {
       return NextResponse.json({error:'Invalid shared strategy.'},{status:422});
