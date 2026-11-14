@@ -95,7 +95,13 @@ export async function POST(request: Request) {
       .eq('strategy_id',result.strategyId).eq('user_id',user.id).eq('rule_key',rule.rule_key)));
     if (updates.some(update=>update.error)) {
       console.error('[community-install] Rule metadata update failed.');
-      return NextResponse.json({error:'Strategy installed, but rule configuration needs review.',strategyId:result.strategyId},{status:207});
+      // Do not leave a partially configured strategy in the user's account.
+      const {error:rollbackError} = await supabase.from('strategy_profiles').delete()
+        .eq('id',result.strategyId).eq('user_id',user.id);
+      if (rollbackError) console.error('[community-install] Rollback failed.',rollbackError.code);
+      return NextResponse.json({error:rollbackError
+        ? 'Installation incomplete. Review your strategies before retrying.'
+        : 'Installation could not be completed. No strategy was activated.'},{status:500});
     }
     return NextResponse.json({installed:true,strategyId:result.strategyId,activated:false},
       {headers:{'Cache-Control':'no-store'}});
