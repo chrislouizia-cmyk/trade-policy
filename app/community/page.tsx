@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import InstallCommunityStrategy from '@/components/InstallCommunityStrategy';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,8 +76,8 @@ export default async function CommunityPage() {
             <p><strong>Markets:</strong> {strategy.instruments.join(', ')}</p>
             <p><strong>Timeframes:</strong> {strategy.timeframes} · <strong>Rules:</strong> {strategy.rules}</p>
             <p><strong>Share code:</strong> <code style={{overflowWrap:'anywhere'}}>{strategy.shareCode}</code></p>
-            <p style={{fontSize: 13, opacity: .75}}>Use this code with Trade Police's strategy sharing workflow.
-              Installation from this page is not yet enabled.</p>
+            <InstallCommunityStrategy shareCode={strategy.shareCode} />
+            <p style={{fontSize:13,opacity:.75}}>A private copy is created in your account and remains inactive until you review it.</p>
           </article>
         ))}
       </div>
