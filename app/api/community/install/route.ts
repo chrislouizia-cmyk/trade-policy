@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     }
     profile.name = String(snapshot.name).slice(0,100);
     profile.is_archived = false;
-    const instruments = snapshot.instruments.filter((s):s is string=>typeof s==='string')
+    const instruments = snapshot.instruments.filter((s):s is string=>typeof s==='string' && /^[A-Z0-9._-]{3,20}$/.test(s))
       .slice(0,20).map((symbol,index)=>({
         symbol,market_type:symbol==='XAUUSD'?'METALS':'FOREX',provider_symbol:null,
         sort_order:index,enabled:true
@@ -73,6 +73,10 @@ export async function POST(request: Request) {
       evaluation_mode:['MANUAL','EXTERNAL'].includes(String(rule.evaluationMode))?rule.evaluationMode:'AUTOMATIC',
       configuration:rule.configuration??{}
     }));
+    if (instruments.length !== snapshot.instruments.length || new Set(instruments.map(item=>item.symbol)).size !== instruments.length
+      || rules.length !== snapshot.rules.length || new Set(rules.map(rule=>rule.rule_key)).size !== rules.length) {
+      return NextResponse.json({error:'Invalid or duplicate strategy instruments/rules.'},{status:422});
+    }
     if (rules.some(rule=>!rule.rule_key || !Number.isFinite(rule.weight)
       || rule.weight<0 || rule.weight>100 || !Number.isInteger(rule.minimum_confidence)
       || rule.minimum_confidence<0 || rule.minimum_confidence>100)) {
