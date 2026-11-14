@@ -71,7 +71,7 @@ export default function TradingViewChart({ instrument }: { instrument: string })
         <div className="tv-status tv-error">
           <strong>TradingView chart could not load.</strong>
           <span>
-            Turn off content blockers for localhost, then reload the page.
+            Check browser content blockers or network restrictions, then reload the page.
           </span>
           <a
             href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tradingViewSymbol)}`}
