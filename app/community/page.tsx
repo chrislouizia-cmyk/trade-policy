@@ -1,4 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@supabase/supabase-js';
 import InstallCommunityStrategy from '@/components/InstallCommunityStrategy';
 
 export const dynamic = 'force-dynamic';
@@ -15,23 +15,13 @@ type CommunityStrategy = {
 };
 
 async function getCommunityStrategies(): Promise<CommunityStrategy[]> {
-  const admin = createAdminClient();
-  const { data: shares, error } = await admin
-    .from('strategy_shares')
-    .select('id,share_code,current_version,status')
-    .in('share_code', [...COMMUNITY_SHARE_CODES])
-    .eq('status', 'ACTIVE');
-  if (error) throw error;
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
   const result: CommunityStrategy[] = [];
-  for (const share of shares ?? []) {
-    const { data: version, error: versionError } = await admin
-      .from('strategy_share_versions')
-      .select('snapshot_json')
-      .eq('share_id', share.id)
-      .eq('version', share.current_version)
-      .maybeSingle();
-    if (versionError || !version) continue;
-    const snapshot = version.snapshot_json as Record<string, unknown>;
+  for (const shareCode of COMMUNITY_SHARE_CODES) {
+    const {data,error} = await supabase.rpc('get_community_strategy_snapshot',{p_share_code:shareCode});
+    if (error) throw error;
+    if (!data) continue;
+    const snapshot = data as Record<string, unknown>;
     const instruments = Array.isArray(snapshot.instruments)
       ? snapshot.instruments.filter((value): value is string => typeof value === 'string').slice(0, 10)
       : [];
@@ -42,7 +32,7 @@ async function getCommunityStrategies(): Promise<CommunityStrategy[]> {
       timeframes: [snapshot.trendTimeframe, snapshot.confirmationTimeframe, snapshot.entryTimeframe]
         .filter((value): value is string => typeof value === 'string').join(' / '),
       rules: Array.isArray(snapshot.rules) ? snapshot.rules.length : 0,
-      shareCode: share.share_code,
+      shareCode,
     });
   }
   return result;
