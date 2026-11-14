@@ -62,6 +62,10 @@ export async function POST(request: Request) {
       || !snapshot.instruments.length || !Array.isArray(snapshot.rules) || !snapshot.rules.length) {
       return NextResponse.json({error:'Invalid shared strategy.'},{status:422});
     }
+    if (snapshot.rules.some(rule=>!rule || typeof rule!=='object' || Array.isArray(rule))
+      || snapshot.instruments.length>20 || snapshot.rules.length>50) {
+      return NextResponse.json({error:'Invalid shared strategy structure.'},{status:422});
+    }
     const profile: Record<string,unknown> = {};
     for (const [source,target] of Object.entries(fields)) {
       if (snapshot[source] !== undefined && snapshot[source] !== null) profile[target] = snapshot[source];
